@@ -1,9 +1,0 @@
-<div class="dialog-overlay" [class.visible]="isVisible" (click)="onCancel()">
-  <div class="dialog-box" (click)="$event.stopPropagation()">
-    <p>{{ message }}</p>
-    <div class="dialog-actions">
-      <button class="secondary" (click)="onCancel()">Cancel</button>
-      <button class="danger" (click)="onConfirm()">Confirm</button>
-    </div>
-  </div>
-</div>
