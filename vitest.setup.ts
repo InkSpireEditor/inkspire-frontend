@@ -1,0 +1,22 @@
+import { vi } from "vitest";
+
+const localStorageMock = (() => {
+    let store: Record<string, string> = {};
+
+    return {
+        getItem(key: string) {
+            return store[key] ?? null;
+        },
+        setItem(key: string, value: string) {
+            store[key] = String(value);
+        },
+        removeItem(key: string) {
+            delete store[key];
+        },
+        clear() {
+            store = {};
+        },
+    };
+})();
+
+vi.stubGlobal("localStorage", localStorageMock);
