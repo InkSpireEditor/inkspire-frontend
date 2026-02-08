@@ -15,69 +15,33 @@ describe('ollamaService', () => {
     vi.clearAllMocks()
   })
 
-  it('addButtonOllama sends POST request with correct payload', async () => {
+  it('generate sends POST request with correct payload and returns response text', async () => {
     const token = 'token'
-    const mockRes = { param: { response: 'AI text' } }
+    const model = 'llama3'
+    const prompt = 'Hello'
+    const mockRes = { response: 'Hi there!' }
+    
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => mockRes
     } as Response)
 
-    const result = await ollamaService.addButtonOllama(1, token, 'query', {}, 'text')
+    const result = await ollamaService.generate(token, model, prompt)
     
-    expect(JSON.parse(result)).toEqual(mockRes)
-    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/ollama/addRequest`, {
+    expect(result).toBe('Hi there!')
+    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/ollama/generate`, {
       method: 'POST',
       headers: expect.objectContaining({
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       }),
-      body: JSON.stringify({ id: 1, userQuery: 'query', context: {}, text: 'text' })
+      body: JSON.stringify({ model, prompt })
     })
   })
 
-  it('rephraseButtonOllama sends POST request with correct payload', async () => {
-    const token = 'token'
-    const mockRes = { param: { response: 'Rephrased text' } }
-    fetchSpy.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockRes
-    } as Response)
-
-    const result = await ollamaService.rephraseButtonOllama(1, token, {}, 'text')
-    
-    expect(JSON.parse(result)).toEqual(mockRes)
-    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/ollama/rephraseRequest`, {
-      method: 'POST',
-      headers: expect.objectContaining({
-        'Authorization': `Bearer ${token}`
-      }),
-      body: JSON.stringify({ id: 1, context: {}, text: 'text' })
-    })
-  })
-
-  it('translateButtonOllama sends POST request with correct payload', async () => {
-    const token = 'token'
-    const mockRes = { param: { response: 'Translated text' } }
-    fetchSpy.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockRes
-    } as Response)
-
-    const result = await ollamaService.translateButtonOllama(1, token, 'to French', {}, 'text')
-    
-    expect(JSON.parse(result)).toEqual(mockRes)
-    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/ollama/translateRequest`, {
-      method: 'POST',
-      headers: expect.objectContaining({
-        'Authorization': `Bearer ${token}`
-      }),
-      body: JSON.stringify({ id: 1, userQuery: 'to French', context: {}, text: 'text' })
-    })
-  })
-
-  it('throws error when fetch fails', async () => {
+  it('throws error when generate fetch fails', async () => {
     fetchSpy.mockResolvedValueOnce({ ok: false } as Response)
-    await expect(ollamaService.addButtonOllama(1, 't', 'q', {}, 'x')).rejects.toThrow('Ollama request failed')
+    await expect(ollamaService.generate('t', 'm', 'p')).rejects.toThrow('Ollama request failed')
   })
 })

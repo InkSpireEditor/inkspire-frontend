@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ModelSelector from './ModelSelector.vue'
 import { modelService } from '../services/model'
+import { resetSharedModel } from '../services/sharedModel'
 
 vi.mock('../services/model', () => ({
   modelService: {
@@ -18,6 +19,7 @@ describe('ModelSelector.vue', () => {
   afterEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
+    resetSharedModel()
   })
 
   it('renders title', () => {

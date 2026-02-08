@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { modelService, type Model } from '../services/model'
+import { useSharedModel } from '../services/sharedModel'
 
+const { selectedModelName, setSelectedModel } = useSharedModel()
 const models = ref<Model[]>([])
-const selectedModelName = ref<string | null>(null)
 const error = ref<string | null>(null)
 
 const fetchModels = async () => {
@@ -13,8 +14,8 @@ const fetchModels = async () => {
   try {
     const data = await modelService.getModels(token)
     models.value = data
-    if (models.value.length > 0 && models.value[0]) {
-      selectedModelName.value = models.value[0].name
+    if (models.value.length > 0 && !selectedModelName.value) {
+      setSelectedModel(models.value[0].name)
     }
   } catch (e: any) {
     error.value = e.message

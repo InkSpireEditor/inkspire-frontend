@@ -3,10 +3,12 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService } from '../services/filesManager'
 import { ollamaService } from '../services/ollama'
 import { useSharedFiles } from '../services/sharedFiles'
+import { useSharedModel } from '../services/sharedModel'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 
 const { selectedFileId } = useSharedFiles()
+const { selectedModelName } = useSharedModel()
 
 // --- Component State ---
 const text = ref('')
@@ -14,10 +16,6 @@ const fileName = ref('')
 const currentFileID = ref<number | null>(null)
 const generatedText = ref('')
 const pendingValidation = ref(false)
-
-// Modal state
-const showGenerateModal = ref(false)
-const modalInputPrompt = ref('')
 
 // Error state
 const showError = ref(false)
@@ -37,11 +35,11 @@ const loadFile = async (fileId: number) => {
       filesManagerService.getFileInfo(token, fileId),
       filesManagerService.getFileContent(token, fileId)
     ])
-    
+
     fileName.value = info.name
     text.value = content
     currentFileID.value = fileId
-    
+
     startAutoSave()
   } catch (e) {
     console.error('Error loading file:', e)
@@ -82,32 +80,26 @@ const handleContentChange = (newContent: string) => {
   text.value = newContent
 }
 
-const handleModalSubmit = async () => {
+const handleGenerate = async () => {
   if (!text.value) return
-  if (!modalInputPrompt.value.trim()) return
+  if (!selectedModelName.value) {
+    displayError('No model selected')
+    return
+  }
 
   const token = localStorage.getItem('jwt_token')
   if (!token || !currentFileID.value) return
 
   try {
-    // Get context (directory content)
-    const context = await filesManagerService.getDirContent(token, currentFileID.value)
-    
-    const result = await ollamaService.addButtonOllama(
-      currentFileID.value,
+    const result = await ollamaService.generate(
       token,
-      modalInputPrompt.value,
-      context,
+      selectedModelName.value,
       text.value
     )
 
     if (result) {
-      const res = JSON.parse(result)
-      if (res.param?.response) {
-        generatedText.value = res.param.response
-        pendingValidation.value = true
-        showGenerateModal.value = false
-      }
+      generatedText.value = result
+      pendingValidation.value = true
     }
   } catch (e) {
     console.error('Error generating text:', e)
@@ -169,36 +161,22 @@ onUnmounted(() => {
       <MarkdownEditor :content="text" @content-change="handleContentChange" />
 
       <div class="actions">
-        <button @click="showGenerateModal = true" :disabled="!currentFileID">Generate</button>
-        <button class="primary" @click="save" :disabled="!currentFileID">Save</button>
+        <button @click="save" :disabled="!currentFileID">Save</button>
+        <button class="primary" @click="handleGenerate" :disabled="!currentFileID">Generate</button>
       </div>
     </div>
 
     <div v-else class="validation-container">
       <textarea readonly rows="20">{{ generatedText }}</textarea>
-      
+
       <div class="fakeline"></div>
-      
+
       <div class="actions">
         <button class="primary" @click="applyGeneratedText">Apply (Yes)</button>
         <button @click="rejectGeneratedText">Discard (No)</button>
         <button @click="save">Save Current</button>
       </div>
     </div>
-
-    <!-- Generate Modal -->
-    <Modal
-      :show="showGenerateModal"
-      title="What should I generate?"
-      confirm-text="Generate"
-      @close="showGenerateModal = false"
-      @confirm="handleModalSubmit"
-    >
-      <div class="form-group">
-        <label>Prompt:</label>
-        <textarea v-model="modalInputPrompt" placeholder="Describe what you want to generate..." rows="3"></textarea>
-      </div>
-    </Modal>
 
     <!-- Error Modal (Reusing Unified Modal) -->
     <Modal
@@ -274,24 +252,5 @@ button.primary {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-group label {
-  font-weight: bold;
-}
-
-.form-group textarea {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-background-soft);
-  color: var(--color-text);
 }
 </style>

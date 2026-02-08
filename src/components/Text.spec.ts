@@ -6,6 +6,7 @@ import Modal from './Modal.vue'
 import { filesManagerService } from '../services/filesManager'
 import { ollamaService } from '../services/ollama'
 import * as sharedFiles from '../services/sharedFiles'
+import * as sharedModel from '../services/sharedModel'
 
 // Mock services
 vi.mock('../services/filesManager', () => ({
@@ -19,7 +20,7 @@ vi.mock('../services/filesManager', () => ({
 
 vi.mock('../services/ollama', () => ({
   ollamaService: {
-    addButtonOllama: vi.fn()
+    generate: vi.fn()
   }
 }))
 
@@ -34,6 +35,10 @@ describe('Text.vue', () => {
     vi.spyOn(sharedFiles, 'useSharedFiles').mockReturnValue({
       selectedFileId,
       setSelectedFile: vi.fn()
+    })
+    vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
+      selectedModelName: ref('llama3'),
+      setSelectedModel: vi.fn()
     })
     
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'test.ink' })
@@ -83,7 +88,7 @@ describe('Text.vue', () => {
     expect(filesManagerService.updateFileContent).toHaveBeenCalled()
   })
 
-  it('opens generate modal and calls ollama service', async () => {
+  it('calls ollama service when generate button is clicked', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
@@ -91,25 +96,19 @@ describe('Text.vue', () => {
     await flushPromises()
     await wrapper.vm.$nextTick()
 
+    vi.mocked(ollamaService.generate).mockResolvedValue('AI generated text')
+
     // Find "Generate" button
     const generateBtn = wrapper.findAll('button').find(b => b.text() === 'Generate')
     await generateBtn?.trigger('click')
     
-    const modal = wrapper.findComponent(Modal)
-    expect(modal.props('show')).toBe(true)
-
-    vi.mocked(ollamaService.addButtonOllama).mockResolvedValue(JSON.stringify({
-      param: { response: 'AI generated text' }
-    }))
-
-    // Find the textarea in the modal - it's inside the Modal component now
-    const modalInput = wrapper.find('textarea[placeholder*="Describe"]')
-    await modalInput.setValue('Write a story')
-    
-    await modal.vm.$emit('confirm')
     await flushPromises()
 
-    expect(ollamaService.addButtonOllama).toHaveBeenCalled()
+    expect(ollamaService.generate).toHaveBeenCalledWith(
+      'fake-token',
+      'llama3',
+      'Initial content'
+    )
     expect(wrapper.find('.validation-container').exists()).toBe(true)
     expect((wrapper.find('.validation-container textarea').element as HTMLTextAreaElement).value).toBe('AI generated text')
   })
