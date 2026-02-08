@@ -14,8 +14,9 @@ const fetchModels = async () => {
   try {
     const data = await modelService.getModels(token)
     models.value = data
-    if (models.value.length > 0 && !selectedModelName.value) {
-      setSelectedModel(models.value[0].name)
+    const firstModel = models.value[0]
+    if (firstModel && !selectedModelName.value) {
+      setSelectedModel(firstModel.name)
     }
   } catch (e: any) {
     error.value = e.message
