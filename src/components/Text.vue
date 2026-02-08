@@ -14,8 +14,6 @@ const { selectedModelName } = useSharedModel()
 const text = ref('')
 const fileName = ref('')
 const currentFileID = ref<number | null>(null)
-const generatedText = ref('')
-const pendingValidation = ref(false)
 
 // Error state
 const showError = ref(false)
@@ -98,25 +96,13 @@ const handleGenerate = async () => {
     )
 
     if (result) {
-      generatedText.value = result
-      pendingValidation.value = true
+      text.value += result
+      save()
     }
   } catch (e) {
     console.error('Error generating text:', e)
     displayError('Error generating text with Ollama')
   }
-}
-
-const applyGeneratedText = () => {
-  text.value += generatedText.value
-  generatedText.value = ''
-  pendingValidation.value = false
-  save()
-}
-
-const rejectGeneratedText = () => {
-  generatedText.value = ''
-  pendingValidation.value = false
 }
 
 const displayError = (msg: string) => {
@@ -157,24 +143,12 @@ onUnmounted(() => {
       <p v-else>No file selected</p>
     </div>
 
-    <div v-if="!pendingValidation" class="editor-container">
+    <div class="editor-container">
       <MarkdownEditor :content="text" @content-change="handleContentChange" />
 
       <div class="actions">
         <button @click="save" :disabled="!currentFileID">Save</button>
         <button class="primary" @click="handleGenerate" :disabled="!currentFileID">Generate</button>
-      </div>
-    </div>
-
-    <div v-else class="validation-container">
-      <textarea readonly rows="20">{{ generatedText }}</textarea>
-
-      <div class="fakeline"></div>
-
-      <div class="actions">
-        <button class="primary" @click="applyGeneratedText">Apply (Yes)</button>
-        <button @click="rejectGeneratedText">Discard (No)</button>
-        <button @click="save">Save Current</button>
       </div>
     </div>
 
@@ -205,25 +179,10 @@ onUnmounted(() => {
   color: var(--color-heading);
 }
 
-.editor-container, .validation-container {
+.editor-container {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.validation-container textarea {
-  width: 100%;
-  padding: 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background-color: var(--color-background-soft);
-  color: var(--color-text);
-  font-family: inherit;
-}
-
-.fakeline {
-  border-top: 1px solid var(--color-border);
-  margin: 1rem 10%;
 }
 
 .actions {

@@ -88,7 +88,7 @@ describe('Text.vue', () => {
     expect(filesManagerService.updateFileContent).toHaveBeenCalled()
   })
 
-  it('calls ollama service when generate button is clicked', async () => {
+  it('calls ollama service and applies text directly', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
@@ -109,29 +109,8 @@ describe('Text.vue', () => {
       'llama3',
       'Initial content'
     )
-    expect(wrapper.find('.validation-container').exists()).toBe(true)
-    expect((wrapper.find('.validation-container textarea').element as HTMLTextAreaElement).value).toBe('AI generated text')
-  })
-
-  it('applies generated text to editor', async () => {
-    const wrapper = mount(Text, {
-      global: { stubs: { teleport: true } }
-    })
-    selectedFileId.value = 1
-    await flushPromises()
-    await wrapper.vm.$nextTick()
-
-    // Manually set state to simulate AI response received
     const vm = wrapper.vm as any
-    vm.generatedText = ' - AI suffix'
-    vm.pendingValidation = true
-    await wrapper.vm.$nextTick()
-
-    // Find "Apply (Yes)" button
-    const applyBtn = wrapper.findAll('button').find(b => b.text().includes('Apply'))
-    await applyBtn?.trigger('click')
-    
-    expect(vm.text).toBe('Initial content - AI suffix')
-    expect(vm.pendingValidation).toBe(false)
+    expect(vm.text).toBe('Initial contentAI generated text')
+    expect(filesManagerService.updateFileContent).toHaveBeenCalled()
   })
 })
