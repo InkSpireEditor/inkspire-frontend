@@ -95,6 +95,9 @@ describe('Text.vue', () => {
     selectedFileId.value = 1
     await flushPromises()
     await wrapper.vm.$nextTick()
+    
+    // Clear mock calls from loadFile/auto-save setup
+    vi.mocked(filesManagerService.updateFileContent).mockClear()
 
     vi.mocked(ollamaService.generate).mockResolvedValue('AI generated text')
 
@@ -106,11 +109,13 @@ describe('Text.vue', () => {
 
     expect(ollamaService.generate).toHaveBeenCalledWith(
       'fake-token',
+      1,
       'llama3',
       'Initial content'
     )
     const vm = wrapper.vm as any
     expect(vm.text).toBe('Initial contentAI generated text')
-    expect(filesManagerService.updateFileContent).toHaveBeenCalled()
+    // Should NOT be called again after generate because backend already saved
+    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
   })
 })

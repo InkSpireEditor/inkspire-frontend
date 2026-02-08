@@ -91,13 +91,13 @@ const handleGenerate = async () => {
   try {
     const result = await ollamaService.generate(
       token,
+      currentFileID.value,
       selectedModelName.value,
       text.value
     )
 
     if (result) {
       text.value += result
-      save()
     }
   } catch (e) {
     console.error('Error generating text:', e)

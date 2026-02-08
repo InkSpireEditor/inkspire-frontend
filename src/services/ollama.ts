@@ -9,15 +9,15 @@ export const ollamaService = {
         };
     },
 
-    async generate(token: string, model: string, prompt: string): Promise<string> {
+    async generate(token: string, id: number, model: string, prompt: string): Promise<string> {
         const response = await fetch(`${API_URL}/ollama/generate`, {
             method: "POST",
             headers: this.getHeaders(token),
-            body: JSON.stringify({ model, prompt }),
+            body: JSON.stringify({ id, model, prompt }),
         });
 
         if (!response.ok) throw new Error("Ollama request failed");
         const data = await response.json();
-        return data.response;
+        return data.snippet;
     },
 };
