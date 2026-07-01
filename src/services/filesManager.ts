@@ -114,7 +114,7 @@ export const filesManagerService = {
 
     async updateFileContent(token: string, id: number, content: string) {
         const response = await apiFetch(`${API_URL}/file/${id}/contents`, {
-            method: "POST",
+            method: "PUT",
             headers: { ...getAuthHeaders(token), "Content-Type": "text/plain" },
             body: content,
         });
