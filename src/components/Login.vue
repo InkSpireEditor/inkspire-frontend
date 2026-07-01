@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { AUTH_URL } from '../services/api'
 
 const email = ref('')
 const password = ref('')
 const error = ref('')
 const isLoading = ref(false)
-
-// Placeholder for the API URL
-const API_URL = 'http://localhost:8000/auth' 
 
 const emit = defineEmits<{
   (e: 'login-success', token: string): void
@@ -18,7 +16,7 @@ const handleLogin = async () => {
   isLoading.value = true
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(AUTH_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -36,8 +34,8 @@ const handleLogin = async () => {
     const data = await response.json()
     // Assuming the API returns a token in the 'token' field
     // Adjust this according to your actual API response structure
-    const token = data.token 
-    
+    const token = data.token
+
     if (token) {
         emit('login-success', token)
     } else {
@@ -46,8 +44,8 @@ const handleLogin = async () => {
 
   } catch (e: any) {
     error.value = e.message || 'An error occurred during login.'
-    // For prototype purposes, if the API fails (which it will with the placeholder), 
-    // we might want to simulate success for specific credentials if requested, 
+    // For prototype purposes, if the API fails (which it will with the placeholder),
+    // we might want to simulate success for specific credentials if requested,
     // but strict adherence to instructions says "forward to REST API".
     // I will leave it as a real failure to encourage setting the real URL.
     console.error(e)
@@ -64,21 +62,21 @@ const handleLogin = async () => {
       <form @submit.prevent="handleLogin">
         <div class="form-group">
           <label for="email">Email</label>
-          <input 
-            type="email" 
-            id="email" 
-            v-model="email" 
-            required 
+          <input
+            type="email"
+            id="email"
+            v-model="email"
+            required
             placeholder="Enter your email"
           />
         </div>
         <div class="form-group">
           <label for="password">Password</label>
-          <input 
-            type="password" 
-            id="password" 
-            v-model="password" 
-            required 
+          <input
+            type="password"
+            id="password"
+            v-model="password"
+            required
             placeholder="Enter your password"
           />
         </div>

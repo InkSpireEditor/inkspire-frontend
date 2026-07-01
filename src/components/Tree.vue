@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, provide, readonly } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, onUnmounted, provide, readonly } from 'vue'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
-import { filesManagerService, type FileSystemNode } from '../services/filesManager'
+import { filesManagerService, type FileSystemNode, type TreeApiResponse } from '../services/filesManager'
 import { useTheme } from '../services/theme'
 import { useSharedFiles } from '../services/sharedFiles'
+import { getToken, logout } from '../services/api'
 
-const router = useRouter()
 const { toggleTheme, isDarkMode } = useTheme()
 const { setSelectedFile } = useSharedFiles()
 
@@ -34,6 +33,13 @@ const showConfirm = ref(false)
 const confirmMessage = ref('')
 const nodeToDelete = ref<FileSystemNode | null>(null)
 
+// Error Dialog State Management
+const showError = ref(false)
+const errorMessage = ref('')
+
+// Root menu open/close state
+const showRootMenu = ref(false)
+
 // 'provide' allows us to share state and methods with all descendant components 
 // (like TreeItem) without having to pass props through every level of the tree.
 provide('treeContext', {
@@ -48,7 +54,7 @@ provide('treeContext', {
  * Sorts the result so directories appear before files.
  */
 const fetchTree = async () => {
-  const token = localStorage.getItem('jwt_token')
+  const token = getToken()
   if (!token) return
 
   loading.value = true
@@ -64,13 +70,13 @@ const fetchTree = async () => {
     for (const id in files) {
         rootFiles.push({
             id: parseInt(id),
-            name: files[id].name,
+            name: files[id]!.name,
             type: 'F'
         })
     }
 
     // 2. Collect Directories and fetch their content
-    const dirPromises = Object.entries(dirs).map(async ([id, dir]: [string, any]) => {
+    const dirPromises = Object.entries(dirs).map(async ([id, dir]: [string, TreeApiResponse['dirs'][string]]) => {
         const dirId = parseInt(id)
         const dirNode: FileSystemNode = {
             id: dirId,
@@ -86,7 +92,7 @@ const fetchTree = async () => {
             for(const fileId in contentFiles) {
                 children.push({
                     id: parseInt(fileId),
-                    name: contentFiles[fileId].name,
+                    name: contentFiles[fileId]!.name,
                     type: 'F',
                     parentId: dirId // Associate file with its parent directory
                 })
@@ -107,8 +113,8 @@ const fetchTree = async () => {
     rootFiles.sort((a, b) => a.name.localeCompare(b.name))
     
     fileSystem.value = [...loadedDirs, ...rootFiles]
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Unknown error'
   } finally {
     loading.value = false
   }
@@ -129,12 +135,20 @@ const handleSelect = (node: FileSystemNode) => {
  * @param action The action identifier string.
  */
 const handleRootAction = (action: string) => {
+    showRootMenu.value = false
     if (action === 'create-file') {
         openModal('create-file', null)
     } else if (action === 'create-dir') {
         openModal('create-dir', null)
     } else if (action === 'logout') {
-        logout()
+        handleLogout()
+    }
+}
+
+const closeRootMenu = (e: MouseEvent) => {
+    const trigger = document.querySelector('.root-menu-trigger')
+    if (trigger && !trigger.contains(e.target as Node)) {
+        showRootMenu.value = false
     }
 }
 
@@ -179,7 +193,7 @@ const openModal = async (type: 'create-file' | 'create-dir' | 'edit', targetId: 
         modalTitle.value = node?.type === 'D' ? 'Edit Directory' : 'Edit File'
         modalContextVisible.value = node?.type === 'D'
         if (node?.type === 'D') {
-            const token = localStorage.getItem('jwt_token')
+            const token = getToken()
             if (token) {
                 try {
                     const content = await filesManagerService.getDirContent(token, node.id)
@@ -198,26 +212,44 @@ const openModal = async (type: 'create-file' | 'create-dir' | 'edit', targetId: 
  * Submits the modal form to perform the requested operation (create/edit).
  */
 const submitModal = async () => {
-    const token = localStorage.getItem('jwt_token')
+    const name = modalInputName.value.trim()
+    if (!name) {
+        errorMessage.value = 'Name cannot be empty.'
+        showError.value = true
+        return
+    }
+    if (name.length > 255) {
+        errorMessage.value = 'Name must be 255 characters or fewer.'
+        showError.value = true
+        return
+    }
+    if (modalContextVisible.value && modalInputContext.value.length > 2000) {
+        errorMessage.value = 'Context/summary must be 2000 characters or fewer.'
+        showError.value = true
+        return
+    }
+
+    const token = getToken()
     if (!token) return
 
     try {
         if (modalType.value === 'create-file') {
-            await filesManagerService.addFile(token, modalInputName.value, targetNodeId.value)
+            await filesManagerService.addFile(token, name, targetNodeId.value)
         } else if (modalType.value === 'create-dir') {
-            await filesManagerService.addDir(token, modalInputName.value, modalInputContext.value, targetNodeId.value)
+            await filesManagerService.addDir(token, name, modalInputContext.value, targetNodeId.value)
         } else if (modalType.value === 'edit' && nodeToEdit.value) {
             if (nodeToEdit.value.type === 'D') {
-                await filesManagerService.editDir(token, nodeToEdit.value.id, modalInputName.value, modalInputContext.value)
+                await filesManagerService.editDir(token, nodeToEdit.value.id, name, modalInputContext.value)
             } else {
-                await filesManagerService.editFile(token, nodeToEdit.value.id, modalInputName.value)
+                await filesManagerService.editFile(token, nodeToEdit.value.id, name)
             }
         }
         
         showModal.value = false
         fetchTree() // Refresh tree
     } catch (e) {
-        alert('Operation failed') // Simple alert for prototype
+        errorMessage.value = 'Operation failed'
+        showError.value = true
         console.error(e)
     }
 }
@@ -226,7 +258,7 @@ const submitModal = async () => {
  * Confirms and executes the deletion of a node.
  */
 const confirmDelete = async () => {
-    const token = localStorage.getItem('jwt_token')
+    const token = getToken()
     if (!token || !nodeToDelete.value) return
 
     try {
@@ -242,33 +274,28 @@ const confirmDelete = async () => {
         showConfirm.value = false
         fetchTree()
     } catch (e) {
-        alert('Delete failed')
+        errorMessage.value = 'Delete failed'
+        showError.value = true
         console.error(e)
     }
 }
 
 /**
- * Logs the user out by clearing the token and refreshing the application state.
+ * Logs the user out: clears the token, resets selection state, and returns
+ * to the login screen via the reactive auth:expired event in App.vue.
  */
-const logout = async () => {
-    const token = localStorage.getItem('jwt_token')
-    if (token) {
-        await filesManagerService.logout(token)
-        localStorage.removeItem('jwt_token')
-        setSelectedFile(null)
-        // In App.vue we listen to storage or prop, but here we can just reload or emit
-        // Since we are inside the component, we can use window.location.reload() to trigger App.vue check
-        // Or better, use router or emit event up.
-        // For now, reloading page is a safe hard reset or emits a logout event if passed as prop.
-        // But since this is inside a child component, let's just refresh to reset App state
-        window.location.reload()
-    }
+const handleLogout = () => {
+    logout()
+    setSelectedFile(null)
 }
 
-// Lifecycle hook that runs once the component is added to the DOM.
-// We trigger the initial data fetch here.
 onMounted(() => {
     fetchTree()
+    document.addEventListener('click', closeRootMenu)
+})
+
+onUnmounted(() => {
+    document.removeEventListener('click', closeRootMenu)
 })
 </script>
 
@@ -282,8 +309,8 @@ onMounted(() => {
         </button> 
         <!-- Root Menu -->
         <div class="root-menu-trigger">
-            <button class="icon-btn">⋮</button>
-            <div class="root-menu">
+            <button class="icon-btn" @click.stop="showRootMenu = !showRootMenu">⋮</button>
+            <div class="root-menu" v-show="showRootMenu">
                 <div @click="handleRootAction('create-file')">New File</div>
                 <div @click="handleRootAction('create-dir')">New Directory</div>
                 <div @click="handleRootAction('logout')">Logout</div>
@@ -331,6 +358,18 @@ onMounted(() => {
       @confirm="confirmDelete"
     >
       <p>{{ confirmMessage }}</p>
+    </Modal>
+
+    <!-- Error Dialog -->
+    <Modal
+      :show="showError"
+      title="Error"
+      confirm-text="OK"
+      cancel-text="OK"
+      @close="showError = false"
+      @confirm="showError = false"
+    >
+      <p>{{ errorMessage }}</p>
     </Modal>
 
     <ModelSelector />
@@ -384,12 +423,7 @@ onMounted(() => {
     position: relative;
 }
 
-.root-menu-trigger:hover .root-menu {
-    display: block;
-}
-
 .root-menu {
-    display: none;
     position: absolute;
     right: 0;
     top: 100%;

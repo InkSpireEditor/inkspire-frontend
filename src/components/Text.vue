@@ -4,6 +4,7 @@ import { filesManagerService } from '../services/filesManager'
 import { ollamaService } from '../services/ollama'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
+import { getToken } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 
@@ -14,6 +15,7 @@ const { selectedModelName } = useSharedModel()
 const text = ref('')
 const fileName = ref('')
 const currentFileID = ref<number | null>(null)
+const isDirty = ref(false)
 
 // Error state
 const showError = ref(false)
@@ -25,7 +27,7 @@ let autoSaveTimer: number | null = null
  * Loads the file information and content whenever the selectedFileId changes.
  */
 const loadFile = async (fileId: number) => {
-  const token = localStorage.getItem('jwt_token')
+  const token = getToken()
   if (!token) return
 
   try {
@@ -37,6 +39,7 @@ const loadFile = async (fileId: number) => {
     fileName.value = info.name
     text.value = content
     currentFileID.value = fileId
+    isDirty.value = false
 
     startAutoSave()
   } catch (e) {
@@ -47,13 +50,15 @@ const loadFile = async (fileId: number) => {
 
 /**
  * Saves the current text content to the backend.
+ * No-op when content has not changed since the last save.
  */
 const save = async () => {
-  const token = localStorage.getItem('jwt_token')
-  if (!token || !currentFileID.value) return
+  const token = getToken()
+  if (!token || !currentFileID.value || !isDirty.value) return
 
   try {
     await filesManagerService.updateFileContent(token, currentFileID.value, text.value)
+    isDirty.value = false
   } catch (e) {
     console.error('Error saving file:', e)
     displayError('Failed to save the file')
@@ -76,6 +81,7 @@ const stopAutoSave = () => {
 
 const handleContentChange = (newContent: string) => {
   text.value = newContent
+  isDirty.value = true
 }
 
 const handleGenerate = async () => {
@@ -85,7 +91,7 @@ const handleGenerate = async () => {
     return
   }
 
-  const token = localStorage.getItem('jwt_token')
+  const token = getToken()
   if (!token || !currentFileID.value) return
 
   try {

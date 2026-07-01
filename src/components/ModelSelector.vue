@@ -2,13 +2,14 @@
 import { ref, onMounted } from 'vue'
 import { modelService, type Model } from '../services/model'
 import { useSharedModel } from '../services/sharedModel'
+import { getToken } from '../services/api'
 
 const { selectedModelName, setSelectedModel } = useSharedModel()
 const models = ref<Model[]>([])
 const error = ref<string | null>(null)
 
 const fetchModels = async () => {
-  const token = localStorage.getItem('jwt_token')
+  const token = getToken()
   if (!token) return
 
   try {

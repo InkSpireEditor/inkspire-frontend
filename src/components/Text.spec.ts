@@ -28,7 +28,8 @@ describe('Text.vue', () => {
   let selectedFileId: any
   
   beforeEach(() => {
-    localStorage.setItem('jwt_token', 'fake-token')
+    vi.clearAllMocks()
+    sessionStorage.setItem('jwt_token', 'fake-token')
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     selectedFileId = ref<number | null>(null)
@@ -43,12 +44,12 @@ describe('Text.vue', () => {
     
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'test.ink' })
     vi.mocked(filesManagerService.getFileContent).mockResolvedValue('Initial content')
-    vi.mocked(filesManagerService.getDirContent).mockResolvedValue(JSON.stringify({ files: {} }))
+    vi.mocked(filesManagerService.getDirContent).mockResolvedValue({ files: {} })
     vi.useFakeTimers()
   })
 
   afterEach(() => {
-    localStorage.clear()
+    sessionStorage.clear()
     vi.restoreAllMocks()
     vi.useRealTimers()
   })
@@ -76,7 +77,7 @@ describe('Text.vue', () => {
     expect(vm.text).toBe('Initial content')
   })
 
-  it('saves content every 5 seconds (auto-save)', async () => {
+  it('auto-save fires after content change', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
@@ -84,8 +85,50 @@ describe('Text.vue', () => {
     await flushPromises()
     await wrapper.vm.$nextTick()
 
+    // Simulate user editing
+    const vm = wrapper.vm as any
+    vm.handleContentChange('Changed content')
+
     vi.advanceTimersByTime(5000)
+    await flushPromises()
     expect(filesManagerService.updateFileContent).toHaveBeenCalled()
+  })
+
+  it('auto-save skips API call when content is unchanged', async () => {
+    const wrapper = mount(Text, {
+      global: { stubs: { teleport: true } }
+    })
+    selectedFileId.value = 1
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // No content change — isDirty remains false
+    vi.advanceTimersByTime(5000)
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+  })
+
+  it('flushes unsaved content to the backend on unmount', async () => {
+    vi.mocked(filesManagerService.updateFileContent).mockResolvedValue('OK')
+    const wrapper = mount(Text, {
+      global: { stubs: { teleport: true } }
+    })
+    selectedFileId.value = 1
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // Simulate user editing so isDirty is true
+    const vm = wrapper.vm as any
+    vm.handleContentChange('Unsaved content')
+
+    wrapper.unmount()
+    await flushPromises()
+
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+      'fake-token',
+      1,
+      'Unsaved content'
+    )
   })
 
   it('calls ollama service and applies text directly', async () => {

@@ -29,8 +29,9 @@ describe('modelService', () => {
     expect(result).toEqual(mockModels)
     expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/ollama/models`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
       }
     })
   })

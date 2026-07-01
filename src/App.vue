@@ -1,20 +1,29 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { getToken, setToken } from './services/api'
 import Login from './components/Login.vue'
 import Tree from './components/Tree.vue'
 import Text from './components/Text.vue'
 
 const isAuthenticated = ref(false)
 
+const handleAuthExpired = () => {
+  isAuthenticated.value = false
+}
+
 onMounted(() => {
-  const token = localStorage.getItem('jwt_token')
-  if (token) {
+  if (getToken()) {
     isAuthenticated.value = true
   }
+  window.addEventListener('auth:expired', handleAuthExpired)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('auth:expired', handleAuthExpired)
 })
 
 const handleLoginSuccess = (token: string) => {
-  localStorage.setItem('jwt_token', token)
+  setToken(token)
   isAuthenticated.value = true
 }
 </script>
