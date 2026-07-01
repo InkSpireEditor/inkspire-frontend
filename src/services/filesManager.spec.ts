@@ -385,15 +385,4 @@ describe('filesManagerService', () => {
         })
     })
 
-    describe('logout', () => {
-        it('should call server-side logout', async () => {
-            const token = 'test-token'
-            fetchSpy.mockResolvedValueOnce({ ok: true } as Response)
-
-            await filesManagerService.logout(token)
-            
-            // logout strips /api from API_URL => http://localhost:8000/logout
-            expect(fetchSpy).toHaveBeenCalledWith('http://localhost:8000/logout', expect.anything())
-        })
-    })
 })

@@ -12,12 +12,12 @@ vi.mock('../services/model', () => ({
 
 describe('ModelSelector.vue', () => {
   beforeEach(() => {
-    localStorage.setItem('jwt_token', 'fake-token')
+    sessionStorage.setItem('jwt_token', 'fake-token')
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
-    localStorage.clear()
+    sessionStorage.clear()
     vi.clearAllMocks()
     resetSharedModel()
   })
@@ -54,7 +54,7 @@ describe('ModelSelector.vue', () => {
   })
 
   it('does not fetch if no token is present', async () => {
-    localStorage.clear()
+    sessionStorage.clear()
     mount(ModelSelector)
     await flushPromises()
     expect(modelService.getModels).not.toHaveBeenCalled()

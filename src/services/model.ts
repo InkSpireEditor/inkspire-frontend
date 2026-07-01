@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+import { API_URL, getAuthHeaders } from './api';
+import { apiFetch } from './apiFetch';
 
 export interface Model {
   name: string;
@@ -6,11 +7,8 @@ export interface Model {
 
 export const modelService = {
   async getModels(token: string): Promise<Model[]> {
-    const response = await fetch(`${API_URL}/ollama/models`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      }
+    const response = await apiFetch(`${API_URL}/ollama/models`, {
+      headers: getAuthHeaders(token),
     });
     
     if (!response.ok) {

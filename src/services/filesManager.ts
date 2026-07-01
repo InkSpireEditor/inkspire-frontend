@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+import { API_URL, getAuthHeaders } from './api';
+import { apiFetch } from './apiFetch';
 
 export interface FileSystemNode {
     id: number;
@@ -8,35 +9,37 @@ export interface FileSystemNode {
     parentId?: number;
 }
 
-export const filesManagerService = {
-    getHeaders(token: string) {
-        return {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-        };
-    },
+export interface TreeApiResponse {
+    dirs: Record<string, { name: string }>;
+    files: Record<string, { name: string }>;
+}
 
-    async getTree(token: string) {
-        const response = await fetch(`${API_URL}/tree`, {
-            headers: this.getHeaders(token),
+export interface DirApiResponse {
+    files: Record<string, { name: string }>;
+    summary?: string;
+}
+
+export const filesManagerService = {
+    async getTree(token: string): Promise<TreeApiResponse> {
+        const response = await apiFetch(`${API_URL}/tree`, {
+            headers: getAuthHeaders(token),
         });
         if (!response.ok) throw new Error("Failed to fetch tree");
         return response.json();
     },
 
-    async getDirContent(token: string, dirId: number) {
-        const response = await fetch(`${API_URL}/dir/${dirId}`, {
-            headers: this.getHeaders(token),
+    async getDirContent(token: string, dirId: number): Promise<DirApiResponse> {
+        const response = await apiFetch(`${API_URL}/dir/${dirId}`, {
+            headers: getAuthHeaders(token),
         });
         if (!response.ok) throw new Error(`Failed to fetch content for dir ${dirId}`);
         return response.json();
     },
 
     async addFile(token: string, name: string, parentId: number | null) {
-        const response = await fetch(`${API_URL}/file`, {
+        const response = await apiFetch(`${API_URL}/file`, {
             method: "POST",
-            headers: this.getHeaders(token),
+            headers: getAuthHeaders(token),
             body: JSON.stringify({ name, dir: parentId }), // Backend expects 'dir'
         });
         if (!response.ok) throw new Error("Failed to create file");
@@ -44,9 +47,9 @@ export const filesManagerService = {
     },
 
     async addDir(token: string, name: string, context: string, parentId: number | null) {
-        const response = await fetch(`${API_URL}/dir`, {
+        const response = await apiFetch(`${API_URL}/dir`, {
             method: "POST",
-            headers: this.getHeaders(token),
+            headers: getAuthHeaders(token),
             body: JSON.stringify({ name, summary: context }), // Backend expects 'summary'
         });
         if (!response.ok) throw new Error("Failed to create directory");
@@ -54,9 +57,9 @@ export const filesManagerService = {
     },
 
     async editFile(token: string, id: number, name: string) {
-        const response = await fetch(`${API_URL}/file/${id}`, {
+        const response = await apiFetch(`${API_URL}/file/${id}`, {
             method: "PUT",
-            headers: this.getHeaders(token),
+            headers: getAuthHeaders(token),
             body: JSON.stringify({ name }),
         });
         if (!response.ok) throw new Error("Failed to edit file");
@@ -64,9 +67,9 @@ export const filesManagerService = {
     },
 
     async editDir(token: string, id: number, name: string, context: string) {
-        const response = await fetch(`${API_URL}/dir/${id}`, {
+        const response = await apiFetch(`${API_URL}/dir/${id}`, {
             method: "PUT",
-            headers: this.getHeaders(token),
+            headers: getAuthHeaders(token),
             body: JSON.stringify({ name, summary: context }), // Backend expects 'summary'
         });
         if (!response.ok) throw new Error("Failed to edit directory");
@@ -74,9 +77,9 @@ export const filesManagerService = {
     },
 
     async delFile(token: string, id: number) {
-        const response = await fetch(`${API_URL}/file/${id}`, {
+        const response = await apiFetch(`${API_URL}/file/${id}`, {
             method: "DELETE",
-            headers: this.getHeaders(token),
+            headers: getAuthHeaders(token),
         });
         if (!response.ok) throw new Error("Failed to delete file");
         if (response.status === 204) return null;
@@ -84,49 +87,35 @@ export const filesManagerService = {
     },
 
     async delDir(token: string, id: number) {
-        const response = await fetch(`${API_URL}/dir/${id}`, {
+        const response = await apiFetch(`${API_URL}/dir/${id}`, {
             method: "DELETE",
-            headers: this.getHeaders(token),
+            headers: getAuthHeaders(token),
         });
         if (!response.ok) throw new Error("Failed to delete directory");
         if (response.status === 204) return null;
         return response.json();
     },
 
-    async logout(token: string) {
-        // Attempt server-side logout, but don't block on it
-        try {
-            // Assuming API_URL ends with /api, we strip it to get the root URL
-            const baseUrl = API_URL.replace(/\/api$/, "");
-            await fetch(`${baseUrl}/logout`, {
-                method: "GET", // Changed to GET to match Angular/Symfony default behavior if POST is not enforced
-                headers: this.getHeaders(token),
-            });
-        } catch (e) {
-            console.warn("Server logout failed", e);
-        }
-    },
-
     async getFileInfo(token: string, id: number) {
-        const response = await fetch(`${API_URL}/file/${id}`, {
-            headers: this.getHeaders(token),
+        const response = await apiFetch(`${API_URL}/file/${id}`, {
+            headers: getAuthHeaders(token),
         });
         if (!response.ok) throw new Error("Failed to fetch file info");
         return response.json();
     },
 
     async getFileContent(token: string, id: number) {
-        const response = await fetch(`${API_URL}/file/${id}/contents`, {
-            headers: { ...this.getHeaders(token), Accept: "text/plain" },
+        const response = await apiFetch(`${API_URL}/file/${id}/contents`, {
+            headers: { ...getAuthHeaders(token), Accept: "text/plain" },
         });
         if (!response.ok) throw new Error("Failed to fetch file content");
         return response.text();
     },
 
     async updateFileContent(token: string, id: number, content: string) {
-        const response = await fetch(`${API_URL}/file/${id}/contents`, {
+        const response = await apiFetch(`${API_URL}/file/${id}/contents`, {
             method: "POST",
-            headers: { ...this.getHeaders(token), "Content-Type": "text/plain" },
+            headers: { ...getAuthHeaders(token), "Content-Type": "text/plain" },
             body: content,
         });
         if (!response.ok) throw new Error("Failed to update file content");
