@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "test:unit": "vitest",
     "build-only": "vite build",
+    "type-check": "vue-tsc --build",
     "test:coverage": "vitest --coverage --coverage.include src",
     "lint": "vue-tsc && eslint ."
   },

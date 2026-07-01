@@ -1,4 +1,4 @@
-import { API_URL, getAuthHeaders } from './api';
+import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
 
 export interface Model {
@@ -6,15 +6,15 @@ export interface Model {
 }
 
 export const modelService = {
-  async getModels(token: string): Promise<Model[]> {
+  async getModels(): Promise<Model[]> {
     const response = await apiFetch(`${API_URL}/ollama/models`, {
-      headers: getAuthHeaders(token),
+      headers: jsonHeaders(),
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to load models');
     }
-    
+
     return response.json();
   }
 };

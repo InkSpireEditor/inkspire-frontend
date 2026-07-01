@@ -35,10 +35,8 @@ describe('Login.vue', () => {
   })
 
   it('emits login-success on successful login', async () => {
-    const mockToken = 'fake-jwt-token'
     fetchSpy.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ token: mockToken }),
     } as Response)
 
     const wrapper = mount(Login)
@@ -46,18 +44,21 @@ describe('Login.vue', () => {
     await wrapper.find('#password').setValue('password123')
     await wrapper.find('form').trigger('submit')
 
+    // Sends credentials so the browser stores the httpOnly auth cookies.
     expect(fetchSpy).toHaveBeenCalledWith('http://localhost:8000/auth', expect.objectContaining({
       method: 'POST',
+      credentials: 'include',
       body: JSON.stringify({
         username: 'test@example.com',
         password: 'password123',
       })
     }))
 
-    // Wait for async login logic
+    // Wait for async login logic. The token is no longer passed to the parent —
+    // it lives in an httpOnly cookie — so the event carries no payload.
     await vi.waitFor(() => {
       expect(wrapper.emitted()).toHaveProperty('login-success')
-      expect(wrapper.emitted('login-success')![0]).toEqual([mockToken])
+      expect(wrapper.emitted('login-success')![0]).toEqual([])
     })
   })
 

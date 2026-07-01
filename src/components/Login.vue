@@ -8,7 +8,7 @@ const error = ref('')
 const isLoading = ref(false)
 
 const emit = defineEmits<{
-  (e: 'login-success', token: string): void
+  (e: 'login-success'): void
 }>()
 
 const handleLogin = async () => {
@@ -16,11 +16,14 @@ const handleLogin = async () => {
   isLoading.value = true
 
   try {
+    // credentials: 'include' lets the browser store the httpOnly auth cookies
+    // the backend sets on the response. The JWT is never read in JS.
     const response = await fetch(AUTH_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include',
       body: JSON.stringify({
         username: email.value,
         password: password.value,
@@ -31,23 +34,9 @@ const handleLogin = async () => {
       throw new Error('Login failed. Please check your credentials.')
     }
 
-    const data = await response.json()
-    // Assuming the API returns a token in the 'token' field
-    // Adjust this according to your actual API response structure
-    const token = data.token
-
-    if (token) {
-        emit('login-success', token)
-    } else {
-        throw new Error('No token received from server.')
-    }
-
+    emit('login-success')
   } catch (e: any) {
     error.value = e.message || 'An error occurred during login.'
-    // For prototype purposes, if the API fails (which it will with the placeholder),
-    // we might want to simulate success for specific credentials if requested,
-    // but strict adherence to instructions says "forward to REST API".
-    // I will leave it as a real failure to encourage setting the real URL.
     console.error(e)
   } finally {
     isLoading.value = false

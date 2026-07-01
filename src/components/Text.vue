@@ -4,7 +4,7 @@ import { filesManagerService } from '../services/filesManager'
 import { ollamaService } from '../services/ollama'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
-import { getToken } from '../services/api'
+import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 
@@ -27,13 +27,12 @@ let autoSaveTimer: number | null = null
  * Loads the file information and content whenever the selectedFileId changes.
  */
 const loadFile = async (fileId: number) => {
-  const token = getToken()
-  if (!token) return
+  if (!isLoggedIn()) return
 
   try {
     const [info, content] = await Promise.all([
-      filesManagerService.getFileInfo(token, fileId),
-      filesManagerService.getFileContent(token, fileId)
+      filesManagerService.getFileInfo(fileId),
+      filesManagerService.getFileContent(fileId)
     ])
 
     fileName.value = info.name
@@ -53,11 +52,10 @@ const loadFile = async (fileId: number) => {
  * No-op when content has not changed since the last save.
  */
 const save = async () => {
-  const token = getToken()
-  if (!token || !currentFileID.value || !isDirty.value) return
+  if (!isLoggedIn() || !currentFileID.value || !isDirty.value) return
 
   try {
-    await filesManagerService.updateFileContent(token, currentFileID.value, text.value)
+    await filesManagerService.updateFileContent(currentFileID.value, text.value)
     isDirty.value = false
   } catch (e) {
     console.error('Error saving file:', e)
@@ -91,12 +89,10 @@ const handleGenerate = async () => {
     return
   }
 
-  const token = getToken()
-  if (!token || !currentFileID.value) return
+  if (!isLoggedIn() || !currentFileID.value) return
 
   try {
     const result = await ollamaService.generate(
-      token,
       currentFileID.value,
       selectedModelName.value,
       text.value

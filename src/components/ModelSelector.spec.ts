@@ -12,12 +12,12 @@ vi.mock('../services/model', () => ({
 
 describe('ModelSelector.vue', () => {
   beforeEach(() => {
-    sessionStorage.setItem('jwt_token', 'fake-token')
+    document.cookie = 'auth_status=1; Path=/'
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
-    sessionStorage.clear()
+    document.cookie = 'auth_status=; Path=/; Max-Age=0'
     vi.clearAllMocks()
     resetSharedModel()
   })
@@ -53,8 +53,8 @@ describe('ModelSelector.vue', () => {
     expect(wrapper.find('.error').text()).toBe('Network Error')
   })
 
-  it('does not fetch if no token is present', async () => {
-    sessionStorage.clear()
+  it('does not fetch when there is no active session', async () => {
+    document.cookie = 'auth_status=; Path=/; Max-Age=0'
     mount(ModelSelector)
     await flushPromises()
     expect(modelService.getModels).not.toHaveBeenCalled()
