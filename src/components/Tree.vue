@@ -6,7 +6,7 @@ import ModelSelector from './ModelSelector.vue'
 import { filesManagerService, type FileSystemNode, type TreeApiResponse } from '../services/filesManager'
 import { useTheme } from '../services/theme'
 import { useSharedFiles } from '../services/sharedFiles'
-import { getToken, logout } from '../services/api'
+import { isLoggedIn, logout } from '../services/api'
 
 const { toggleTheme, isDarkMode } = useTheme()
 const { setSelectedFile } = useSharedFiles()
@@ -54,12 +54,11 @@ provide('treeContext', {
  * Sorts the result so directories appear before files.
  */
 const fetchTree = async () => {
-  const token = getToken()
-  if (!token) return
+  if (!isLoggedIn()) return
 
   loading.value = true
   try {
-    const response = await filesManagerService.getTree(token)
+    const response = await filesManagerService.getTree()
     
     const dirs = response.dirs || {}
     const files = response.files || {}
@@ -86,7 +85,7 @@ const fetchTree = async () => {
         }
         
         try {
-            const content = await filesManagerService.getDirContent(token, dirId)
+            const content = await filesManagerService.getDirContent(dirId)
             const contentFiles = content.files || {}
             const children: FileSystemNode[] = []
             for(const fileId in contentFiles) {
@@ -193,14 +192,11 @@ const openModal = async (type: 'create-file' | 'create-dir' | 'edit', targetId: 
         modalTitle.value = node?.type === 'D' ? 'Edit Directory' : 'Edit File'
         modalContextVisible.value = node?.type === 'D'
         if (node?.type === 'D') {
-            const token = getToken()
-            if (token) {
-                try {
-                    const content = await filesManagerService.getDirContent(token, node.id)
-                    modalInputContext.value = content.summary || ''
-                } catch (e) {
-                    console.error('Failed to fetch directory details for edit', e)
-                }
+            try {
+                const content = await filesManagerService.getDirContent(node.id)
+                modalInputContext.value = content.summary || ''
+            } catch (e) {
+                console.error('Failed to fetch directory details for edit', e)
             }
         }
     }
@@ -229,19 +225,18 @@ const submitModal = async () => {
         return
     }
 
-    const token = getToken()
-    if (!token) return
+    if (!isLoggedIn()) return
 
     try {
         if (modalType.value === 'create-file') {
-            await filesManagerService.addFile(token, name, targetNodeId.value)
+            await filesManagerService.addFile(name, targetNodeId.value)
         } else if (modalType.value === 'create-dir') {
-            await filesManagerService.addDir(token, name, modalInputContext.value, targetNodeId.value)
+            await filesManagerService.addDir(name, modalInputContext.value, targetNodeId.value)
         } else if (modalType.value === 'edit' && nodeToEdit.value) {
             if (nodeToEdit.value.type === 'D') {
-                await filesManagerService.editDir(token, nodeToEdit.value.id, name, modalInputContext.value)
+                await filesManagerService.editDir(nodeToEdit.value.id, name, modalInputContext.value)
             } else {
-                await filesManagerService.editFile(token, nodeToEdit.value.id, name)
+                await filesManagerService.editFile(nodeToEdit.value.id, name)
             }
         }
         
@@ -258,18 +253,17 @@ const submitModal = async () => {
  * Confirms and executes the deletion of a node.
  */
 const confirmDelete = async () => {
-    const token = getToken()
-    if (!token || !nodeToDelete.value) return
+    if (!isLoggedIn() || !nodeToDelete.value) return
 
     try {
         if (nodeToDelete.value.type === 'D') {
-            await filesManagerService.delDir(token, nodeToDelete.value.id)
+            await filesManagerService.delDir(nodeToDelete.value.id)
         } else {
             if (selectedNodeId.value === nodeToDelete.value.id) {
                 setSelectedFile(null)
                 selectedNodeId.value = null
             }
-            await filesManagerService.delFile(token, nodeToDelete.value.id)
+            await filesManagerService.delFile(nodeToDelete.value.id)
         }
         showConfirm.value = false
         fetchTree()
@@ -284,8 +278,8 @@ const confirmDelete = async () => {
  * Logs the user out: clears the token, resets selection state, and returns
  * to the login screen via the reactive auth:expired event in App.vue.
  */
-const handleLogout = () => {
-    logout()
+const handleLogout = async () => {
+    await logout()
     setSelectedFile(null)
 }
 

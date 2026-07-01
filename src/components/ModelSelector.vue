@@ -2,18 +2,17 @@
 import { ref, onMounted } from 'vue'
 import { modelService, type Model } from '../services/model'
 import { useSharedModel } from '../services/sharedModel'
-import { getToken } from '../services/api'
+import { isLoggedIn } from '../services/api'
 
 const { selectedModelName, setSelectedModel } = useSharedModel()
 const models = ref<Model[]>([])
 const error = ref<string | null>(null)
 
 const fetchModels = async () => {
-  const token = getToken()
-  if (!token) return
+  if (!isLoggedIn()) return
 
   try {
-    const data = await modelService.getModels(token)
+    const data = await modelService.getModels()
     models.value = data
     const firstModel = models.value[0]
     if (firstModel && !selectedModelName.value) {

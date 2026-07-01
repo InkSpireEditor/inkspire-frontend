@@ -1,11 +1,11 @@
-import { API_URL, getAuthHeaders } from './api';
+import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
 
 export const ollamaService = {
-    async generate(token: string, id: number, model: string, prompt: string): Promise<string> {
+    async generate(id: number, model: string, prompt: string): Promise<string> {
         const response = await apiFetch(`${API_URL}/ollama/generate`, {
             method: "POST",
-            headers: getAuthHeaders(token),
+            headers: jsonHeaders(),
             body: JSON.stringify({ id, model, prompt }),
         });
 

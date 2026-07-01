@@ -21,8 +21,8 @@ describe('Tree.vue', () => {
         vi.restoreAllMocks() // Restore original implementations
         vi.spyOn(console, 'error').mockImplementation(() => {})
         vi.spyOn(console, 'warn').mockImplementation(() => {})
-        sessionStorage.clear()
-        sessionStorage.setItem('jwt_token', 'TEST_TOKEN')
+        document.cookie = 'auth_status=; Path=/; Max-Age=0'
+        document.cookie = 'auth_status=1; Path=/'
 
         // Spy on all service methods
         vi.spyOn(modelService, 'getModels').mockResolvedValue([])
@@ -38,7 +38,7 @@ describe('Tree.vue', () => {
 
     afterEach(() => {
         vi.clearAllMocks()
-        sessionStorage.clear()
+        document.cookie = 'auth_status=; Path=/; Max-Age=0'
     })
 
     // ------------------------------------
@@ -58,8 +58,8 @@ describe('Tree.vue', () => {
         const wrapper = mountTree()
         await flushPromises()
 
-        expect(filesManagerService.getTree).toHaveBeenCalledWith('TEST_TOKEN')
-        expect(filesManagerService.getDirContent).toHaveBeenCalledWith('TEST_TOKEN', 1)
+        expect(filesManagerService.getTree).toHaveBeenCalledWith()
+        expect(filesManagerService.getDirContent).toHaveBeenCalledWith(1)
 
         const treeItems = wrapper.findAllComponents(TreeItem)
         const dirA = treeItems.find(item => item.props('node').name === 'DirA')
@@ -71,8 +71,8 @@ describe('Tree.vue', () => {
         expect(fileRoot).toBeDefined()
     })
 
-    it('should not load the tree if the authentication token is missing', async () => {
-        sessionStorage.removeItem('jwt_token');
+    it('should not load the tree when there is no active session', async () => {
+        document.cookie = 'auth_status=; Path=/; Max-Age=0'
 
         mountTree()
         await flushPromises()
@@ -116,7 +116,7 @@ describe('Tree.vue', () => {
         await modal.vm.$emit('confirm')
         await flushPromises()
 
-        expect(filesManagerService.addFile).toHaveBeenCalledWith('TEST_TOKEN', 'new-file.txt', null)
+        expect(filesManagerService.addFile).toHaveBeenCalledWith('new-file.txt', null)
         expect(filesManagerService.getTree).toHaveBeenCalledTimes(2)
     })
 
@@ -179,7 +179,11 @@ describe('Tree.vue', () => {
         expect(themeBtn.text()).not.toBe(initialIcon)
     })
 
-    it('clears token and dispatches auth:expired on logout', async () => {
+    it('revokes the session and dispatches auth:expired on logout', async () => {
+        // logout() posts to /auth/logout; the server clears the httpOnly cookies.
+        const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue(
+            new Response(null, { status: 200 }),
+        )
         const expiredHandler = vi.fn()
         window.addEventListener('auth:expired', expiredHandler)
 
@@ -189,7 +193,11 @@ describe('Tree.vue', () => {
         await wrapper.findAll('.root-menu div').find(d => d.text() === 'Logout')?.trigger('click')
         await flushPromises()
 
-        expect(sessionStorage.getItem('jwt_token')).toBeNull()
+        expect(fetchSpy).toHaveBeenCalledWith(
+            expect.stringContaining('/auth/logout'),
+            expect.objectContaining({ method: 'POST', credentials: 'include' }),
+        )
+        expect(document.cookie).not.toContain('auth_status=1')
         expect(expiredHandler).toHaveBeenCalledOnce()
 
         window.removeEventListener('auth:expired', expiredHandler)

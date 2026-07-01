@@ -15,29 +15,28 @@ describe('modelService', () => {
     vi.clearAllMocks()
   })
 
-  it('getModels sends GET request with correct headers', async () => {
-    const token = 'test-token'
+  it('getModels sends GET request with correct headers and credentials', async () => {
     const mockModels = [{ name: 'Llama3' }, { name: 'Gemma' }]
-    
+
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => mockModels
     } as Response)
 
-    const result = await modelService.getModels(token)
-    
+    const result = await modelService.getModels()
+
     expect(result).toEqual(mockModels)
     expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/ollama/models`, {
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
-      }
+      },
+      credentials: 'include',
     })
   })
 
   it('throws error when loading models fails', async () => {
     fetchSpy.mockResolvedValueOnce({ ok: false } as Response)
-    await expect(modelService.getModels('token')).rejects.toThrow('Failed to load models')
+    await expect(modelService.getModels()).rejects.toThrow('Failed to load models')
   })
 })

@@ -29,7 +29,7 @@ describe('Text.vue', () => {
   
   beforeEach(() => {
     vi.clearAllMocks()
-    sessionStorage.setItem('jwt_token', 'fake-token')
+    document.cookie = 'auth_status=1; Path=/'
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     selectedFileId = ref<number | null>(null)
@@ -49,7 +49,7 @@ describe('Text.vue', () => {
   })
 
   afterEach(() => {
-    sessionStorage.clear()
+    document.cookie = 'auth_status=; Path=/; Max-Age=0'
     vi.restoreAllMocks()
     vi.useRealTimers()
   })
@@ -125,7 +125,6 @@ describe('Text.vue', () => {
     await flushPromises()
 
     expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
-      'fake-token',
       1,
       'Unsaved content'
     )
@@ -151,7 +150,6 @@ describe('Text.vue', () => {
     await flushPromises()
 
     expect(ollamaService.generate).toHaveBeenCalledWith(
-      'fake-token',
       1,
       'llama3',
       'Initial content'

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getToken, setToken } from './services/api'
+import { isLoggedIn } from './services/api'
 import Login from './components/Login.vue'
 import Tree from './components/Tree.vue'
 import Text from './components/Text.vue'
@@ -12,7 +12,9 @@ const handleAuthExpired = () => {
 }
 
 onMounted(() => {
-  if (getToken()) {
+  // The JWT lives in an httpOnly cookie; the readable auth_status flag tells us
+  // whether a session is already active on load.
+  if (isLoggedIn()) {
     isAuthenticated.value = true
   }
   window.addEventListener('auth:expired', handleAuthExpired)
@@ -22,8 +24,7 @@ onUnmounted(() => {
   window.removeEventListener('auth:expired', handleAuthExpired)
 })
 
-const handleLoginSuccess = (token: string) => {
-  setToken(token)
+const handleLoginSuccess = () => {
   isAuthenticated.value = true
 }
 </script>
