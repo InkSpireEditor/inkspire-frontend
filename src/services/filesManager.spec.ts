@@ -361,7 +361,7 @@ describe('filesManagerService', () => {
     })
 
     describe('updateFileContent', () => {
-        it('should send POST request with text body', async () => {
+        it('should send PUT request with text body', async () => {
             const fileId = 1
             const token = 'test-token'
             const content = 'new content'
@@ -375,7 +375,7 @@ describe('filesManagerService', () => {
             const response = await filesManagerService.updateFileContent(token, fileId, content)
             expect(response).toBe('Success')
             expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/file/${fileId}/contents`, {
-                method: 'POST',
+                method: 'PUT',
                 headers: expect.objectContaining({
                     'Content-Type': 'text/plain',
                     'Authorization': `Bearer ${token}`
