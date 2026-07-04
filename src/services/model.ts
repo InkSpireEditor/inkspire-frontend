@@ -7,7 +7,7 @@ export interface Model {
 
 export const modelService = {
   async getModels(): Promise<Model[]> {
-    const response = await apiFetch(`${API_URL}/ollama/models`, {
+    const response = await apiFetch(`${API_URL}/llm/models`, {
       headers: jsonHeaders(),
     });
 

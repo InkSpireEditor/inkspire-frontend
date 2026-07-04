@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ollamaService } from './ollama'
+import { llmService } from './llm'
 
 const API_URL = 'http://localhost:8000/api'
 
-describe('ollamaService', () => {
+describe('llmService', () => {
   let fetchSpy = vi.spyOn(window, 'fetch')
 
   beforeEach(() => {
@@ -26,10 +26,10 @@ describe('ollamaService', () => {
       json: async () => mockRes
     } as Response)
 
-    const result = await ollamaService.generate(id, model, prompt)
+    const result = await llmService.generate(id, model, prompt)
 
     expect(result).toBe('Hi there!')
-    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/ollama/generate`, {
+    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/llm/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -42,6 +42,6 @@ describe('ollamaService', () => {
 
   it('throws error when generate fetch fails', async () => {
     fetchSpy.mockResolvedValueOnce({ ok: false } as Response)
-    await expect(ollamaService.generate(1, 'm', 'p')).rejects.toThrow('Ollama request failed')
+    await expect(llmService.generate(1, 'm', 'p')).rejects.toThrow('LLM request failed')
   })
 })
