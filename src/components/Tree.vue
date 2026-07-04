@@ -393,7 +393,7 @@ onUnmounted(() => {
 
 .title-bar span {
   color: var(--color-heading);
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -411,6 +411,23 @@ onUnmounted(() => {
     cursor: pointer;
     font-size: 1.2rem;
     color: var(--color-text);
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition), color var(--transition);
+}
+
+.icon-btn:hover {
+    background-color: var(--color-background-mute);
+    color: var(--color-primary);
+}
+
+.icon-btn:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
 }
 
 .root-menu-trigger {
@@ -421,16 +438,22 @@ onUnmounted(() => {
     position: absolute;
     right: 0;
     top: 100%;
+    margin-top: var(--space-1);
     background: var(--color-background);
     border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
     min-width: 150px;
-    box-shadow: var(--shadow-normal);
+    box-shadow: var(--shadow-strong);
     z-index: 200;
+    overflow: hidden;
+    padding: var(--space-1);
 }
 
 .root-menu div {
     padding: 10px;
     cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition);
 }
 .root-menu div:hover {
     background-color: var(--color-background-mute);

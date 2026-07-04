@@ -175,7 +175,7 @@ li {
   padding: 0 8px;
   cursor: pointer;
   position: relative;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   visibility: hidden;
 }
 
@@ -188,19 +188,23 @@ li {
   position: absolute;
   right: 0;
   top: 100%;
+  margin-top: var(--space-1);
   background: var(--color-background);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   z-index: 100;
   min-width: 120px;
   display: flex;
   flex-direction: column;
+  padding: var(--space-1);
 }
 
 .context-menu div {
   padding: 8px 12px;
   cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition);
 }
 
 .context-menu div:hover {

@@ -64,8 +64,8 @@ const handleConfirm = () => {
 
 .modal {
   background: var(--color-background);
-  padding: 24px;
-  border-radius: 8px;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
   width: 90%;
   display: flex;
   flex-direction: column;
@@ -77,6 +77,7 @@ const handleConfirm = () => {
 h3 {
   margin: 0;
   color: var(--color-heading);
+  font-weight: var(--font-weight-bold);
 }
 
 .modal-body {
@@ -95,15 +96,26 @@ button {
   padding: 8px 16px;
   cursor: pointer;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--color-background-soft);
   color: var(--color-text);
-  font-weight: 500;
-  transition: all 0.2s;
+  font-weight: var(--font-weight-medium);
+  transition: background-color var(--transition), border-color var(--transition),
+    transform var(--transition), box-shadow var(--transition), filter var(--transition);
 }
 
 button:hover:not(:disabled) {
   background: var(--color-background-mute);
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 button:disabled {
@@ -140,21 +152,23 @@ button:disabled {
 
 :deep(label) {
   font-size: 0.9rem;
-  font-weight: bold;
+  font-weight: var(--font-weight-medium);
 }
 
 :deep(input), :deep(textarea) {
   padding: 10px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background-color: var(--color-background-soft);
   color: var(--color-text);
   font-family: inherit;
   width: 100%;
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 :deep(input:focus), :deep(textarea:focus) {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 </style>

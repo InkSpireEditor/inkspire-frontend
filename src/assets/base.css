@@ -38,13 +38,36 @@
   --color-primary-soft: rgba(33, 150, 243, 0.1);
   --color-danger: var(--ink-c-red);
 
-  --shadow-normal: 0 2px 10px rgba(0, 0, 0, 0.1);
-  --shadow-strong: 0 2px 10px rgba(0, 0, 0, 0.2);
-  --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.1);
+  /* Layered, softer shadows read as more "expensive" than a single flat drop. */
+  --shadow-normal: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-strong: 0 2px 4px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 10px 30px rgba(0, 0, 0, 0.08);
 
   --hover-background: #e3f2fd;
   --selected-border: var(--ink-c-blue);
   --icon-color: #555;
+
+  /* --- design tokens --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --transition: 160ms ease;
+  --transition-theme: 300ms ease;
+
+  --font-weight-medium: 600;
+  --font-weight-bold: 700;
+
+  /* Soft focus ring for keyboard/click focus (accessible + polished). */
+  --focus-ring: 0 0 0 3px var(--color-primary-soft);
 }
 
 body.dark-theme {
@@ -62,9 +85,9 @@ body.dark-theme {
   --color-primary-hover: var(--ink-c-blue);
   --color-primary-soft: rgba(17, 134, 227, 0.2);
 
-  --shadow-normal: 0 2px 10px rgba(0, 0, 0, 0.5);
-  --shadow-strong: 0 2px 10px rgba(0, 0, 0, 0.7);
-  --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.5);
+  --shadow-normal: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.45);
+  --shadow-strong: 0 2px 4px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.55);
 
   --hover-background: var(--ink-c-blue-deep);
   --selected-border: var(--color-primary);
@@ -84,8 +107,8 @@ body {
   color: var(--color-text);
   background: var(--color-background);
   transition:
-    color 0.5s,
-    background-color 0.5s;
+    color var(--transition-theme),
+    background-color var(--transition-theme);
   line-height: 1.6;
   font-family:
     Inter,
