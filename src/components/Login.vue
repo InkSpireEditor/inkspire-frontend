@@ -91,8 +91,8 @@ const handleLogin = async () => {
 
 .login-card {
   background: var(--color-background-soft);
-  padding: 2rem;
-  border-radius: 8px;
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   width: 100%;
   max-width: 400px;
@@ -100,33 +100,37 @@ const handleLogin = async () => {
 
 h2 {
   text-align: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-5);
   color: var(--color-heading);
+  font-weight: var(--font-weight-bold);
 }
 
 .form-group {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
 label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
   color: var(--color-text);
+  font-weight: var(--font-weight-medium);
 }
 
 input {
   width: 100%;
   padding: 0.75rem;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--color-background);
   color: var(--color-text);
   font-size: 1rem;
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 input:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
 button {
@@ -135,15 +139,26 @@ button {
   background-color: var(--color-primary);
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 1rem;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color 0.3s;
-  margin-top: 1rem;
+  transition: background-color var(--transition), transform var(--transition), box-shadow var(--transition);
+  margin-top: var(--space-4);
 }
 
-button:hover {
+button:hover:not(:disabled) {
   background-color: var(--color-primary-hover);
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 button:disabled {
@@ -153,7 +168,7 @@ button:disabled {
 
 .error-message {
   color: var(--color-danger);
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
   font-size: 0.9rem;
   text-align: center;
 }

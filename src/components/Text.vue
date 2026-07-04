@@ -141,8 +141,8 @@ onUnmounted(() => {
 <template>
   <div class="text-page">
     <div class="header">
-      <p v-if="fileName">{{ fileName }}</p>
-      <p v-else>No file selected</p>
+      <p v-if="fileName" class="file-title">{{ fileName }}</p>
+      <p v-else class="file-title empty">No file selected</p>
     </div>
 
     <div class="editor-container">
@@ -177,11 +177,29 @@ onUnmounted(() => {
 
 .header {
   text-align: center;
-  font-weight: bold;
   color: var(--color-heading);
 }
 
+.file-title {
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-title.empty {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  opacity: 0.45;
+}
+
 .editor-container {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -191,23 +209,43 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   gap: 2rem;
-  margin-top: 1rem;
+  margin-top: 1.25rem;
 }
 
 button {
   padding: 10px 24px;
   cursor: pointer;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--color-background-soft);
   color: var(--color-text);
-  font-weight: bold;
+  font-weight: var(--font-weight-medium);
+  transition: background-color var(--transition), border-color var(--transition),
+    transform var(--transition), box-shadow var(--transition);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-border-hover);
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 button.primary {
   background-color: var(--color-primary);
   color: white;
   border: none;
+}
+
+button.primary:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
 }
 
 button:disabled {

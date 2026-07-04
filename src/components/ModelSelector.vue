@@ -53,21 +53,29 @@ h3 {
   margin-bottom: 0.5rem;
   font-size: 1.1rem;
   color: var(--color-heading);
+  font-weight: var(--font-weight-bold);
 }
 
 select {
   width: 100%;
   padding: 8px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background-color: var(--color-background-soft);
   color: var(--color-text);
   font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+select:hover {
+  border-color: var(--color-border-hover);
 }
 
 select:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
 .error {

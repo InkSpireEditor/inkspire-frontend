@@ -4,8 +4,9 @@ a,
 .green {
     text-decoration: none;
     color: var(--color-primary);
-    transition: 0.4s;
+    transition: background-color var(--transition);
     padding: 3px;
+    border-radius: var(--radius-sm);
 }
 
 @media (hover: hover) {
