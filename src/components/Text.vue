@@ -82,7 +82,10 @@ const handleContentChange = (newContent: string) => {
   isDirty.value = true
 }
 
+const isGenerating = ref(false)
+
 const handleGenerate = async () => {
+  if (isGenerating.value) return
   if (!text.value) return
   if (!selectedModelName.value) {
     displayError('No model selected')
@@ -91,6 +94,7 @@ const handleGenerate = async () => {
 
   if (!isLoggedIn() || !currentFileID.value) return
 
+  isGenerating.value = true
   try {
     const result = await llmService.generate(
       currentFileID.value,
@@ -104,6 +108,8 @@ const handleGenerate = async () => {
   } catch (e) {
     console.error('Error generating text:', e)
     displayError('Error generating text')
+  } finally {
+    isGenerating.value = false
   }
 }
 
@@ -150,7 +156,9 @@ onUnmounted(() => {
 
       <div class="actions">
         <button @click="save" :disabled="!currentFileID">Save</button>
-        <button class="primary" @click="handleGenerate" :disabled="!currentFileID">Generate</button>
+        <button class="primary" @click="handleGenerate" :disabled="!currentFileID || isGenerating" :class="{ generating: isGenerating }">
+          {{ isGenerating ? 'Generating…' : 'Generate' }}
+        </button>
       </div>
     </div>
 
@@ -251,5 +259,15 @@ button.primary:hover:not(:disabled) {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 0px var(--color-primary-soft); }
+  50%       { box-shadow: 0 0 0 4px var(--color-primary-soft); }
+}
+
+button.generating {
+  animation: pulse-border 1.2s ease-in-out infinite;
+  cursor: wait;
 }
 </style>
