@@ -4,7 +4,7 @@ import { ref } from 'vue'
 import Text from './Text.vue'
 import Modal from './Modal.vue'
 import { filesManagerService } from '../services/filesManager'
-import { ollamaService } from '../services/ollama'
+import { llmService } from '../services/llm'
 import * as sharedFiles from '../services/sharedFiles'
 import * as sharedModel from '../services/sharedModel'
 
@@ -18,8 +18,8 @@ vi.mock('../services/filesManager', () => ({
   }
 }))
 
-vi.mock('../services/ollama', () => ({
-  ollamaService: {
+vi.mock('../services/llm', () => ({
+  llmService: {
     generate: vi.fn()
   }
 }))
@@ -130,7 +130,7 @@ describe('Text.vue', () => {
     )
   })
 
-  it('calls ollama service and applies text directly', async () => {
+  it('calls llm service and applies text directly', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
@@ -141,7 +141,7 @@ describe('Text.vue', () => {
     // Clear mock calls from loadFile/auto-save setup
     vi.mocked(filesManagerService.updateFileContent).mockClear()
 
-    vi.mocked(ollamaService.generate).mockResolvedValue('AI generated text')
+    vi.mocked(llmService.generate).mockResolvedValue('AI generated text')
 
     // Find "Generate" button
     const generateBtn = wrapper.findAll('button').find(b => b.text() === 'Generate')
@@ -149,7 +149,7 @@ describe('Text.vue', () => {
     
     await flushPromises()
 
-    expect(ollamaService.generate).toHaveBeenCalledWith(
+    expect(llmService.generate).toHaveBeenCalledWith(
       1,
       'llama3',
       'Initial content'
