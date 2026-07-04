@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService } from '../services/filesManager'
-import { ollamaService } from '../services/ollama'
+import { llmService } from '../services/llm'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
 import { isLoggedIn } from '../services/api'
@@ -92,7 +92,7 @@ const handleGenerate = async () => {
   if (!isLoggedIn() || !currentFileID.value) return
 
   try {
-    const result = await ollamaService.generate(
+    const result = await llmService.generate(
       currentFileID.value,
       selectedModelName.value,
       text.value
@@ -103,7 +103,7 @@ const handleGenerate = async () => {
     }
   } catch (e) {
     console.error('Error generating text:', e)
-    displayError('Error generating text with Ollama')
+    displayError('Error generating text')
   }
 }
 

@@ -26,7 +26,7 @@ describe('modelService', () => {
     const result = await modelService.getModels()
 
     expect(result).toEqual(mockModels)
-    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/ollama/models`, {
+    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/llm/models`, {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
