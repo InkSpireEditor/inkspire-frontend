@@ -8,6 +8,10 @@ const { selectedModelName, setSelectedModel } = useSharedModel()
 const models = ref<Model[]>([])
 const error = ref<string | null>(null)
 
+/**
+ * Loads the model list and, when nothing is selected yet, selects the first one
+ * so generation works without the user having to open the dropdown.
+ */
 const fetchModels = async () => {
   if (!isLoggedIn()) return
 

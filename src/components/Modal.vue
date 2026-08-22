@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * Generic dialog used for the tree's create / rename / delete flows and for
+ * error messages. Owns no state: the parent controls visibility via `show` and
+ * reacts to the 'close' and 'confirm' events.
+ */
 defineProps<{
   show: boolean
   title: string

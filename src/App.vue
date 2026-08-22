@@ -8,6 +8,12 @@ import Text from './components/Text.vue'
 const isAuthenticated = ref(false)
 const isSidebarOpen = ref(true)
 
+/**
+ * 'auth:expired' is a window event dispatched from services/api.ts (manual
+ * logout) and services/apiFetch.ts (a 401 that could not be refreshed). It is
+ * the single signal that returns the app to the login screen, so neither of
+ * those modules needs a reference to this component.
+ */
 const handleAuthExpired = () => {
   isAuthenticated.value = false
 }

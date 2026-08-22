@@ -11,6 +11,11 @@ const emit = defineEmits<{
   (e: 'login-success'): void
 }>()
 
+/**
+ * Authenticates against /auth. On success the backend sets the auth cookies on
+ * the response and the 'login-success' event tells App.vue to swap in the
+ * editor — no token is passed, since JS never sees the JWT.
+ */
 const handleLogin = async () => {
   error.value = ''
   isLoading.value = true

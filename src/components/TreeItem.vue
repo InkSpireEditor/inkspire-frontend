@@ -13,7 +13,16 @@ const props = defineProps<{
 
 const { selectedFileId } = useSharedFiles()
 
-// Define types for injected context
+// Indentation is applied inline rather than in CSS because it depends on the
+// node's depth, which is only known at render time.
+const INDENT_PER_LEVEL_PX = 24
+const BASE_PADDING_PX = 16
+
+/**
+ * The shape Tree provides under the 'treeContext' key. Injected rather than
+ * passed as props because TreeItem renders itself recursively, and prop-drilling
+ * these handlers would mean threading them through every level.
+ */
 interface TreeContext {
   selectedNodeId: Ref<number | null>
   onSelect: (node: FileSystemNode) => void
@@ -32,7 +41,13 @@ const isFolder = computed(() => {
   return props.node.type === 'D'
 })
 
-// Custom Directive: v-click-outside
+/**
+ * v-click-outside: closes the context menu when the user clicks anywhere else.
+ * The listener goes on `document` rather than the menu itself, because a click
+ * that dismisses the menu lands on some other element entirely. The handler is
+ * stashed on the element so `unmounted` can remove the exact same reference —
+ * every TreeItem registers its own, and they must not leak.
+ */
 const vClickOutside = {
   mounted(el: any, binding: any) {
     el.clickOutsideEvent = (event: Event) => {
@@ -85,7 +100,7 @@ const closeMenu = () => {
     <div
       class="tree-node-content"
       :class="{ 'selected': node.id === selectedFileId && !isFolder }"
-      :style="{ paddingLeft: (level * 24 + 16) + 'px' }"
+      :style="{ paddingLeft: (level * INDENT_PER_LEVEL_PX + BASE_PADDING_PX) + 'px' }"
       @click="select"
     >
       <span v-if="isFolder" class="toggle-icon" @click.stop="toggle">

@@ -11,6 +11,9 @@ import Modal from './Modal.vue'
 const { selectedFileId } = useSharedFiles()
 const { selectedModelName } = useSharedModel()
 
+/** How often the editor writes unsaved changes back to the API, in ms. */
+const AUTO_SAVE_INTERVAL_MS = 5000
+
 // --- Component State ---
 const text = ref('')
 const fileName = ref('')
@@ -24,7 +27,8 @@ const errorMessage = ref('')
 let autoSaveTimer: number | null = null
 
 /**
- * Loads the file information and content whenever the selectedFileId changes.
+ * Loads a file's name and content and starts the auto-save timer for it.
+ * Called whenever selectedFileId changes to a non-null id.
  */
 const loadFile = async (fileId: number) => {
   if (!isLoggedIn()) return
@@ -63,11 +67,12 @@ const save = async () => {
   }
 }
 
+/** Restarts the auto-save timer, replacing any timer left over from a previous file. */
 const startAutoSave = () => {
   stopAutoSave()
   autoSaveTimer = window.setInterval(() => {
     save()
-  }, 5000)
+  }, AUTO_SAVE_INTERVAL_MS)
 }
 
 const stopAutoSave = () => {

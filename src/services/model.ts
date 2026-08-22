@@ -6,6 +6,10 @@ export interface Model {
 }
 
 export const modelService = {
+  /**
+   * Lists the models the backend's Ollama instance has available. The backend
+   * caches this, so calling it on each mount is cheap.
+   */
   async getModels(): Promise<Model[]> {
     const response = await apiFetch(`${API_URL}/llm/models`, {
       headers: jsonHeaders(),

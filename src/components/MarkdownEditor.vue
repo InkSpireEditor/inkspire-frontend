@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * Plain textarea wrapper for the editor body. Deliberately uncontrolled beyond
+ * the initial value: it emits every keystroke as 'contentChange' and lets the
+ * parent own the text, so typing is never interrupted by a re-render.
+ */
 const props = defineProps<{
   content: string
 }>()

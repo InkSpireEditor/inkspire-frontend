@@ -11,7 +11,13 @@ import { isLoggedIn, logout } from '../services/api'
 const { toggleTheme, isDarkMode } = useTheme()
 const { setSelectedFile } = useSharedFiles()
 
-// Reactive state variables. Vue's 'ref' makes these variables reactive, 
+// Client-side input limits, mirroring FilesController::MAX_NAME_LENGTH and
+// MAX_SUMMARY_LENGTH in the API. Checked here only to fail fast with a readable
+// message; the backend rejects over-long input with a 422 regardless.
+const MAX_NAME_LENGTH = 255
+const MAX_SUMMARY_LENGTH = 2000
+
+// Reactive state variables. Vue's 'ref' makes these variables reactive,
 // meaning the UI will automatically update when their values change.
 const fileSystem = ref<FileSystemNode[]>([])
 const selectedNodeId = ref<number | null>(null)
@@ -144,6 +150,11 @@ const handleRootAction = (action: string) => {
     }
 }
 
+/**
+ * Closes the root menu on any click landing outside its trigger. Registered as a
+ * document listener while the menu is open. TreeItem solves the same problem for
+ * per-node menus with the v-click-outside directive.
+ */
 const closeRootMenu = (e: MouseEvent) => {
     const trigger = document.querySelector('.root-menu-trigger')
     if (trigger && !trigger.contains(e.target as Node)) {
@@ -214,13 +225,13 @@ const submitModal = async () => {
         showError.value = true
         return
     }
-    if (name.length > 255) {
-        errorMessage.value = 'Name must be 255 characters or fewer.'
+    if (name.length > MAX_NAME_LENGTH) {
+        errorMessage.value = `Name must be ${MAX_NAME_LENGTH} characters or fewer.`
         showError.value = true
         return
     }
-    if (modalContextVisible.value && modalInputContext.value.length > 2000) {
-        errorMessage.value = 'Context/summary must be 2000 characters or fewer.'
+    if (modalContextVisible.value && modalInputContext.value.length > MAX_SUMMARY_LENGTH) {
+        errorMessage.value = `Context/summary must be ${MAX_SUMMARY_LENGTH} characters or fewer.`
         showError.value = true
         return
     }
