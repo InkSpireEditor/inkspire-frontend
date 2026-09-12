@@ -130,33 +130,98 @@ describe('Text.vue', () => {
     )
   })
 
-  it('calls llm service and applies text directly', async () => {
+  /** Mounts the editor with a file open and the generate mock cleared. */
+  const mountWithFile = async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
     selectedFileId.value = 1
     await flushPromises()
     await wrapper.vm.$nextTick()
-    
-    // Clear mock calls from loadFile/auto-save setup
     vi.mocked(filesManagerService.updateFileContent).mockClear()
+    return wrapper
+  }
 
-    vi.mocked(llmService.generate).mockResolvedValue('AI generated text')
+  const clickButton = async (wrapper: ReturnType<typeof mount>, label: string) => {
+    const button = wrapper.findAll('button').find(b => b.text() === label)
+    await button?.trigger('click')
+    return button
+  }
 
-    // Find "Generate" button
-    const generateBtn = wrapper.findAll('button').find(b => b.text() === 'Generate')
-    await generateBtn?.trigger('click')
-    
+  it('appends each delta as it arrives and saves the result', async () => {
+    const wrapper = await mountWithFile()
+
+    vi.mocked(llmService.generate).mockImplementation(async (_model, _prompt, onDelta) => {
+      onDelta(' and')
+      onDelta(' then.')
+    })
+
+    await clickButton(wrapper, 'Generate')
     await flushPromises()
 
     expect(llmService.generate).toHaveBeenCalledWith(
-      1,
       'llama3',
-      'Initial content'
+      'Initial content',
+      expect.any(Function),
+      expect.any(AbortSignal)
     )
+
     const vm = wrapper.vm as any
-    expect(vm.text).toBe('Initial contentAI generated text')
-    // Should NOT be called again after generate because backend already saved
-    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+    expect(vm.text).toBe('Initial content and then.')
+    // The API writes nothing now, so the client has to save what it appended.
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+      1,
+      'Initial content and then.'
+    )
+  })
+
+  it('offers Stop while generating and aborts when it is clicked', async () => {
+    const wrapper = await mountWithFile()
+
+    let captured: AbortSignal | undefined
+    let finish: () => void = () => {}
+    vi.mocked(llmService.generate).mockImplementation(
+      (_model, _prompt, _onDelta, signal) => {
+        captured = signal
+        return new Promise<void>((resolve) => {
+          finish = resolve
+          signal?.addEventListener('abort', () => resolve())
+        })
+      }
+    )
+
+    expect(wrapper.findAll('button').some(b => b.text() === 'Stop')).toBe(false)
+
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+    expect(wrapper.findAll('button').some(b => b.text() === 'Stop')).toBe(true)
+
+    await clickButton(wrapper, 'Stop')
+    await flushPromises()
+
+    expect(captured?.aborted).toBe(true)
+    expect(wrapper.findAll('button').some(b => b.text() === 'Stop')).toBe(false)
+    finish()
+  })
+
+  it('keeps the text that arrived before a failure', async () => {
+    const wrapper = await mountWithFile()
+
+    vi.mocked(llmService.generate).mockImplementation(async (_model, _prompt, onDelta) => {
+      onDelta(' as far as here')
+      throw new Error('provider went away')
+    })
+
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    expect(vm.text).toBe('Initial content as far as here')
+    expect(vm.errorMessage).toBe('provider went away')
+    // Partial text is still the writer's, so it is saved rather than discarded.
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+      1,
+      'Initial content as far as here'
+    )
   })
 })
