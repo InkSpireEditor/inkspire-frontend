@@ -88,7 +88,15 @@ const handleContentChange = (newContent: string) => {
 }
 
 const isGenerating = ref(false)
+let generation: AbortController | null = null
 
+/**
+ * Appends a continuation of the current text, a chunk at a time as the model writes it.
+ *
+ * The API saves nothing, so every chunk marks the document dirty and the auto-save
+ * timer writes it back. Text that arrived before a failure is kept: it is as much the
+ * writer's to keep or undo as anything they typed.
+ */
 const handleGenerate = async () => {
   if (isGenerating.value) return
   if (!text.value) return
@@ -100,22 +108,33 @@ const handleGenerate = async () => {
   if (!isLoggedIn() || !currentFileID.value) return
 
   isGenerating.value = true
+  generation = new AbortController()
   try {
-    const result = await llmService.generate(
-      currentFileID.value,
+    await llmService.generate(
       selectedModelName.value,
-      text.value
+      text.value,
+      (delta) => {
+        text.value += delta
+        isDirty.value = true
+      },
+      generation.signal
     )
-
-    if (result) {
-      text.value += result
-    }
   } catch (e) {
-    console.error('Error generating text:', e)
-    displayError('Error generating text')
+    // Stopping on purpose is not a failure and needs no message.
+    if (!(e instanceof DOMException && e.name === 'AbortError')) {
+      console.error('Error generating text:', e)
+      displayError(e instanceof Error ? e.message : 'Error generating text')
+    }
   } finally {
     isGenerating.value = false
+    generation = null
+    save()
   }
+}
+
+/** Stops a generation in progress, keeping whatever has arrived so far. */
+const handleStopGenerating = () => {
+  generation?.abort()
 }
 
 const displayError = (msg: string) => {
@@ -161,6 +180,7 @@ onUnmounted(() => {
 
       <div class="actions">
         <button @click="save" :disabled="!currentFileID">Save</button>
+        <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
         <button class="primary" @click="handleGenerate" :disabled="!currentFileID || isGenerating" :class="{ generating: isGenerating }">
           {{ isGenerating ? 'Generating…' : 'Generate' }}
         </button>
