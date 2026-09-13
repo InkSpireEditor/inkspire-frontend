@@ -59,7 +59,7 @@ describe('Tree.vue', () => {
         await flushPromises()
 
         expect(filesManagerService.getTree).toHaveBeenCalledWith()
-        expect(filesManagerService.getDirContent).toHaveBeenCalledWith(1)
+        expect(filesManagerService.getDirContent).toHaveBeenCalledWith("1")
 
         const treeItems = wrapper.findAllComponents(TreeItem)
         const dirA = treeItems.find(item => item.props('node').name === 'DirA')

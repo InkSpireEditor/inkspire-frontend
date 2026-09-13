@@ -2,11 +2,11 @@ import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
 
 export interface FileSystemNode {
-    id: number;
+    id: string;
     name: string;
     type: "D" | "F";
     children?: FileSystemNode[];
-    parentId?: number;
+    parentId?: string;
 }
 
 export interface TreeApiResponse {
@@ -28,7 +28,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async getDirContent(dirId: number): Promise<DirApiResponse> {
+    async getDirContent(dirId: string): Promise<DirApiResponse> {
         const response = await apiFetch(`${API_URL}/dir/${dirId}`, {
             headers: jsonHeaders(),
         });
@@ -36,7 +36,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async addFile(name: string, parentId: number | null) {
+    async addFile(name: string, parentId: string | null) {
         const response = await apiFetch(`${API_URL}/file`, {
             method: "POST",
             headers: jsonHeaders(),
@@ -46,7 +46,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async addDir(name: string, context: string, parentId: number | null) {
+    async addDir(name: string, context: string, parentId: string | null) {
         const response = await apiFetch(`${API_URL}/dir`, {
             method: "POST",
             headers: jsonHeaders(),
@@ -56,7 +56,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async editFile(id: number, name: string) {
+    async editFile(id: string, name: string) {
         const response = await apiFetch(`${API_URL}/file/${id}`, {
             method: "PUT",
             headers: jsonHeaders(),
@@ -66,7 +66,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async editDir(id: number, name: string, context: string) {
+    async editDir(id: string, name: string, context: string) {
         const response = await apiFetch(`${API_URL}/dir/${id}`, {
             method: "PUT",
             headers: jsonHeaders(),
@@ -76,7 +76,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async delFile(id: number) {
+    async delFile(id: string) {
         const response = await apiFetch(`${API_URL}/file/${id}`, {
             method: "DELETE",
             headers: jsonHeaders(),
@@ -86,7 +86,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async delDir(id: number) {
+    async delDir(id: string) {
         const response = await apiFetch(`${API_URL}/dir/${id}`, {
             method: "DELETE",
             headers: jsonHeaders(),
@@ -96,7 +96,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async getFileInfo(id: number) {
+    async getFileInfo(id: string) {
         const response = await apiFetch(`${API_URL}/file/${id}`, {
             headers: jsonHeaders(),
         });
@@ -104,7 +104,7 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async getFileContent(id: number) {
+    async getFileContent(id: string) {
         const response = await apiFetch(`${API_URL}/file/${id}/contents`, {
             headers: { ...jsonHeaders(), Accept: "text/plain" },
         });
@@ -112,7 +112,7 @@ export const filesManagerService = {
         return response.text();
     },
 
-    async updateFileContent(id: number, content: string) {
+    async updateFileContent(id: string, content: string) {
         const response = await apiFetch(`${API_URL}/file/${id}/contents`, {
             method: "PUT",
             headers: { ...jsonHeaders(), "Content-Type": "text/plain" },

@@ -11,16 +11,15 @@ import { isLoggedIn, logout } from '../services/api'
 const { toggleTheme, isDarkMode } = useTheme()
 const { setSelectedFile } = useSharedFiles()
 
-// Client-side input limits, mirroring FilesController::MAX_NAME_LENGTH and
-// MAX_SUMMARY_LENGTH in the API. Checked here only to fail fast with a readable
-// message; the backend rejects over-long input with a 422 regardless.
+// Client-side input limits, mirroring the API's. Checked here only to fail fast
+// with a readable message; the backend rejects over-long input regardless.
 const MAX_NAME_LENGTH = 255
 const MAX_SUMMARY_LENGTH = 2000
 
 // Reactive state variables. Vue's 'ref' makes these variables reactive,
 // meaning the UI will automatically update when their values change.
 const fileSystem = ref<FileSystemNode[]>([])
-const selectedNodeId = ref<number | null>(null)
+const selectedNodeId = ref<string | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -31,7 +30,7 @@ const modalTitle = ref('')
 const modalInputName = ref('')
 const modalInputContext = ref('')
 const modalContextVisible = ref(false)
-const targetNodeId = ref<number | null>(null)
+const targetNodeId = ref<string | null>(null)
 const nodeToEdit = ref<FileSystemNode | null>(null)
 
 // Confirmation Dialog State Management
@@ -51,7 +50,7 @@ const showRootMenu = ref(false)
 provide('treeContext', {
   selectedNodeId: readonly(selectedNodeId), // Expose as readonly to ensure only this component mutates it
   onSelect: (node: FileSystemNode) => handleSelect(node),
-  onAction: (action: string, node: FileSystemNode | null, parentId: number | null = null) => handleNodeAction(action, node, parentId)
+  onAction: (action: string, node: FileSystemNode | null, parentId: string | null = null) => handleNodeAction(action, node, parentId)
 })
 
 /**
@@ -74,7 +73,7 @@ const fetchTree = async () => {
     // 1. Collect Root Files
     for (const id in files) {
         rootFiles.push({
-            id: parseInt(id),
+            id,
             name: files[id]!.name,
             type: 'F'
         })
@@ -82,30 +81,29 @@ const fetchTree = async () => {
 
     // 2. Collect Directories and fetch their content
     const dirPromises = Object.entries(dirs).map(async ([id, dir]: [string, TreeApiResponse['dirs'][string]]) => {
-        const dirId = parseInt(id)
         const dirNode: FileSystemNode = {
-            id: dirId,
+            id,
             name: dir.name,
             type: 'D',
             children: []
         }
         
         try {
-            const content = await filesManagerService.getDirContent(dirId)
+            const content = await filesManagerService.getDirContent(id)
             const contentFiles = content.files || {}
             const children: FileSystemNode[] = []
             for(const fileId in contentFiles) {
                 children.push({
-                    id: parseInt(fileId),
+                    id: fileId,
                     name: contentFiles[fileId]!.name,
                     type: 'F',
-                    parentId: dirId // Associate file with its parent directory
+                    parentId: id // Associate file with its parent directory
                 })
             }
             // Sort children alphabetically
             dirNode.children = children.sort((a, b) => a.name.localeCompare(b.name))
         } catch (e) {
-            console.error(`Failed to load content for dir ${dirId}`, e)
+            console.error(`Failed to load content for dir ${id}`, e)
         }
         
         return dirNode
@@ -168,7 +166,7 @@ const closeRootMenu = (e: MouseEvent) => {
  * @param node The context node.
  * @param parentId Optional parent ID for creation actions.
  */
-const handleNodeAction = (action: string, node: FileSystemNode | null, parentId: number | null = null) => {
+const handleNodeAction = (action: string, node: FileSystemNode | null, parentId: string | null = null) => {
     if (action === 'create-file') {
         openModal('create-file', parentId) // parentId comes from the directory node
     } else if (action === 'edit' && node) {
@@ -186,7 +184,7 @@ const handleNodeAction = (action: string, node: FileSystemNode | null, parentId:
  * @param targetId The ID of the target directory (for creation) or node (for edit).
  * @param node The node object if editing.
  */
-const openModal = async (type: 'create-file' | 'create-dir' | 'edit', targetId: number | null, node: FileSystemNode | null = null) => {
+const openModal = async (type: 'create-file' | 'create-dir' | 'edit', targetId: string | null, node: FileSystemNode | null = null) => {
     modalType.value = type
     targetNodeId.value = targetId
     nodeToEdit.value = node

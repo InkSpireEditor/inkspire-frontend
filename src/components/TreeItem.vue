@@ -24,9 +24,9 @@ const BASE_PADDING_PX = 16
  * these handlers would mean threading them through every level.
  */
 interface TreeContext {
-  selectedNodeId: Ref<number | null>
+  selectedNodeId: Ref<string | null>
   onSelect: (node: FileSystemNode) => void
-  onAction: (action: string, node: FileSystemNode | null, parentId?: number | null) => void
+  onAction: (action: string, node: FileSystemNode | null, parentId?: string | null) => void
 }
 
 // 'inject' retrieves the state and methods provided by the ancestor 'Tree' component.

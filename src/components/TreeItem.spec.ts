@@ -7,7 +7,7 @@ import type { FileSystemNode } from '../services/filesManager'
 describe('TreeItem.vue', () => {
   const mockOnSelect = vi.fn()
   const mockOnAction = vi.fn()
-  const selectedNodeId = ref<number | null>(null)
+  const selectedNodeId = ref<string | null>(null)
 
   const treeContext = {
     selectedNodeId,
@@ -16,17 +16,17 @@ describe('TreeItem.vue', () => {
   }
 
   const fileNode: FileSystemNode = {
-    id: 1,
+    id: '1abcdef012345678',
     name: 'test-file.txt',
     type: 'F'
   }
 
   const folderNode: FileSystemNode = {
-    id: 2,
+    id: '2abcdef012345678',
     name: 'test-folder',
     type: 'D',
     children: [
-      { id: 3, name: 'child-file.txt', type: 'F' }
+      { id: '3a1b2c3d4e5f6071', name: 'child-file.txt', type: 'F' }
     ]
   }
 
