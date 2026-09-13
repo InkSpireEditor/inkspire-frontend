@@ -2,6 +2,7 @@
   "name": "inkspire-frontend-vue",
   "version": "0.0.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
