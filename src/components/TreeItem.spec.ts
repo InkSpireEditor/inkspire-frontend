@@ -9,8 +9,11 @@ describe('TreeItem.vue', () => {
   const mockOnAction = vi.fn()
   const selectedNodeId = ref<string | null>(null)
 
+  const space = ref<'stories' | 'notes'>('stories')
+
   const treeContext = {
     selectedNodeId,
+    space,
     onSelect: mockOnSelect,
     onAction: mockOnAction
   }
@@ -51,8 +54,20 @@ describe('TreeItem.vue', () => {
   it('renders a folder node correctly', () => {
     const wrapper = mountTreeItem(folderNode)
     expect(wrapper.text()).toContain('test-folder')
-    expect(wrapper.find('.icon').text()).toBe('🗁')
     expect(wrapper.find('.toggle-icon').text()).toBe('▶')
+  })
+
+  it('marks a directory as a story or as a plain folder, by space', () => {
+    space.value = 'stories'
+    expect(mountTreeItem(folderNode).find('.icon').text()).toBe('📖')
+
+    space.value = 'notes'
+    expect(mountTreeItem(folderNode).find('.icon').text()).toBe('🗁')
+  })
+
+  it('shows a file the same way in either space', () => {
+    space.value = 'notes'
+    expect(mountTreeItem(fileNode).find('.icon').text()).toBe('📄')
   })
 
   it('calls onSelect when a file node is clicked', async () => {

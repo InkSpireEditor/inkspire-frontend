@@ -33,10 +33,10 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.getTree()
+            const response = await filesManagerService.getTree('stories')
 
             expect(response).toEqual(mockResponse)
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/tree`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/tree`, {
                 headers: jsonHeaders,
                 credentials: 'include',
             })
@@ -50,7 +50,7 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.getTree()
+            const response = await filesManagerService.getTree('stories')
             expect(response).toEqual(mockResponse)
         })
 
@@ -61,7 +61,7 @@ describe('filesManagerService', () => {
                 statusText: 'Server Error',
             } as Response)
 
-            await expect(filesManagerService.getTree()).rejects.toThrow('Failed to fetch tree')
+            await expect(filesManagerService.getTree('stories')).rejects.toThrow('Failed to fetch tree')
         })
     })
 
@@ -80,10 +80,10 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.getDirContent(dirId)
+            const response = await filesManagerService.getDirContent('stories', dirId)
             expect(response).toEqual(mockResponse)
 
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/dir/${dirId}`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/dir/${dirId}`, {
                 headers: jsonHeaders,
                 credentials: 'include',
             })
@@ -98,7 +98,7 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.getDirContent(dirId)
+            const response = await filesManagerService.getDirContent('stories', dirId)
             expect(response).toEqual(mockResponse)
         })
 
@@ -111,7 +111,7 @@ describe('filesManagerService', () => {
                 statusText: 'Not Found',
             } as Response)
 
-            await expect(filesManagerService.getDirContent(dirId)).rejects.toThrow(`Failed to fetch content for dir ${dirId}`)
+            await expect(filesManagerService.getDirContent('stories', dirId)).rejects.toThrow(`Failed to fetch content for dir ${dirId}`)
         })
     })
 
@@ -125,10 +125,10 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.addFile(fileName, null)
+            const response = await filesManagerService.addFile('stories', fileName, null)
             expect(response).toEqual(mockResponse)
 
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/file`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file`, {
                 method: 'POST',
                 headers: jsonHeaders,
                 body: JSON.stringify({ name: fileName, dir: null }),
@@ -146,10 +146,10 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.addFile(fileName, dirId)
+            const response = await filesManagerService.addFile('stories', fileName, dirId)
             expect(response).toEqual(mockResponse)
 
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/file`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file`, {
                 method: 'POST',
                 headers: jsonHeaders,
                 body: JSON.stringify({ name: fileName, dir: dirId }),
@@ -165,7 +165,7 @@ describe('filesManagerService', () => {
                 status: 500,
             } as Response)
 
-            await expect(filesManagerService.addFile(fileName, null)).rejects.toThrow('Failed to create file')
+            await expect(filesManagerService.addFile('stories', fileName, null)).rejects.toThrow('Failed to create file')
         })
     })
 
@@ -180,10 +180,10 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.addDir(dirName, dirContext, null)
+            const response = await filesManagerService.addDir('stories', dirName, dirContext)
             expect(response).toEqual(mockResponse)
 
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/dir`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/dir`, {
                 method: 'POST',
                 headers: jsonHeaders,
                 body: JSON.stringify({ name: dirName, summary: dirContext }),
@@ -203,10 +203,10 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.delFile(fileId)
+            const response = await filesManagerService.delFile('stories', fileId)
             expect(response).toEqual(mockResponse)
 
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/file/${fileId}`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/${fileId}`, {
                 method: 'DELETE',
                 headers: jsonHeaders,
                 credentials: 'include',
@@ -221,7 +221,7 @@ describe('filesManagerService', () => {
                 status: 204,
             } as Response)
 
-            const response = await filesManagerService.delFile(fileId)
+            const response = await filesManagerService.delFile('stories', fileId)
             expect(response).toBeNull()
         })
 
@@ -233,7 +233,7 @@ describe('filesManagerService', () => {
                 status: 404,
             } as Response)
 
-            await expect(filesManagerService.delFile(fileId)).rejects.toThrow('Failed to delete file')
+            await expect(filesManagerService.delFile('stories', fileId)).rejects.toThrow('Failed to delete file')
         })
     })
 
@@ -248,10 +248,10 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.delDir(dirId)
+            const response = await filesManagerService.delDir('stories', dirId)
             expect(response).toEqual(mockResponse)
 
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/dir/${dirId}`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/dir/${dirId}`, {
                 method: 'DELETE',
                 headers: jsonHeaders,
                 credentials: 'include',
@@ -266,7 +266,7 @@ describe('filesManagerService', () => {
                 status: 204,
             } as Response)
 
-            const response = await filesManagerService.delDir(dirId)
+            const response = await filesManagerService.delDir('stories', dirId)
             expect(response).toBeNull()
         })
 
@@ -278,7 +278,7 @@ describe('filesManagerService', () => {
                 status: 404,
             } as Response)
 
-            await expect(filesManagerService.delDir(dirId)).rejects.toThrow('Failed to delete directory')
+            await expect(filesManagerService.delDir('stories', dirId)).rejects.toThrow('Failed to delete directory')
         })
     })
 
@@ -292,9 +292,9 @@ describe('filesManagerService', () => {
                 json: async () => mockResponse,
             } as Response)
 
-            const response = await filesManagerService.getFileInfo(fileId)
+            const response = await filesManagerService.getFileInfo('stories', fileId)
             expect(response).toEqual(mockResponse)
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/file/${fileId}`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/${fileId}`, {
                 headers: jsonHeaders,
                 credentials: 'include',
             })
@@ -311,9 +311,9 @@ describe('filesManagerService', () => {
                 text: async () => mockContent,
             } as Response)
 
-            const response = await filesManagerService.getFileContent(fileId)
+            const response = await filesManagerService.getFileContent('stories', fileId)
             expect(response).toBe(mockContent)
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/file/${fileId}/contents`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/${fileId}/contents`, {
                 headers: { ...jsonHeaders, Accept: 'text/plain' },
                 credentials: 'include',
             })
@@ -331,9 +331,9 @@ describe('filesManagerService', () => {
                 text: async () => 'Success',
             } as Response)
 
-            const response = await filesManagerService.updateFileContent(fileId, content)
+            const response = await filesManagerService.updateFileContent('stories', fileId, content)
             expect(response).toBe('Success')
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/file/${fileId}/contents`, {
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/${fileId}/contents`, {
                 method: 'PUT',
                 headers: { ...jsonHeaders, 'Content-Type': 'text/plain' },
                 body: content,
@@ -342,4 +342,36 @@ describe('filesManagerService', () => {
         })
     })
 
+})
+
+describe('the two spaces', () => {
+    const fetchSpy = vi.spyOn(window, 'fetch')
+
+    beforeEach(() => {
+        fetchSpy.mockReset()
+        fetchSpy.mockResolvedValue({ ok: true, json: async () => ({}) } as Response)
+    })
+
+    it('reads each tree from its own route', async () => {
+        await filesManagerService.getTree('stories')
+        expect(fetchSpy).toHaveBeenLastCalledWith(`${API_URL}/stories/tree`, expect.anything())
+
+        await filesManagerService.getTree('notes')
+        expect(fetchSpy).toHaveBeenLastCalledWith(`${API_URL}/notes/tree`, expect.anything())
+    })
+
+    it('creates a file at the root of the notes space', async () => {
+        await filesManagerService.addFile('notes', 'Scratch Pad', null)
+
+        expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/notes/file`, expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({ name: 'Scratch Pad', dir: null }),
+        }))
+    })
+
+    it('reads a note through the notes routes', async () => {
+        const id = '0123456789abcdef'
+        await filesManagerService.getFileInfo('notes', id)
+        expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/notes/file/${id}`, expect.anything())
+    })
 })

@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, provide, readonly } from 'vue'
+import { computed, ref, onMounted, onUnmounted, provide, readonly } from 'vue'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
 import { filesManagerService, type FileSystemNode, type TreeApiResponse } from '../services/filesManager'
 import { useTheme } from '../services/theme'
 import { useSharedFiles } from '../services/sharedFiles'
+import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../services/spaces'
 import { isLoggedIn, logout } from '../services/api'
 
 const { toggleTheme, isDarkMode } = useTheme()
-const { setSelectedFile } = useSharedFiles()
+const { setSelectedFile, clearSelectedFile } = useSharedFiles()
+
+/** Which tab was open last time, so a reload comes back where it was left. */
+const ACTIVE_SPACE_KEY = 'activeSpace'
 
 // Client-side input limits, mirroring the API's. Checked here only to fail fast
 // with a readable message; the backend rejects over-long input regardless.
@@ -18,7 +22,13 @@ const MAX_SUMMARY_LENGTH = 2000
 
 // Reactive state variables. Vue's 'ref' makes these variables reactive,
 // meaning the UI will automatically update when their values change.
-const fileSystem = ref<FileSystemNode[]>([])
+//
+// One tree per space, so switching tabs shows what was already fetched instead of
+// refetching it. The active tab is what the actions below act on.
+const activeSpace = ref<Space>(asSpace(localStorage.getItem(ACTIVE_SPACE_KEY)))
+const trees = ref<Record<Space, FileSystemNode[]>>({ stories: [], notes: [] })
+const fetched = ref<Record<Space, boolean>>({ stories: false, notes: false })
+const fileSystem = computed(() => trees.value[activeSpace.value])
 const selectedNodeId = ref<string | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -49,21 +59,24 @@ const showRootMenu = ref(false)
 // (like TreeItem) without having to pass props through every level of the tree.
 provide('treeContext', {
   selectedNodeId: readonly(selectedNodeId), // Expose as readonly to ensure only this component mutates it
+  space: readonly(activeSpace), // Which root the node is in, which decides its icon
   onSelect: (node: FileSystemNode) => handleSelect(node),
   onAction: (action: string, node: FileSystemNode | null, parentId: string | null = null) => handleNodeAction(action, node, parentId)
 })
 
 /**
- * Fetches the file system tree from the backend.
- * Populates the tree with root directories and files, fetching directory content in parallel.
+ * Fetches one space's tree from the backend.
+ * Populates it with root directories and files, fetching directory content in parallel.
  * Sorts the result so directories appear before files.
+ *
+ * Both spaces answer the same shape, so this reads either one.
  */
-const fetchTree = async () => {
+const fetchTree = async (space: Space) => {
   if (!isLoggedIn()) return
 
   loading.value = true
   try {
-    const response = await filesManagerService.getTree()
+    const response = await filesManagerService.getTree(space)
     
     const dirs = response.dirs || {}
     const files = response.files || {}
@@ -89,7 +102,7 @@ const fetchTree = async () => {
         }
         
         try {
-            const content = await filesManagerService.getDirContent(id)
+            const content = await filesManagerService.getDirContent(space, id)
             const contentFiles = content.files || {}
             const children: FileSystemNode[] = []
             for(const fileId in contentFiles) {
@@ -115,12 +128,24 @@ const fetchTree = async () => {
     loadedDirs.sort((a, b) => a.name.localeCompare(b.name))
     rootFiles.sort((a, b) => a.name.localeCompare(b.name))
     
-    fileSystem.value = [...loadedDirs, ...rootFiles]
+    trees.value[space] = [...loadedDirs, ...rootFiles]
+    fetched.value[space] = true
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Unknown error'
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * Shows a space, fetching its tree the first time it is opened.
+ * The selection is left alone: a file stays open while the other tab is read.
+ */
+const selectSpace = (space: Space) => {
+  activeSpace.value = space
+  localStorage.setItem(ACTIVE_SPACE_KEY, space)
+  error.value = null
+  if (!fetched.value[space]) fetchTree(space)
 }
 
 /**
@@ -130,7 +155,7 @@ const fetchTree = async () => {
  */
 const handleSelect = (node: FileSystemNode) => {
   selectedNodeId.value = node.id
-  setSelectedFile(node.id)
+  setSelectedFile(activeSpace.value, node.id)
 }
 
 /**
@@ -202,7 +227,7 @@ const openModal = async (type: 'create-file' | 'create-dir' | 'edit', targetId: 
         modalContextVisible.value = node?.type === 'D'
         if (node?.type === 'D') {
             try {
-                const content = await filesManagerService.getDirContent(node.id)
+                const content = await filesManagerService.getDirContent(activeSpace.value, node.id)
                 modalInputContext.value = content.summary || ''
             } catch (e) {
                 console.error('Failed to fetch directory details for edit', e)
@@ -237,20 +262,21 @@ const submitModal = async () => {
     if (!isLoggedIn()) return
 
     try {
+        const space = activeSpace.value
         if (modalType.value === 'create-file') {
-            await filesManagerService.addFile(name, targetNodeId.value)
+            await filesManagerService.addFile(space, name, targetNodeId.value)
         } else if (modalType.value === 'create-dir') {
-            await filesManagerService.addDir(name, modalInputContext.value, targetNodeId.value)
+            await filesManagerService.addDir(space, name, modalInputContext.value)
         } else if (modalType.value === 'edit' && nodeToEdit.value) {
             if (nodeToEdit.value.type === 'D') {
-                await filesManagerService.editDir(nodeToEdit.value.id, name, modalInputContext.value)
+                await filesManagerService.editDir(space, nodeToEdit.value.id, name, modalInputContext.value)
             } else {
-                await filesManagerService.editFile(nodeToEdit.value.id, name)
+                await filesManagerService.editFile(space, nodeToEdit.value.id, name)
             }
         }
         
         showModal.value = false
-        fetchTree() // Refresh tree
+        fetchTree(space) // Refresh tree
     } catch (e) {
         errorMessage.value = 'Operation failed'
         showError.value = true
@@ -264,18 +290,19 @@ const submitModal = async () => {
 const confirmDelete = async () => {
     if (!isLoggedIn() || !nodeToDelete.value) return
 
+    const space = activeSpace.value
     try {
         if (nodeToDelete.value.type === 'D') {
-            await filesManagerService.delDir(nodeToDelete.value.id)
+            await filesManagerService.delDir(space, nodeToDelete.value.id)
         } else {
             if (selectedNodeId.value === nodeToDelete.value.id) {
-                setSelectedFile(null)
+                clearSelectedFile()
                 selectedNodeId.value = null
             }
-            await filesManagerService.delFile(nodeToDelete.value.id)
+            await filesManagerService.delFile(space, nodeToDelete.value.id)
         }
         showConfirm.value = false
-        fetchTree()
+        fetchTree(space)
     } catch (e) {
         errorMessage.value = 'Delete failed'
         showError.value = true
@@ -289,11 +316,11 @@ const confirmDelete = async () => {
  */
 const handleLogout = async () => {
     await logout()
-    setSelectedFile(null)
+    clearSelectedFile()
 }
 
 onMounted(() => {
-    fetchTree()
+    fetchTree(activeSpace.value)
     document.addEventListener('click', closeRootMenu)
 })
 
@@ -314,12 +341,29 @@ onUnmounted(() => {
         <div class="root-menu-trigger">
             <button class="icon-btn" @click.stop="showRootMenu = !showRootMenu">⋮</button>
             <div class="root-menu" v-show="showRootMenu">
-                <div @click="handleRootAction('create-file')">New File</div>
-                <div @click="handleRootAction('create-dir')">New Directory</div>
+                <!-- A chapter belongs to a story, so there is no file to create at the
+                     root of that space. -->
+                <div v-if="allowsRootFiles(activeSpace)" @click="handleRootAction('create-file')">New File</div>
+                <div @click="handleRootAction('create-dir')">
+                  {{ activeSpace === 'stories' ? 'New Story' : 'New Directory' }}
+                </div>
                 <div @click="handleRootAction('logout')">Logout</div>
             </div>
         </div>
       </div>
+    </div>
+
+    <!-- One tab per root: the stories, and everything that is not a novel. -->
+    <div class="space-tabs" role="tablist">
+      <button
+        v-for="space in SPACES"
+        :key="space"
+        class="space-tab"
+        role="tab"
+        :class="{ active: space === activeSpace }"
+        :aria-selected="space === activeSpace"
+        @click="selectSpace(space)"
+      >{{ SPACE_LABELS[space] }}</button>
     </div>
 
     <div class="tree-content" v-if="loading">Loading...</div>
@@ -387,6 +431,40 @@ onUnmounted(() => {
   background-color: var(--color-background);
   box-shadow: var(--shadow-normal);
   border-right: 1px solid var(--color-border);
+}
+
+.space-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-background-soft);
+}
+
+.space-tab {
+  flex: 1;
+  padding: var(--space-2) 0;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.space-tab:hover {
+  background-color: var(--hover-background);
+}
+
+.space-tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background-color: var(--color-background);
+}
+
+.space-tab:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .title-bar {

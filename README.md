@@ -19,7 +19,8 @@ InkSpire is a modern web-based text editor designed for writers who want to leve
 - **AI-Powered Writing Tools**  
   Rephrase, translate, or expand text directly in your editor.
 - **File System Navigation**  
-  Hierarchical tree view to organize and manage your files.
+  Two tabs in the sidebar: the stories, and everything that is not a novel. A story
+  holds its chapters; the other tab holds notes, at its root or in a folder.
 - **Clean and Focused Editor**  
   A distraction-free writing environment with a modern interface.
 - **Authentication**  

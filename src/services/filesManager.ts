@@ -1,5 +1,6 @@
 import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
+import type { Space } from './spaces';
 
 export interface FileSystemNode {
     id: string;
@@ -20,24 +21,24 @@ export interface DirApiResponse {
 }
 
 export const filesManagerService = {
-    async getTree(): Promise<TreeApiResponse> {
-        const response = await apiFetch(`${API_URL}/tree`, {
+    async getTree(space: Space): Promise<TreeApiResponse> {
+        const response = await apiFetch(`${API_URL}/${space}/tree`, {
             headers: jsonHeaders(),
         });
         if (!response.ok) throw new Error("Failed to fetch tree");
         return response.json();
     },
 
-    async getDirContent(dirId: string): Promise<DirApiResponse> {
-        const response = await apiFetch(`${API_URL}/dir/${dirId}`, {
+    async getDirContent(space: Space, dirId: string): Promise<DirApiResponse> {
+        const response = await apiFetch(`${API_URL}/${space}/dir/${dirId}`, {
             headers: jsonHeaders(),
         });
         if (!response.ok) throw new Error(`Failed to fetch content for dir ${dirId}`);
         return response.json();
     },
 
-    async addFile(name: string, parentId: string | null) {
-        const response = await apiFetch(`${API_URL}/file`, {
+    async addFile(space: Space, name: string, parentId: string | null) {
+        const response = await apiFetch(`${API_URL}/${space}/file`, {
             method: "POST",
             headers: jsonHeaders(),
             body: JSON.stringify({ name, dir: parentId }), // Backend expects 'dir'
@@ -46,8 +47,8 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async addDir(name: string, context: string, parentId: string | null) {
-        const response = await apiFetch(`${API_URL}/dir`, {
+    async addDir(space: Space, name: string, context: string) {
+        const response = await apiFetch(`${API_URL}/${space}/dir`, {
             method: "POST",
             headers: jsonHeaders(),
             body: JSON.stringify({ name, summary: context }), // Backend expects 'summary'
@@ -56,8 +57,8 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async editFile(id: string, name: string) {
-        const response = await apiFetch(`${API_URL}/file/${id}`, {
+    async editFile(space: Space, id: string, name: string) {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}`, {
             method: "PUT",
             headers: jsonHeaders(),
             body: JSON.stringify({ name }),
@@ -66,8 +67,8 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async editDir(id: string, name: string, context: string) {
-        const response = await apiFetch(`${API_URL}/dir/${id}`, {
+    async editDir(space: Space, id: string, name: string, context: string) {
+        const response = await apiFetch(`${API_URL}/${space}/dir/${id}`, {
             method: "PUT",
             headers: jsonHeaders(),
             body: JSON.stringify({ name, summary: context }), // Backend expects 'summary'
@@ -76,8 +77,8 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async delFile(id: string) {
-        const response = await apiFetch(`${API_URL}/file/${id}`, {
+    async delFile(space: Space, id: string) {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}`, {
             method: "DELETE",
             headers: jsonHeaders(),
         });
@@ -86,8 +87,8 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async delDir(id: string) {
-        const response = await apiFetch(`${API_URL}/dir/${id}`, {
+    async delDir(space: Space, id: string) {
+        const response = await apiFetch(`${API_URL}/${space}/dir/${id}`, {
             method: "DELETE",
             headers: jsonHeaders(),
         });
@@ -96,24 +97,24 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async getFileInfo(id: string) {
-        const response = await apiFetch(`${API_URL}/file/${id}`, {
+    async getFileInfo(space: Space, id: string) {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}`, {
             headers: jsonHeaders(),
         });
         if (!response.ok) throw new Error("Failed to fetch file info");
         return response.json();
     },
 
-    async getFileContent(id: string) {
-        const response = await apiFetch(`${API_URL}/file/${id}/contents`, {
+    async getFileContent(space: Space, id: string) {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}/contents`, {
             headers: { ...jsonHeaders(), Accept: "text/plain" },
         });
         if (!response.ok) throw new Error("Failed to fetch file content");
         return response.text();
     },
 
-    async updateFileContent(id: string, content: string) {
-        const response = await apiFetch(`${API_URL}/file/${id}/contents`, {
+    async updateFileContent(space: Space, id: string, content: string) {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}/contents`, {
             method: "PUT",
             headers: { ...jsonHeaders(), "Content-Type": "text/plain" },
             body: content,

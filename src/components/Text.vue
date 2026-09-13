@@ -2,13 +2,13 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService } from '../services/filesManager'
 import { llmService } from '../services/llm'
-import { useSharedFiles } from '../services/sharedFiles'
+import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
 import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 
-const { selectedFileId } = useSharedFiles()
+const { selectedFile } = useSharedFiles()
 const { selectedModelName } = useSharedModel()
 
 /** How often the editor writes unsaved changes back to the API, in ms. */
@@ -17,7 +17,7 @@ const AUTO_SAVE_INTERVAL_MS = 5000
 // --- Component State ---
 const text = ref('')
 const fileName = ref('')
-const currentFileID = ref<string | null>(null)
+const currentFile = ref<FileSelection | null>(null)
 const isDirty = ref(false)
 
 // Error state
@@ -28,20 +28,23 @@ let autoSaveTimer: number | null = null
 
 /**
  * Loads a file's name and content and starts the auto-save timer for it.
- * Called whenever selectedFileId changes to a non-null id.
+ * Called whenever the selection changes to a file.
+ *
+ * The content is the prose alone: the API keeps the file's header out of it, and puts
+ * the header back when the prose is saved.
  */
-const loadFile = async (fileId: string) => {
+const loadFile = async (file: FileSelection) => {
   if (!isLoggedIn()) return
 
   try {
     const [info, content] = await Promise.all([
-      filesManagerService.getFileInfo(fileId),
-      filesManagerService.getFileContent(fileId)
+      filesManagerService.getFileInfo(file.space, file.id),
+      filesManagerService.getFileContent(file.space, file.id)
     ])
 
     fileName.value = info.name
     text.value = content
-    currentFileID.value = fileId
+    currentFile.value = file
     isDirty.value = false
 
     startAutoSave()
@@ -56,10 +59,11 @@ const loadFile = async (fileId: string) => {
  * No-op when content has not changed since the last save.
  */
 const save = async () => {
-  if (!isLoggedIn() || !currentFileID.value || !isDirty.value) return
+  const file = currentFile.value
+  if (!isLoggedIn() || !file || !isDirty.value) return
 
   try {
-    await filesManagerService.updateFileContent(currentFileID.value, text.value)
+    await filesManagerService.updateFileContent(file.space, file.id, text.value)
     isDirty.value = false
   } catch (e) {
     console.error('Error saving file:', e)
@@ -105,7 +109,7 @@ const handleGenerate = async () => {
     return
   }
 
-  if (!isLoggedIn() || !currentFileID.value) return
+  if (!isLoggedIn() || !currentFile.value) return
 
   isGenerating.value = true
   generation = new AbortController()
@@ -143,26 +147,26 @@ const displayError = (msg: string) => {
 }
 
 // Watch for changes in selected file
-watch(selectedFileId, (newId) => {
+watch(selectedFile, (file) => {
   stopAutoSave()
-  if (newId) {
-    loadFile(newId)
+  if (file) {
+    loadFile(file)
   } else {
-    currentFileID.value = null
+    currentFile.value = null
     fileName.value = ''
     text.value = ''
   }
 })
 
 onMounted(() => {
-  if (selectedFileId.value) {
-    loadFile(selectedFileId.value)
+  if (selectedFile.value) {
+    loadFile(selectedFile.value)
   }
 })
 
 onUnmounted(() => {
   stopAutoSave()
-  if (currentFileID.value) {
+  if (currentFile.value) {
     save()
   }
 })
@@ -179,9 +183,9 @@ onUnmounted(() => {
       <MarkdownEditor :content="text" @content-change="handleContentChange" />
 
       <div class="actions">
-        <button @click="save" :disabled="!currentFileID">Save</button>
+        <button @click="save" :disabled="!currentFile">Save</button>
         <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
-        <button class="primary" @click="handleGenerate" :disabled="!currentFileID || isGenerating" :class="{ generating: isGenerating }">
+        <button class="primary" @click="handleGenerate" :disabled="!currentFile || isGenerating" :class="{ generating: isGenerating }">
           {{ isGenerating ? 'Generating…' : 'Generate' }}
         </button>
       </div>
