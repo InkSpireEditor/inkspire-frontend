@@ -80,7 +80,12 @@ Continuous integration and expanded test coverage are being progressively integr
 
 ## 📜 License
 
-This project is released under the [MIT License](LICENSE).
+This project is released under the [PolyForm Noncommercial License 1.0.0](LICENSE). Any
+noncommercial purpose is permitted, which the licence spells out as including personal
+study, hobby projects and use by charities, schools, public research organisations and
+government bodies. It grants no licence for commercial use. The `LICENSE` file is the
+terms; this paragraph is not.
+
 It is provided *as is*, without warranty, but every effort is made to ensure code reliability and responsible use of AI-generated components.
 
 ---
