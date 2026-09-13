@@ -2,6 +2,7 @@
 import { ref, computed, inject, type Ref } from 'vue'
 import type { FileSystemNode } from '../services/filesManager'
 import { useSharedFiles } from '../services/sharedFiles'
+import { DIR_ICONS, type Space } from '../services/spaces'
 // Explicitly import TreeItem for recursion, though often handled by filename
 import TreeItem from './TreeItem.vue'
 
@@ -25,12 +26,14 @@ const BASE_PADDING_PX = 16
  */
 interface TreeContext {
   selectedNodeId: Ref<string | null>
+  space?: Ref<Space>
   onSelect: (node: FileSystemNode) => void
   onAction: (action: string, node: FileSystemNode | null, parentId?: string | null) => void
 }
 
 // 'inject' retrieves the state and methods provided by the ancestor 'Tree' component.
-const { onSelect, onAction } = inject<TreeContext>('treeContext')!
+const context = inject<TreeContext>('treeContext')!
+const { onSelect, onAction } = context
 
 const isOpen = ref(false)
 const showMenu = ref(false)
@@ -39,6 +42,15 @@ const showMenu = ref(false)
 // They are cached and only re-calculate when their dependencies change.
 const isFolder = computed(() => {
   return props.node.type === 'D'
+})
+
+/**
+ * A directory reads differently in each space: a story is a book, and a directory in
+ * the other root is a folder. Files look the same in both, because they are.
+ */
+const icon = computed(() => {
+  if (!isFolder.value) return '📄'
+  return DIR_ICONS[context.space?.value ?? 'stories']
 })
 
 /**
@@ -108,7 +120,7 @@ const closeMenu = () => {
       </span>
       <span v-else class="spacer"></span>
       
-      <span class="icon">{{ isFolder ? '🗁' : '📄' }}</span>
+      <span class="icon">{{ icon }}</span>
       <span class="node-name">{{ node.name }}</span>
       
       <div class="node-actions-trigger" @click.stop="showMenu = !showMenu">

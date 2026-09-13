@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import Text from './Text.vue'
 import Modal from './Modal.vue'
 import { filesManagerService } from '../services/filesManager'
@@ -25,17 +25,22 @@ vi.mock('../services/llm', () => ({
 }))
 
 describe('Text.vue', () => {
-  let selectedFileId: any
-  
+  let selectedFile: any
+
+  /** The file the sidebar has open, named by its space as well as its id. */
+  const OPEN = { space: 'stories' as const, id: 'a1b2c3d4e5f60718' }
+
   beforeEach(() => {
     vi.clearAllMocks()
     document.cookie = 'auth_status=1; Path=/'
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
-    selectedFileId = ref<number | null>(null)
+    selectedFile = ref<{ space: 'stories' | 'notes'; id: string } | null>(null)
     vi.spyOn(sharedFiles, 'useSharedFiles').mockReturnValue({
-      selectedFileId,
-      setSelectedFile: vi.fn()
+      selectedFile,
+      selectedFileId: computed(() => selectedFile.value?.id ?? null),
+      setSelectedFile: vi.fn(),
+      clearSelectedFile: vi.fn()
     })
     vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
       selectedModelName: ref('llama3'),
@@ -61,17 +66,17 @@ describe('Text.vue', () => {
     expect(wrapper.text()).toContain('No file selected')
   })
 
-  it('loads file content when selectedFileId changes', async () => {
+  it('loads file content when the selection changes', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
     
     // Trigger change
-    selectedFileId.value = 1
+    selectedFile.value = OPEN
     await flushPromises()
     await wrapper.vm.$nextTick()
 
-    expect(filesManagerService.getFileInfo).toHaveBeenCalled()
+    expect(filesManagerService.getFileInfo).toHaveBeenCalledWith(OPEN.space, OPEN.id)
     expect(wrapper.text()).toContain('test.ink')
     const vm = wrapper.vm as any
     expect(vm.text).toBe('Initial content')
@@ -81,7 +86,7 @@ describe('Text.vue', () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
-    selectedFileId.value = 1
+    selectedFile.value = OPEN
     await flushPromises()
     await wrapper.vm.$nextTick()
 
@@ -98,7 +103,7 @@ describe('Text.vue', () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
-    selectedFileId.value = 1
+    selectedFile.value = OPEN
     await flushPromises()
     await wrapper.vm.$nextTick()
 
@@ -113,7 +118,7 @@ describe('Text.vue', () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
-    selectedFileId.value = 1
+    selectedFile.value = OPEN
     await flushPromises()
     await wrapper.vm.$nextTick()
 
@@ -125,7 +130,8 @@ describe('Text.vue', () => {
     await flushPromises()
 
     expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
-      1,
+      OPEN.space,
+      OPEN.id,
       'Unsaved content'
     )
   })
@@ -135,7 +141,7 @@ describe('Text.vue', () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
-    selectedFileId.value = 1
+    selectedFile.value = OPEN
     await flushPromises()
     await wrapper.vm.$nextTick()
     vi.mocked(filesManagerService.updateFileContent).mockClear()
@@ -170,7 +176,8 @@ describe('Text.vue', () => {
     expect(vm.text).toBe('Initial content and then.')
     // The API writes nothing now, so the client has to save what it appended.
     expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
-      1,
+      OPEN.space,
+      OPEN.id,
       'Initial content and then.'
     )
   })
@@ -220,8 +227,48 @@ describe('Text.vue', () => {
     expect(vm.errorMessage).toBe('provider went away')
     // Partial text is still the writer's, so it is saved rather than discarded.
     expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
-      1,
+      OPEN.space,
+      OPEN.id,
       'Initial content as far as here'
     )
+  })
+})
+
+describe('Text.vue across the two spaces', () => {
+  let selectedFile: any
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    document.cookie = 'auth_status=1; Path=/'
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    selectedFile = ref<{ space: 'stories' | 'notes'; id: string } | null>(null)
+    vi.spyOn(sharedFiles, 'useSharedFiles').mockReturnValue({
+      selectedFile,
+      selectedFileId: computed(() => selectedFile.value?.id ?? null),
+      setSelectedFile: vi.fn(),
+      clearSelectedFile: vi.fn()
+    })
+    vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
+      selectedModelName: ref('llama3'),
+      setSelectedModel: vi.fn()
+    })
+    vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'scratch' })
+    vi.mocked(filesManagerService.getFileContent).mockResolvedValue('A list.')
+  })
+
+  afterEach(() => {
+    document.cookie = 'auth_status=; Path=/; Max-Age=0'
+    vi.restoreAllMocks()
+  })
+
+  it('opens a note through the notes routes', async () => {
+    const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+
+    selectedFile.value = { space: 'notes', id: '0f1e2d3c4b5a6978' }
+    await flushPromises()
+
+    expect(filesManagerService.getFileInfo).toHaveBeenCalledWith('notes', '0f1e2d3c4b5a6978')
+    expect(filesManagerService.getFileContent).toHaveBeenCalledWith('notes', '0f1e2d3c4b5a6978')
+    expect(wrapper.text()).toContain('scratch')
   })
 })
