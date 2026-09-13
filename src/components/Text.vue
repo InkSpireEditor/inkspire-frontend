@@ -17,7 +17,7 @@ const AUTO_SAVE_INTERVAL_MS = 5000
 // --- Component State ---
 const text = ref('')
 const fileName = ref('')
-const currentFileID = ref<number | null>(null)
+const currentFileID = ref<string | null>(null)
 const isDirty = ref(false)
 
 // Error state
@@ -30,7 +30,7 @@ let autoSaveTimer: number | null = null
  * Loads a file's name and content and starts the auto-save timer for it.
  * Called whenever selectedFileId changes to a non-null id.
  */
-const loadFile = async (fileId: number) => {
+const loadFile = async (fileId: string) => {
   if (!isLoggedIn()) return
 
   try {

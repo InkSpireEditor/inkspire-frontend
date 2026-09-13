@@ -9,8 +9,8 @@ describe('useSharedFiles', () => {
 
   it('updates selectedFileId when setSelectedFile is called', () => {
     const { selectedFileId, setSelectedFile } = useSharedFiles()
-    setSelectedFile(123)
-    expect(selectedFileId.value).toBe(123)
+    setSelectedFile('123abcdef0123456')
+    expect(selectedFileId.value).toBe('123abcdef0123456')
     
     setSelectedFile(null)
     expect(selectedFileId.value).toBeNull()

@@ -67,7 +67,7 @@ describe('filesManagerService', () => {
 
     describe('getDirContent', () => {
         it('should send GET request with correct URL, headers and credentials', async () => {
-            const dirId = 5
+            const dirId = '5f0a1b2c3d4e5f60'
             const mockResponse = {
                 files: {
                     "10": { name: "file1.txt" },
@@ -90,7 +90,7 @@ describe('filesManagerService', () => {
         })
 
         it('should handle directory with no files', async () => {
-            const dirId = 3
+            const dirId = '3a1b2c3d4e5f6071'
             const mockResponse = { files: {} }
 
             fetchSpy.mockResolvedValueOnce({
@@ -103,7 +103,7 @@ describe('filesManagerService', () => {
         })
 
         it('should handle HTTP error', async () => {
-            const dirId = 999
+            const dirId = '999999aabbccddee'
 
             fetchSpy.mockResolvedValueOnce({
                 ok: false,
@@ -118,7 +118,7 @@ describe('filesManagerService', () => {
     describe('addFile', () => {
         it('should send POST request to create a root file', async () => {
             const fileName = 'new-root-file.txt'
-            const mockResponse = { id: 100, name: fileName }
+            const mockResponse = { id: '100abcdef0123456', name: fileName }
 
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
@@ -138,8 +138,8 @@ describe('filesManagerService', () => {
 
         it('should send POST request to create a nested file', async () => {
             const fileName = 'new-nested-file.txt'
-            const dirId = 42
-            const mockResponse = { id: 101, name: fileName, dir: dirId }
+            const dirId = '42abcdef01234567'
+            const mockResponse = { id: '101abcdef0123456', name: fileName, dir: dirId }
 
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
@@ -173,7 +173,7 @@ describe('filesManagerService', () => {
         it('should send POST request to create a root directory', async () => {
             const dirName = 'New Root Dir'
             const dirContext = 'New Dir Context'
-            const mockResponse = { id: 200, name: dirName }
+            const mockResponse = { id: '200abcdef0123456', name: dirName }
 
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
@@ -194,7 +194,7 @@ describe('filesManagerService', () => {
 
     describe('delFile', () => {
         it('should send DELETE request to delete a file', async () => {
-            const fileId = 123
+            const fileId = '123abcdef0123456'
             const mockResponse = { message: "File deleted successfully" }
 
             fetchSpy.mockResolvedValueOnce({
@@ -214,7 +214,7 @@ describe('filesManagerService', () => {
         })
 
         it('should handle 204 No Content', async () => {
-            const fileId = 123
+            const fileId = '123abcdef0123456'
 
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
@@ -226,7 +226,7 @@ describe('filesManagerService', () => {
         })
 
         it('should handle HTTP error on file deletion', async () => {
-            const fileId = 404
+            const fileId = '404abcdef0123456'
 
             fetchSpy.mockResolvedValueOnce({
                 ok: false,
@@ -239,7 +239,7 @@ describe('filesManagerService', () => {
 
     describe('delDir', () => {
         it('should send DELETE request to delete a directory', async () => {
-            const dirId = 456
+            const dirId = '456abcdef0123456'
             const mockResponse = { message: "Directory deleted successfully" }
 
             fetchSpy.mockResolvedValueOnce({
@@ -259,7 +259,7 @@ describe('filesManagerService', () => {
         })
 
         it('should handle 204 No Content', async () => {
-            const dirId = 456
+            const dirId = '456abcdef0123456'
 
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
@@ -271,7 +271,7 @@ describe('filesManagerService', () => {
         })
 
         it('should handle HTTP error on directory deletion', async () => {
-            const dirId = 404
+            const dirId = '404abcdef0123456'
 
             fetchSpy.mockResolvedValueOnce({
                 ok: false,
@@ -284,8 +284,8 @@ describe('filesManagerService', () => {
 
     describe('getFileInfo', () => {
         it('should send GET request with correct URL and credentials', async () => {
-            const fileId = 1
-            const mockResponse = { id: 1, name: "test.txt" }
+            const fileId = '1abcdef012345678'
+            const mockResponse = { id: '1abcdef012345678', name: "test.txt" }
 
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
@@ -303,7 +303,7 @@ describe('filesManagerService', () => {
 
     describe('getFileContent', () => {
         it('should send GET request and return text content', async () => {
-            const fileId = 123
+            const fileId = '123abcdef0123456'
             const mockContent = 'File content here'
 
             fetchSpy.mockResolvedValueOnce({
@@ -322,7 +322,7 @@ describe('filesManagerService', () => {
 
     describe('updateFileContent', () => {
         it('should send PUT request with text body', async () => {
-            const fileId = 1
+            const fileId = '1abcdef012345678'
             const content = 'new content'
 
             fetchSpy.mockResolvedValueOnce({
