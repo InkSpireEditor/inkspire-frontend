@@ -49,7 +49,9 @@ describe('Text.vue', () => {
     
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'test.ink' })
     vi.mocked(filesManagerService.getFileContent).mockResolvedValue('Initial content')
-    vi.mocked(filesManagerService.getDirContent).mockResolvedValue({ files: {} })
+    vi.mocked(filesManagerService.getDirContent).mockResolvedValue(
+    { id: '1', name: 'Example Story', summary: '', files: [] },
+  )
     vi.useFakeTimers()
   })
 

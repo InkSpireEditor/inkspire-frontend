@@ -24,8 +24,11 @@ describe('filesManagerService', () => {
     describe('getTree', () => {
         it('should send GET request with correct URL, headers and credentials', async () => {
             const mockResponse = {
-                dirs: { "1": { name: "DirA" } },
-                files: { "2": { name: "FileRoot" } },
+                dirs: [{
+                    id: "1", name: "DirA", summary: "",
+                    files: [{ id: "3", name: "NestedFileA", status: "" }],
+                }],
+                files: [{ id: "2", name: "FileRoot", status: "" }],
             }
 
             fetchSpy.mockResolvedValueOnce({
@@ -43,7 +46,7 @@ describe('filesManagerService', () => {
         })
 
         it('should handle empty response', async () => {
-            const mockResponse = { dirs: {}, files: {} }
+            const mockResponse = { dirs: [], files: [] }
 
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
@@ -69,10 +72,11 @@ describe('filesManagerService', () => {
         it('should send GET request with correct URL, headers and credentials', async () => {
             const dirId = '5f0a1b2c3d4e5f60'
             const mockResponse = {
-                files: {
-                    "10": { name: "file1.txt" },
-                    "11": { name: "file2.txt" },
-                },
+                id: dirId, name: "DirA", summary: "In one line.",
+                files: [
+                    { id: "10", name: "file1.txt", status: "", summary: "" },
+                    { id: "11", name: "file2.txt", status: "draft", summary: "" },
+                ],
             }
 
             fetchSpy.mockResolvedValueOnce({
@@ -91,7 +95,7 @@ describe('filesManagerService', () => {
 
         it('should handle directory with no files', async () => {
             const dirId = '3a1b2c3d4e5f6071'
-            const mockResponse = { files: {} }
+            const mockResponse = { id: dirId, name: "DirA", summary: "", files: [] }
 
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
@@ -373,5 +377,68 @@ describe('the two spaces', () => {
         const id = '0123456789abcdef'
         await filesManagerService.getFileInfo('notes', id)
         expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/notes/file/${id}`, expect.anything())
+    })
+
+    describe('reorderChapters', () => {
+        it('sends the whole order to the story it belongs to', async () => {
+            const dirId = '5f0a1b2c3d4e5f60'
+            const order = ['1111111111111111', '2222222222222222']
+            const mockResponse = {
+                id: dirId, name: 'Example Story', summary: '', files: [],
+            }
+
+            fetchSpy.mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockResponse,
+            } as Response)
+
+            const response = await filesManagerService.reorderChapters(dirId, order)
+
+            expect(response).toEqual(mockResponse)
+            expect(fetchSpy).toHaveBeenCalledWith(
+                `${API_URL}/stories/dir/${dirId}/chapters`,
+                {
+                    method: 'PUT',
+                    headers: jsonHeaders,
+                    credentials: 'include',
+                    body: JSON.stringify({ order }),
+                },
+            )
+        })
+
+        it('handles HTTP error', async () => {
+            fetchSpy.mockResolvedValueOnce({ ok: false, status: 422 } as Response)
+
+            await expect(
+                filesManagerService.reorderChapters('5f0a1b2c3d4e5f60', ['x']),
+            ).rejects.toThrow('Failed to reorder chapters')
+        })
+    })
+
+    describe('setFileStatus', () => {
+        it('sends only the status, so no rename is implied', async () => {
+            const id = '0123456789abcdef'
+            fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => ({}) } as Response)
+
+            await filesManagerService.setFileStatus('stories', id, 'draft')
+
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/${id}`, {
+                method: 'PUT',
+                headers: jsonHeaders,
+                credentials: 'include',
+                body: JSON.stringify({ status: 'draft' }),
+            })
+        })
+
+        it('sends an empty string to clear a status', async () => {
+            fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => ({}) } as Response)
+
+            await filesManagerService.setFileStatus('notes', '0123456789abcdef', '')
+
+            expect(fetchSpy).toHaveBeenCalledWith(
+                expect.stringContaining('/notes/file/'),
+                expect.objectContaining({ body: JSON.stringify({ status: '' }) }),
+            )
+        })
     })
 })
