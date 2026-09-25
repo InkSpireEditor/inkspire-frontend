@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import Tree from './Tree.vue'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
-import { filesManagerService, type TreeApiResponse } from '../services/filesManager'
+import { filesManagerService, type FileSystemNode, type TreeApiResponse } from '../services/filesManager'
 import { modelService } from '../services/model'
 import { useSharedFiles } from '../services/sharedFiles'
 
@@ -43,8 +43,10 @@ describe('Tree.vue', () => {
 
         // Spy on all service methods
         vi.spyOn(modelService, 'getModels').mockResolvedValue([])
-        vi.spyOn(filesManagerService, 'getTree').mockResolvedValue({ dirs: {}, files: {} })
-        vi.spyOn(filesManagerService, 'getDirContent').mockResolvedValue({ files: {} })
+        vi.spyOn(filesManagerService, 'getTree').mockResolvedValue({ dirs: [], files: [] })
+        vi.spyOn(filesManagerService, 'getDirContent').mockResolvedValue(
+            { id: '1', name: 'DirA', summary: '', files: [] },
+        )
         vi.spyOn(filesManagerService, 'addFile').mockResolvedValue({})
         vi.spyOn(filesManagerService, 'addDir').mockResolvedValue({})
         vi.spyOn(filesManagerService, 'editFile').mockResolvedValue({})
@@ -64,19 +66,22 @@ describe('Tree.vue', () => {
 
     it('should load directories and files correctly on initialization', async () => {
         vi.mocked(filesManagerService.getTree).mockResolvedValue({
-            dirs: { "1": { name: "DirA" } },
-            files: { "2": { name: "FileRoot" } },
-        });
-
-        vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
-            files: { "3": { name: "NestedFileA" } }
+            dirs: [
+                {
+                    id: "1", name: "DirA", summary: "", files: [
+                        { id: "3", name: "NestedFileA", status: "" },
+                    ],
+                },
+            ],
+            files: [{ id: "2", name: "FileRoot", status: "" }],
         });
 
         const wrapper = mountTree()
         await flushPromises()
 
         expect(filesManagerService.getTree).toHaveBeenCalledWith('stories')
-        expect(filesManagerService.getDirContent).toHaveBeenCalledWith('stories', "1")
+        // One request for the whole root: a directory's files arrive with it.
+        expect(filesManagerService.getDirContent).not.toHaveBeenCalled()
 
         const treeItems = wrapper.findAllComponents(TreeItem)
         const dirA = treeItems.find(item => item.props('node').name === 'DirA')
@@ -116,7 +121,7 @@ describe('Tree.vue', () => {
     })
 
     it('should create a file and update tree', async () => {
-        vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: {}, files: {} });
+        vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] });
         vi.mocked(filesManagerService.addFile).mockResolvedValue({});
 
         const wrapper = mountTree()
@@ -142,8 +147,8 @@ describe('Tree.vue', () => {
 
     it('should open edit modal for file', async () => {
         vi.mocked(filesManagerService.getTree).mockResolvedValue({
-            dirs: {},
-            files: { "10": { name: "edit-me.txt" } },
+            dirs: [],
+            files: [{ id: "10", name: "edit-me.txt", status: "" }],
         });
 
         const wrapper = mountTree()
@@ -168,8 +173,8 @@ describe('Tree.vue', () => {
 
     it('should open confirmation dialog on delete', async () => {
         vi.mocked(filesManagerService.getTree).mockResolvedValue({
-            dirs: {},
-            files: { "10": { name: "delete-me.txt" } },
+            dirs: [],
+            files: [{ id: "10", name: "delete-me.txt", status: "" }],
         });
 
         const wrapper = mountTree()
@@ -264,8 +269,10 @@ describe('Tree.vue', () => {
 
     it('lists each space from its own tree, keeping both', async () => {
         vi.mocked(filesManagerService.getTree).mockImplementation(async (space): Promise<TreeApiResponse> => ({
-            dirs: space === 'stories' ? { "1": { name: "Example Story" } } : {},
-            files: space === 'stories' ? {} : { "2": { name: "scratch" } },
+            dirs: space === 'stories'
+                ? [{ id: "1", name: "Example Story", summary: "", files: [] }]
+                : [],
+            files: space === 'stories' ? [] : [{ id: "2", name: "scratch", status: "" }],
         }))
 
         const wrapper = mountTree()
@@ -280,8 +287,10 @@ describe('Tree.vue', () => {
 
     it('selects a file with the space it was opened in', async () => {
         vi.mocked(filesManagerService.getTree).mockImplementation(async (space): Promise<TreeApiResponse> => ({
-            dirs: {},
-            files: space === 'notes' ? { "2f3e4d5c6b7a8991": { name: "scratch" } } : {},
+            dirs: [],
+            files: space === 'notes'
+                ? [{ id: "2f3e4d5c6b7a8991", name: "scratch", status: "" }]
+                : [],
         }))
 
         const wrapper = mountTree()
@@ -305,5 +314,62 @@ describe('Tree.vue', () => {
         await flushPromises()
 
         expect(second.findAll('.space-tab')[1]?.classes()).toContain('active')
+    })
+
+    it('draws a directory\'s files in the order the API sent them', async () => {
+        // `story.yaml` decides the order, so sorting here would override the writer.
+        vi.mocked(filesManagerService.getTree).mockResolvedValue({
+            dirs: [{
+                id: '1', name: 'Example Story', summary: '', files: [
+                    { id: '30', name: 'Gamma', status: '' },
+                    { id: '10', name: 'Alpha', status: '' },
+                    { id: '20', name: 'Beta', status: '' },
+                ],
+            }],
+            files: [],
+        })
+
+        const wrapper = mountTree()
+        await flushPromises()
+
+        const dir = wrapper.findAllComponents(TreeItem)
+            .find(item => item.props('node').name === 'Example Story')
+        expect(dir?.props('node').children?.map((c: FileSystemNode) => c.name))
+            .toEqual(['Gamma', 'Alpha', 'Beta'])
+    })
+
+    it('carries a file\'s status onto its node', async () => {
+        vi.mocked(filesManagerService.getTree).mockResolvedValue({
+            dirs: [],
+            files: [{ id: '10', name: 'scratch', status: 'draft' }],
+        })
+
+        const wrapper = mountTree()
+        await flushPromises()
+        await openTab(wrapper, 'Notes')
+
+        expect(wrapper.findComponent(TreeItem).props('node').status).toBe('draft')
+    })
+
+    it('edits a directory without fetching it again', async () => {
+        // Its summary arrived with the tree, so the modal has nothing to go and ask for.
+        vi.mocked(filesManagerService.getTree).mockResolvedValue({
+            dirs: [{ id: '1', name: 'Research', summary: 'Background reading.', files: [] }],
+            files: [],
+        })
+
+        const wrapper = mountTree()
+        await flushPromises()
+        await openTab(wrapper, 'Notes')
+        vi.mocked(filesManagerService.getDirContent).mockClear()
+
+        const dirItem = wrapper.findComponent(TreeItem)
+        await dirItem.find('.node-actions-trigger').trigger('click')
+        const editBtn = dirItem.findAll('.context-menu div').find(d => d.text() === 'Edit')
+        await editBtn?.trigger('click')
+        await flushPromises()
+
+        expect(filesManagerService.getDirContent).not.toHaveBeenCalled()
+        expect((wrapper.vm as any).modalInputContext).toBe('Background reading.')
     })
 })

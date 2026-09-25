@@ -3,7 +3,7 @@ import { computed, ref, onMounted, onUnmounted, provide, readonly } from 'vue'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
-import { filesManagerService, type FileSystemNode, type TreeApiResponse } from '../services/filesManager'
+import { filesManagerService, type FileSystemNode } from '../services/filesManager'
 import { useTheme } from '../services/theme'
 import { useSharedFiles } from '../services/sharedFiles'
 import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../services/spaces'
@@ -65,9 +65,12 @@ provide('treeContext', {
 })
 
 /**
- * Fetches one space's tree from the backend.
- * Populates it with root directories and files, fetching directory content in parallel.
- * Sorts the result so directories appear before files.
+ * Fetches one space's tree from the backend: one request for the whole root, each
+ * directory carrying the files in it.
+ *
+ * The response is already in the order to draw — a story's chapters in `story.yaml`
+ * order, everything else by name — so nothing is sorted here. Directories come before
+ * the files at the root, which is the one arrangement the API does not decide.
  *
  * Both spaces answer the same shape, so this reads either one.
  */
@@ -77,58 +80,29 @@ const fetchTree = async (space: Space) => {
   loading.value = true
   try {
     const response = await filesManagerService.getTree(space)
-    
-    const dirs = response.dirs || {}
-    const files = response.files || {}
-    
-    const rootFiles: FileSystemNode[] = []
 
-    // 1. Collect Root Files
-    for (const id in files) {
-        rootFiles.push({
-            id,
-            name: files[id]!.name,
-            type: 'F'
-        })
-    }
+    const dirs: FileSystemNode[] = (response.dirs || []).map((dir) => ({
+      id: dir.id,
+      name: dir.name,
+      type: 'D',
+      summary: dir.summary,
+      children: dir.files.map((file) => ({
+        id: file.id,
+        name: file.name,
+        type: 'F' as const,
+        status: file.status,
+        parentId: dir.id,
+      })),
+    }))
 
-    // 2. Collect Directories and fetch their content
-    const dirPromises = Object.entries(dirs).map(async ([id, dir]: [string, TreeApiResponse['dirs'][string]]) => {
-        const dirNode: FileSystemNode = {
-            id,
-            name: dir.name,
-            type: 'D',
-            children: []
-        }
-        
-        try {
-            const content = await filesManagerService.getDirContent(space, id)
-            const contentFiles = content.files || {}
-            const children: FileSystemNode[] = []
-            for(const fileId in contentFiles) {
-                children.push({
-                    id: fileId,
-                    name: contentFiles[fileId]!.name,
-                    type: 'F',
-                    parentId: id // Associate file with its parent directory
-                })
-            }
-            // Sort children alphabetically
-            dirNode.children = children.sort((a, b) => a.name.localeCompare(b.name))
-        } catch (e) {
-            console.error(`Failed to load content for dir ${id}`, e)
-        }
-        
-        return dirNode
-    })
+    const rootFiles: FileSystemNode[] = (response.files || []).map((file) => ({
+      id: file.id,
+      name: file.name,
+      type: 'F',
+      status: file.status,
+    }))
 
-    const loadedDirs = await Promise.all(dirPromises)
-    
-    // Sort root items: Dirs (A-Z) then Files (A-Z)
-    loadedDirs.sort((a, b) => a.name.localeCompare(b.name))
-    rootFiles.sort((a, b) => a.name.localeCompare(b.name))
-    
-    trees.value[space] = [...loadedDirs, ...rootFiles]
+    trees.value[space] = [...dirs, ...rootFiles]
     fetched.value[space] = true
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Unknown error'
@@ -209,7 +183,7 @@ const handleNodeAction = (action: string, node: FileSystemNode | null, parentId:
  * @param targetId The ID of the target directory (for creation) or node (for edit).
  * @param node The node object if editing.
  */
-const openModal = async (type: 'create-file' | 'create-dir' | 'edit', targetId: string | null, node: FileSystemNode | null = null) => {
+const openModal = (type: 'create-file' | 'create-dir' | 'edit', targetId: string | null, node: FileSystemNode | null = null) => {
     modalType.value = type
     targetNodeId.value = targetId
     nodeToEdit.value = node
@@ -225,14 +199,8 @@ const openModal = async (type: 'create-file' | 'create-dir' | 'edit', targetId: 
     } else if (type === 'edit') {
         modalTitle.value = node?.type === 'D' ? 'Edit Directory' : 'Edit File'
         modalContextVisible.value = node?.type === 'D'
-        if (node?.type === 'D') {
-            try {
-                const content = await filesManagerService.getDirContent(activeSpace.value, node.id)
-                modalInputContext.value = content.summary || ''
-            } catch (e) {
-                console.error('Failed to fetch directory details for edit', e)
-            }
-        }
+        // The tree already carries a directory's summary, so editing one fetches nothing.
+        modalInputContext.value = node?.type === 'D' ? node.summary || '' : ''
     }
     
     showModal.value = true
