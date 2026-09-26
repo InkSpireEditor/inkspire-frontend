@@ -3,6 +3,12 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import LoreView from './LoreView.vue'
 import { loreService, type LoreGraph, type LoreNode } from '../services/lore'
+import { filesManagerService } from '../services/filesManager'
+import { NODE_REL_SIZE, nodeRadius, relSizeAt } from '../services/loreGraph'
+
+vi.mock('../services/filesManager', () => ({
+  filesManagerService: { getDirContent: vi.fn() }
+}))
 
 vi.mock('../services/lore', async () => {
   const actual = await vi.importActual<typeof import('../services/lore')>('../services/lore')
@@ -33,6 +39,9 @@ const { FakeGraph } = vi.hoisted(() => {
     fakeForces: Record<string, FakeForce> = {}
     destroyed = false
     zoomToFitCalls: unknown[][] = []
+    reheats = 0
+    /** Every graphData() the view has set, so a filter's effect is visible. */
+    dataSets: unknown[] = []
 
     constructor(element: HTMLElement) {
       this.element = element
@@ -42,14 +51,23 @@ const { FakeGraph } = vi.hoisted(() => {
         'graphData', 'backgroundColor', 'nodeId', 'nodeRelSize', 'nodeVal', 'nodeColor',
         'nodeLabel', 'nodeCanvasObjectMode', 'nodeCanvasObject', 'linkColor', 'linkLabel',
         'linkDirectionalArrowLength', 'linkDirectionalArrowRelPos', 'onEngineStop',
-        'onNodeClick', 'width', 'height', 'centerAt', 'zoom'
+        'onZoom', 'onNodeClick', 'width', 'height', 'centerAt', 'zoom'
       ]
       for (const name of accessors) {
         ;(this as unknown as Record<string, unknown>)[name] = (value: unknown) => {
+          // Called with nothing, an accessor reads back -- which is how the view
+          // re-pokes nodeColor to force a repaint.
+          if (value === undefined) return this.config[name]
           this.config[name] = value
+          if (name === 'graphData') this.dataSets.push(value)
           return this
         }
       }
+    }
+
+    d3ReheatSimulation() {
+      this.reheats++
+      return this
     }
 
     d3Force(name: string, force?: unknown) {
@@ -112,15 +130,26 @@ const GRAPH_FIXTURE: LoreGraph = {
 async function routerAt(storyId: string) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/story/:id/lore', name: 'lore', component: LoreView }]
+    routes: [
+      { path: '/story/:id', name: 'dashboard', component: { template: '<div />' } },
+      { path: '/story/:id/lore', name: 'lore', component: LoreView }
+    ]
   })
   await router.push({ name: 'lore', params: { id: storyId } })
   return router
 }
 
+/** The last element of an array. `Array.prototype.at` is past this project's TS lib target. */
+function last<T>(items: T[]): T {
+  return items[items.length - 1]!
+}
+
 /** Mounts the view with the graph loaded and force-graph configured. */
 async function mountLoaded(graph: LoreGraph = GRAPH_FIXTURE) {
   vi.mocked(loreService.getGraph).mockResolvedValue(graph)
+  vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+    id: 'a1b2c3d4e5f60718', name: 'Example Story', summary: 'In one line.', files: []
+  })
   const router = await routerAt('a1b2c3d4e5f60718')
   const wrapper = mount(LoreView, { global: { plugins: [router] }, attachTo: document.body })
   await flushPromises()
@@ -139,6 +168,23 @@ describe('LoreView.vue', () => {
     expect(loreService.getGraph).toHaveBeenCalledWith('a1b2c3d4e5f60718')
     expect(fake.config.graphData).toBe(GRAPH_FIXTURE)
     expect(fake.config.nodeId).toBe('id')
+  })
+
+  it("offers a way back to the story's dashboard", async () => {
+    const { wrapper, router } = await mountLoaded()
+
+    await wrapper.find('.back-link').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  it('names the story, which the graph payload itself does not carry', async () => {
+    const { wrapper } = await mountLoaded()
+
+    expect(filesManagerService.getDirContent).toHaveBeenCalledWith('stories', 'a1b2c3d4e5f60718')
+    expect(wrapper.find('h1').text()).toBe('Example Story')
+    expect(wrapper.text()).toContain('In one line.')
   })
 
   it('counts what the graph holds', async () => {
@@ -212,24 +258,72 @@ describe('LoreView.vue', () => {
     expect(fake.zoomToFitCalls).toHaveLength(1)
   })
 
-  it('draws a label under each node, and drops it when zoomed too far out', async () => {
-    const { fake } = await mountLoaded()
+  describe('node labels', () => {
+    const drawing = (fake: InstanceType<typeof FakeGraph>) => {
+      const draw = fake.config.nodeCanvasObject as (
+        node: LoreNode & { x: number; y: number },
+        ctx: unknown,
+        scale: number
+      ) => void
+      const ctx = { font: '', fillStyle: '', textAlign: '', textBaseline: '', fillText: vi.fn() }
+      return { draw, ctx }
+    }
 
-    const draw = fake.config.nodeCanvasObject as (
-      node: LoreNode & { x: number; y: number },
-      ctx: unknown,
-      scale: number
-    ) => void
-    const ctx = { font: '', fillStyle: '', textAlign: '', textBaseline: '', fillText: vi.fn() }
-    const node = { ...GRAPH_FIXTURE.nodes[0]!, x: 10, y: 20 }
+    it('draws a label just below the circle it names', async () => {
+      const { fake } = await mountLoaded()
+      const { draw, ctx } = drawing(fake)
 
-    draw(node, ctx, 1)
-    // degree 1 -> radius 5 * sqrt(2) ~= 7.07, label one pixel below that.
-    expect(ctx.fillText).toHaveBeenCalledWith('Jane Doe', 10, 20 + 5 * Math.SQRT2 + 1)
+      draw({ ...GRAPH_FIXTURE.nodes[0]!, x: 10, y: 20 }, ctx, 1)
 
-    ctx.fillText.mockClear()
-    draw(node, ctx, 8) // 12 / 8 = 1.5px, unreadable
-    expect(ctx.fillText).not.toHaveBeenCalled()
+      const radius = nodeRadius(1, relSizeAt(1)) // degree 1
+      expect(ctx.fillText).toHaveBeenCalledWith('Jane Doe', 10, 20 + radius + 1)
+    })
+
+    it('keeps the label at a steady size on screen, whatever the zoom', async () => {
+      const { fake } = await mountLoaded()
+      const { draw, ctx } = drawing(fake)
+
+      draw({ ...GRAPH_FIXTURE.nodes[0]!, x: 0, y: 0 }, ctx, 4)
+
+      // The canvas is scaled by 4, so 3 graph units render as the usual 12px.
+      expect(ctx.font).toBe('3px sans-serif')
+    })
+
+    it('still labels a node zoomed well in, which is when the reader most wants the name', async () => {
+      const { fake } = await mountLoaded()
+      const { draw, ctx } = drawing(fake)
+
+      for (const zoom of [4, 8, 16, 64]) {
+        ctx.fillText.mockClear()
+        draw({ ...GRAPH_FIXTURE.nodes[0]!, x: 0, y: 0 }, ctx, zoom)
+        expect(ctx.fillText, `label missing at ${zoom}x`).toHaveBeenCalled()
+      }
+    })
+
+    it('drops the label of a node drawn as a speck, which is what clutters an overview', async () => {
+      const { fake } = await mountLoaded()
+      const { draw, ctx } = drawing(fake)
+
+      // relSizeAt does not damp a zoom under 1, so this is the undamped radius on
+      // screen at 0.4x -- below LoreView's own 3px floor for a label.
+      const onScreenRadius = nodeRadius(1, relSizeAt(0.4)) * 0.4
+      expect(onScreenRadius).toBeLessThan(3)
+
+      draw({ ...GRAPH_FIXTURE.nodes[0]!, x: 0, y: 0 }, ctx, 0.4)
+
+      expect(ctx.fillText).not.toHaveBeenCalled()
+    })
+
+    it('labels a search match even when it is drawn that small', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      await wrapper.find('input[type="search"]').setValue('jane')
+      await flushPromises()
+      const { draw, ctx } = drawing(fake)
+
+      draw({ ...GRAPH_FIXTURE.nodes[0]!, x: 0, y: 0 }, ctx, 0.4)
+
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
   })
 
   it('says so when a lorebook has no entities yet', async () => {
@@ -241,6 +335,9 @@ describe('LoreView.vue', () => {
 
   it('shows an error when the graph fails to load', async () => {
     vi.mocked(loreService.getGraph).mockRejectedValue(new Error('This story has no lorebook.'))
+    vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+      id: 'a1b2c3d4e5f60718', name: 'Example Story', summary: '', files: []
+    })
     const router = await routerAt('a1b2c3d4e5f60718')
 
     const wrapper = mount(LoreView, { global: { plugins: [router] } })
@@ -258,6 +355,217 @@ describe('LoreView.vue', () => {
     expect(fake.destroyed).toBe(true)
     expect(loreService.getGraph).toHaveBeenCalledWith('other000000000018')
     expect(FakeGraph.latest).not.toBe(fake)
+  })
+
+  describe('the type legend', () => {
+    it('lists every type with its count, coloured to match the nodes', async () => {
+      const { wrapper } = await mountLoaded()
+
+      const items = wrapper.findAll('.legend-item')
+      expect(items).toHaveLength(2)
+      expect(items[0]?.text()).toContain('Character')
+      expect(items[0]?.text()).toContain('1')
+      expect(items[1]?.text()).toContain('Guild')
+      // jsdom resolves an inline hsl() to its rgb() equivalent, so these are
+      // hsl(0, 62%, 55%) and hsl(180, 62%, 55%) -- the two hues palette() assigns
+      // to Character and Guild -- read back after normalisation.
+      expect(items[0]?.find('.swatch').attributes('style')).toBe(
+        'background-color: rgb(211, 69, 69);'
+      )
+      expect(items[1]?.find('.swatch').attributes('style')).toBe(
+        'background-color: rgb(69, 211, 211);'
+      )
+    })
+
+    it("hides a type's nodes, and the links touching them, when its row is clicked", async () => {
+      const { wrapper, fake } = await mountLoaded()
+
+      await wrapper.findAll('.legend-item')[1]!.trigger('click')
+
+      const filtered = last(fake.dataSets) as LoreGraph
+      expect(filtered.nodes.map((n) => n.label)).toEqual(['Jane Doe'])
+      expect(filtered.links).toHaveLength(0)
+    })
+
+    it('shows a hidden type again when its row is clicked a second time', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      const row = () => wrapper.findAll('.legend-item')[1]!
+
+      await row().trigger('click')
+      expect(row().classes()).toContain('hidden')
+
+      await row().trigger('click')
+      expect(row().classes()).not.toContain('hidden')
+      expect((last(fake.dataSets) as LoreGraph).nodes).toHaveLength(2)
+    })
+
+    it('hides every type from the heading, then shows them all back', async () => {
+      const { wrapper, fake } = await mountLoaded()
+
+      await wrapper.find('.legend h2').trigger('click')
+      expect((last(fake.dataSets) as LoreGraph).nodes).toHaveLength(0)
+
+      await wrapper.find('.legend h2').trigger('click')
+      expect((last(fake.dataSets) as LoreGraph).nodes).toHaveLength(2)
+    })
+
+    it('starts a different story with nothing hidden', async () => {
+      const { wrapper, router } = await mountLoaded()
+      await wrapper.findAll('.legend-item')[1]!.trigger('click')
+
+      await router.push({ name: 'lore', params: { id: 'other000000000018' } })
+      await flushPromises()
+
+      expect(wrapper.findAll('.legend-item.hidden')).toHaveLength(0)
+    })
+  })
+
+  describe('search', () => {
+    it('fades a node the term does not match, and keeps the matches at full colour', async () => {
+      const { wrapper, fake } = await mountLoaded()
+
+      await wrapper.find('input[type="search"]').setValue('jane')
+      await flushPromises()
+
+      const nodeColor = fake.config.nodeColor as (node: LoreNode) => string
+      expect(nodeColor(GRAPH_FIXTURE.nodes[0]!)).toBe('hsl(0, 62%, 55%)')
+      expect(nodeColor(GRAPH_FIXTURE.nodes[1]!)).toBe('hsla(180, 62%, 55%, 0.12)')
+    })
+
+    it('frames what it matched', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      const before = fake.zoomToFitCalls.length
+
+      await wrapper.find('input[type="search"]').setValue('guild')
+      await flushPromises()
+
+      expect(fake.zoomToFitCalls.length).toBe(before + 1)
+      const filter = last(fake.zoomToFitCalls)[2] as (node: LoreNode) => boolean
+      expect(filter(GRAPH_FIXTURE.nodes[1]!)).toBe(true)
+      expect(filter(GRAPH_FIXTURE.nodes[0]!)).toBe(false)
+    })
+
+    it('leaves every node at full colour once the term is cleared', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      await wrapper.find('input[type="search"]').setValue('jane')
+      await flushPromises()
+
+      await wrapper.find('input[type="search"]').setValue('')
+      await flushPromises()
+
+      const nodeColor = fake.config.nodeColor as (node: LoreNode) => string
+      expect(nodeColor(GRAPH_FIXTURE.nodes[1]!)).toBe('hsl(180, 62%, 55%)')
+    })
+
+    it('does not re-run the layout, since only emphasis changed', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      const before = fake.reheats
+
+      await wrapper.find('input[type="search"]').setValue('jane')
+      await flushPromises()
+
+      expect(fake.reheats).toBe(before)
+    })
+
+    it('drops the label of a node the search did not match', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      await wrapper.find('input[type="search"]').setValue('jane')
+      await flushPromises()
+
+      const draw = fake.config.nodeCanvasObject as (
+        node: LoreNode & { x: number; y: number },
+        ctx: unknown,
+        scale: number
+      ) => void
+      const ctx = { font: '', fillStyle: '', textAlign: '', textBaseline: '', fillText: vi.fn() }
+
+      draw({ ...GRAPH_FIXTURE.nodes[1]!, x: 0, y: 0 }, ctx, 1)
+      expect(ctx.fillText).not.toHaveBeenCalled()
+
+      draw({ ...GRAPH_FIXTURE.nodes[0]!, x: 0, y: 0 }, ctx, 1)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+  })
+
+  describe('node size against zoom', () => {
+    it('starts at the undamped base size', async () => {
+      const { fake } = await mountLoaded()
+
+      expect(fake.config.nodeRelSize).toBe(NODE_REL_SIZE)
+    })
+
+    it('shrinks the base size as the reader zooms in, so a dot cannot swallow its label', async () => {
+      const { fake } = await mountLoaded()
+      const onZoom = fake.config.onZoom as (t: { k: number; x: number; y: number }) => void
+
+      onZoom({ k: 4, x: 0, y: 0 })
+
+      expect(fake.config.nodeRelSize).toBeCloseTo(relSizeAt(4), 6)
+      // Whatever the tuned damping, zooming in must never grow a node past its
+      // undamped size -- that would mean it grows *faster* than the zoom itself.
+      expect(fake.config.nodeRelSize as number).toBeLessThanOrEqual(NODE_REL_SIZE)
+    })
+
+    it('leaves the base size alone when zoomed out, where specks are what an overview wants', async () => {
+      const { fake } = await mountLoaded()
+      const onZoom = fake.config.onZoom as (t: { k: number; x: number; y: number }) => void
+
+      onZoom({ k: 0.25, x: 0, y: 0 })
+
+      expect(fake.config.nodeRelSize).toBe(NODE_REL_SIZE)
+    })
+
+    it('keeps a label hugging the circle it labels, at whatever size that circle is drawn', async () => {
+      const { fake } = await mountLoaded()
+      const draw = fake.config.nodeCanvasObject as (
+        node: LoreNode & { x: number; y: number },
+        ctx: unknown,
+        scale: number
+      ) => void
+      const ctx = { font: '', fillStyle: '', textAlign: '', textBaseline: '', fillText: vi.fn() }
+      const node = { ...GRAPH_FIXTURE.nodes[0]!, x: 0, y: 0 }
+
+      draw(node, ctx, 2)
+
+      const expected = nodeRadius(node.degree, relSizeAt(2)) + 1
+      expect(ctx.fillText).toHaveBeenCalledWith('Jane Doe', 0, expected)
+    })
+  })
+
+  describe('the spacing slider', () => {
+    it('starts at the same default the CLI page uses', async () => {
+      const { wrapper, fake } = await mountLoaded()
+
+      expect((wrapper.find('input[type="range"]').element as HTMLInputElement).value).toBe('1.6')
+      expect(fake.fakeForces.link?.distance).toHaveBeenCalledWith(34 * 1.6)
+    })
+
+    it('scales link distance and charge strength together, then reheats', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      const reheatsBefore = fake.reheats
+
+      await wrapper.find('input[type="range"]').setValue('3')
+      await flushPromises()
+
+      expect(fake.fakeForces.link?.distance).toHaveBeenLastCalledWith(34 * 3)
+      expect(fake.fakeForces.charge?.strength).toHaveBeenLastCalledWith(-55 * 3)
+      expect(fake.fakeForces.charge?.distanceMax).toHaveBeenLastCalledWith(800)
+      // The simulation has settled by now, so new distances need a reheat to take.
+      expect(fake.reheats).toBe(reheatsBefore + 1)
+    })
+
+    it('reframes once the layout settles at its new spacing', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      const onEngineStop = fake.config.onEngineStop as () => void
+      onEngineStop()
+      const framedBefore = fake.zoomToFitCalls.length
+
+      await wrapper.find('input[type="range"]').setValue('3')
+      await flushPromises()
+      onEngineStop()
+
+      expect(fake.zoomToFitCalls.length).toBe(framedBefore + 1)
+    })
   })
 
   it('tears the graph down on unmount', async () => {

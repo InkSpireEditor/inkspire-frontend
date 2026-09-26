@@ -42,7 +42,10 @@ const TIMELINE_FIXTURE = {
 async function routerAt(storyId: string) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/story/:id/timeline', name: 'timeline', component: TimelineView }]
+    routes: [
+      { path: '/story/:id', name: 'dashboard', component: { template: '<div />' } },
+      { path: '/story/:id/timeline', name: 'timeline', component: TimelineView }
+    ]
   })
   await router.push({ name: 'timeline', params: { id: storyId } })
   return router
@@ -81,6 +84,19 @@ describe('TimelineView.vue', () => {
     const svg = wrapper.find('svg')
     expect(svg.attributes('width')).toBe('600') // (11.5 + widthStep 1) * 48
     expect(svg.attributes('height')).toBe('384') // maxHeight 8.0 * 48
+  })
+
+  it("offers a way back to the story's dashboard", async () => {
+    vi.mocked(timelineService.get).mockResolvedValue(TIMELINE_FIXTURE)
+    const router = await routerAt('a1b2c3d4e5f60718')
+
+    const wrapper = mount(TimelineView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.find('.back-link').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
   it('wraps an event with an href in a link, and a plain one in no link', async () => {

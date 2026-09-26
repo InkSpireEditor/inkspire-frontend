@@ -13,8 +13,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { timelineService, type TimelineResponse } from '../services/timeline'
+import BackLink from '../components/BackLink.vue'
 
 const route = useRoute()
+/** Whatever the URL names, for the way back to the dashboard. */
+const storyId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const data = ref<TimelineResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -139,6 +142,7 @@ const eventBoxes = computed<EventBox[]>(() =>
 
 <template>
   <div class="timeline-view">
+    <BackLink v-if="storyId" :story-id="storyId" />
     <p v-if="loading">Loading…</p>
     <p v-else-if="error" class="error">{{ error }}</p>
     <template v-else-if="data">
