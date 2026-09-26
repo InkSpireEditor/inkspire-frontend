@@ -23,6 +23,20 @@ const refreshGitStatusQuietly = () => {
   refreshGitStatus().catch(() => {})
 }
 
+/**
+ * Tells a story's dashboard, if one happens to be open, that this component just
+ * changed one of that story's own chapters (or the story itself) -- a change the
+ * dashboard has no way to notice through its own fetch. Carried as `detail` rather
+ * than reusing the plain, detail-less 'stories:changed' event this component also
+ * listens for (dispatched by the dashboard after a delete): without a storyId, a
+ * dashboard for an unrelated story would reload for no reason.
+ */
+const notifyDashboard = (storyId: string | null | undefined) => {
+    if (storyId) {
+        window.dispatchEvent(new CustomEvent('stories:changed', { detail: { storyId } }))
+    }
+}
+
 /** Which tab was open last time, so a reload comes back where it was left. */
 const ACTIVE_SPACE_KEY = 'activeSpace'
 
@@ -281,7 +295,18 @@ const submitModal = async () => {
         
         showModal.value = false
         fetchTree(space) // Refresh tree
-        if (space === 'stories') refreshGitStatusQuietly()
+        if (space === 'stories') {
+            refreshGitStatusQuietly()
+            const storyId =
+                modalType.value === 'create-file'
+                    ? targetNodeId.value
+                    : modalType.value === 'edit' && nodeToEdit.value
+                      ? nodeToEdit.value.type === 'D'
+                          ? nodeToEdit.value.id
+                          : nodeToEdit.value.parentId
+                      : null
+            notifyDashboard(storyId)
+        }
     } catch (e) {
         errorMessage.value = 'Operation failed'
         showError.value = true
@@ -296,22 +321,26 @@ const confirmDelete = async () => {
     if (!isLoggedIn() || !nodeToDelete.value) return
 
     const space = activeSpace.value
+    const deletedNode = nodeToDelete.value
     try {
-        if (nodeToDelete.value.type === 'D') {
-            await filesManagerService.delDir(space, nodeToDelete.value.id)
+        if (deletedNode.type === 'D') {
+            await filesManagerService.delDir(space, deletedNode.id)
         } else {
             // Compared against the shared selection, not the local selectedNodeId: a
             // story chapter's selection is now set by the write route rather than by
             // handleSelect, so selectedNodeId alone would miss it.
-            if (selectedFileId.value === nodeToDelete.value.id) {
+            if (selectedFileId.value === deletedNode.id) {
                 clearSelectedFile()
                 selectedNodeId.value = null
             }
-            await filesManagerService.delFile(space, nodeToDelete.value.id)
+            await filesManagerService.delFile(space, deletedNode.id)
         }
         showConfirm.value = false
         fetchTree(space)
-        if (space === 'stories') refreshGitStatusQuietly()
+        if (space === 'stories') {
+            refreshGitStatusQuietly()
+            notifyDashboard(deletedNode.type === 'D' ? deletedNode.id : deletedNode.parentId)
+        }
     } catch (e) {
         errorMessage.value = 'Delete failed'
         showError.value = true
@@ -329,10 +358,13 @@ const handleLogout = async () => {
 }
 
 /**
- * 'stories:changed' is dispatched from outside this component -- today only by
- * DashboardView.vue, after deleting a story -- for a change to the stories tree
- * this component did not itself make and so cannot refresh through its own
- * fetchTree calls. Always refetches, even if the stories tab is not the one open.
+ * 'stories:changed' also fires for changes this component made itself --
+ * `notifyDashboard` dispatches it with a `storyId` right after this component's own
+ * `fetchTree` call above, so the refetch here is a harmless repeat in that case. The
+ * case this listener exists for is DashboardView.vue's plain, detail-less dispatch
+ * after deleting a story: a change to the stories tree this component did not make
+ * and so cannot refresh through its own fetchTree calls. Always refetches, even if
+ * the stories tab is not the one open.
  */
 const handleStoriesChanged = () => {
     fetchTree('stories')

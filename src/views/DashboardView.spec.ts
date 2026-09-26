@@ -11,7 +11,12 @@ vi.mock('../services/filesManager', async () => {
   )
   return {
     ...actual,
-    filesManagerService: { getDirContent: vi.fn(), getFileContent: vi.fn(), delDir: vi.fn() }
+    filesManagerService: {
+      getDirContent: vi.fn(),
+      getFileContent: vi.fn(),
+      delDir: vi.fn(),
+      reorderChapters: vi.fn()
+    }
   }
 })
 
@@ -161,6 +166,137 @@ describe('DashboardView.vue', () => {
       'stories',
       'other000000000018'
     )
+  })
+
+  describe('reacting to a sidebar change while open', () => {
+    it('reloads when Tree.vue names this story', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: 'a1b2c3d4e5f60718',
+        name: 'Example Story',
+        summary: '',
+        files: []
+      })
+      const router = await routerAt('a1b2c3d4e5f60718')
+      mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+      vi.mocked(filesManagerService.getDirContent).mockClear()
+
+      window.dispatchEvent(
+        new CustomEvent('stories:changed', { detail: { storyId: 'a1b2c3d4e5f60718' } })
+      )
+      await flushPromises()
+
+      expect(filesManagerService.getDirContent).toHaveBeenCalledWith(
+        'stories',
+        'a1b2c3d4e5f60718'
+      )
+    })
+
+    it('ignores the event when it names a different story', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: 'a1b2c3d4e5f60718',
+        name: 'Example Story',
+        summary: '',
+        files: []
+      })
+      const router = await routerAt('a1b2c3d4e5f60718')
+      mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+      vi.mocked(filesManagerService.getDirContent).mockClear()
+
+      window.dispatchEvent(
+        new CustomEvent('stories:changed', { detail: { storyId: 'unrelated0000000' } })
+      )
+      await flushPromises()
+
+      expect(filesManagerService.getDirContent).not.toHaveBeenCalled()
+    })
+
+    it('ignores the plain, detail-less event dispatched after a delete', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: 'a1b2c3d4e5f60718',
+        name: 'Example Story',
+        summary: '',
+        files: []
+      })
+      const router = await routerAt('a1b2c3d4e5f60718')
+      mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+      vi.mocked(filesManagerService.getDirContent).mockClear()
+
+      window.dispatchEvent(new Event('stories:changed'))
+      await flushPromises()
+
+      expect(filesManagerService.getDirContent).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('dragging to reorder chapters', () => {
+    const threeChapters = {
+      id: 'a1b2c3d4e5f60718',
+      name: 'Example Story',
+      summary: '',
+      files: [
+        { id: 'c1c1c1c1c1c1c1c1', name: 'First Chapter', status: '' },
+        { id: 'c2c2c2c2c2c2c2c2', name: 'Second Chapter', status: '' },
+        { id: 'c3c3c3c3c3c3c3c3', name: 'Third Chapter', status: '' }
+      ]
+    }
+
+    it('drags a chapter onto another and sends the resulting order', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue(threeChapters)
+      vi.mocked(filesManagerService.reorderChapters).mockResolvedValue({
+        ...threeChapters,
+        files: [threeChapters.files[1]!, threeChapters.files[0]!, threeChapters.files[2]!]
+      })
+      const router = await routerAt('a1b2c3d4e5f60718')
+      const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+
+      const chapters = wrapper.findAll('.chapter')
+      await chapters[0]!.trigger('dragstart')
+      await chapters[1]!.trigger('drop')
+      await flushPromises()
+
+      expect(filesManagerService.reorderChapters).toHaveBeenCalledWith('a1b2c3d4e5f60718', [
+        'c2c2c2c2c2c2c2c2',
+        'c1c1c1c1c1c1c1c1',
+        'c3c3c3c3c3c3c3c3'
+      ])
+      const namesInOrder = wrapper.findAll('.chapter a').map((a) => a.text())
+      expect(namesInOrder).toEqual(['Second Chapter', 'First Chapter', 'Third Chapter'])
+    })
+
+    it('shows an error and leaves the list alone when the write fails', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue(threeChapters)
+      vi.mocked(filesManagerService.reorderChapters).mockRejectedValue(new Error('Network error'))
+      const router = await routerAt('a1b2c3d4e5f60718')
+      const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+
+      const chapters = wrapper.findAll('.chapter')
+      await chapters[0]!.trigger('dragstart')
+      await chapters[1]!.trigger('drop')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Network error')
+      const namesInOrder = wrapper.findAll('.chapter a').map((a) => a.text())
+      expect(namesInOrder).toEqual(['First Chapter', 'Second Chapter', 'Third Chapter'])
+    })
+
+    it('does nothing when a chapter is dropped onto its own row', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue(threeChapters)
+      const router = await routerAt('a1b2c3d4e5f60718')
+      const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+
+      const chapters = wrapper.findAll('.chapter')
+      await chapters[0]!.trigger('dragstart')
+      await chapters[0]!.trigger('drop')
+      await flushPromises()
+
+      expect(filesManagerService.reorderChapters).not.toHaveBeenCalled()
+    })
   })
 
   describe('deleting the story', () => {

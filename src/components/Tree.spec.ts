@@ -402,6 +402,118 @@ describe('Tree.vue', () => {
         expect(filesManagerService.getTree).toHaveBeenCalledWith('stories')
     })
 
+    describe('telling a story\'s dashboard about a change made from the sidebar', () => {
+        function listenForStoriesChanged() {
+            const listener = vi.fn()
+            window.addEventListener('stories:changed', listener)
+            return listener
+        }
+
+        it('names the story when a chapter is added to it', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{ id: 'story-1', name: 'Example Story', summary: '', files: [] }],
+                files: []
+            })
+            vi.mocked(filesManagerService.addFile).mockResolvedValue({})
+            const wrapper = mountTree()
+            await flushPromises()
+            const listener = listenForStoriesChanged()
+
+            const story = wrapper.findAllComponents(TreeItem)
+                .find(item => item.props('node').name === 'Example Story')
+            await story?.find('.node-actions-trigger').trigger('click')
+            const newFileBtn = story?.findAll('.context-menu div').find(d => d.text() === 'New File')
+            await newFileBtn?.trigger('click')
+
+            const modal = wrapper.findComponent(Modal)
+            await modal.find('input').setValue('Chapter One')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(filesManagerService.addFile).toHaveBeenCalledWith('stories', 'Chapter One', 'story-1')
+            expect(listener).toHaveBeenCalledTimes(1)
+            const event = listener.mock.calls[0]?.[0] as CustomEvent<{ storyId?: string }>
+            expect(event.detail.storyId).toBe('story-1')
+            window.removeEventListener('stories:changed', listener)
+        })
+
+        it('names the story when one of its chapters is deleted', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{
+                    id: 'story-1', name: 'Example Story', summary: '',
+                    files: [{ id: 'chapter-1', name: 'Chapter One', status: '' }]
+                }],
+                files: []
+            })
+            vi.mocked(filesManagerService.delFile).mockResolvedValue(null)
+            const wrapper = mountTree()
+            await flushPromises()
+            const listener = listenForStoriesChanged()
+
+            const story = wrapper.findAllComponents(TreeItem)
+                .find(item => item.props('node').name === 'Example Story')
+            await story?.find('.toggle-icon').trigger('click')
+            const chapter = wrapper.findAllComponents(TreeItem)
+                .find(item => item.props('node').name === 'Chapter One')
+            await chapter?.find('.node-actions-trigger').trigger('click')
+            const deleteBtn = chapter?.findAll('.context-menu div').find(d => d.text() === 'Delete')
+            await deleteBtn?.trigger('click')
+            const confirmModal = wrapper.findAllComponents(Modal).find(m => m.props('title') === 'Confirm Action')
+            await confirmModal?.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(filesManagerService.delFile).toHaveBeenCalledWith('stories', 'chapter-1')
+            const event = listener.mock.calls[0]?.[0] as CustomEvent<{ storyId?: string }>
+            expect(event.detail.storyId).toBe('story-1')
+            window.removeEventListener('stories:changed', listener)
+        })
+
+        it('names the story itself when its own synopsis is edited', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{ id: 'story-1', name: 'Example Story', summary: 'Old.', files: [] }],
+                files: []
+            })
+            vi.mocked(filesManagerService.editDir).mockResolvedValue({})
+            const wrapper = mountTree()
+            await flushPromises()
+            const listener = listenForStoriesChanged()
+
+            const story = wrapper.findAllComponents(TreeItem)
+                .find(item => item.props('node').name === 'Example Story')
+            await story?.find('.node-actions-trigger').trigger('click')
+            const editBtn = story?.findAll('.context-menu div').find(d => d.text() === 'Edit')
+            await editBtn?.trigger('click')
+
+            const modal = wrapper.findComponent(Modal)
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(filesManagerService.editDir).toHaveBeenCalled()
+            const event = listener.mock.calls[0]?.[0] as CustomEvent<{ storyId?: string }>
+            expect(event.detail.storyId).toBe('story-1')
+            window.removeEventListener('stories:changed', listener)
+        })
+
+        it('does not dispatch for a notes-space change', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
+            vi.mocked(filesManagerService.addFile).mockResolvedValue({})
+            const wrapper = mountTree()
+            await flushPromises()
+            await openTab(wrapper, 'Notes')
+            const listener = listenForStoriesChanged()
+
+            const newFileBtn = rootMenuItem(wrapper, 'New File')
+            await newFileBtn?.trigger('click')
+            const modal = wrapper.findComponent(Modal)
+            await modal.find('input').setValue('a-note.txt')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(listener).not.toHaveBeenCalled()
+            window.removeEventListener('stories:changed', listener)
+        })
+    })
+
     describe('renaming a file', () => {
         /** Opens the rename dialog on the one file in the notes tree. */
         async function openRenameOn(wrapper: ReturnType<typeof mountTree>) {

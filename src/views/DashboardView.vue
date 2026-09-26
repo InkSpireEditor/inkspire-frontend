@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
  * A story's dashboard: its synopsis, its chapters in story.yaml order with a word
- * count for each, and deleting the story. The git panel lands here in a later step;
- * so does drag-to-reorder.
+ * count for each and drag-to-reorder, and deleting the story. The git panel lands
+ * here in a later step.
  */
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   filesManagerService,
@@ -67,6 +67,56 @@ onMounted(load)
 // A story link elsewhere in the tree can be clicked while this view is already
 // open, which changes the param without remounting the component.
 watch(() => route.params.id, load)
+
+/**
+ * The sidebar can add, rename or delete this story's own chapters (or the story
+ * itself) while its dashboard is open -- a change this view has no way to notice
+ * on its own, since it only ever fetches on mount or on a route change. Ignores
+ * the plain, detail-less event DashboardView.vue's own delete flow dispatches for
+ * Tree.vue's benefit, and any other story's change, reloading only for its own.
+ */
+const handleStoriesChanged = (event: Event) => {
+  const storyId = (event as CustomEvent<{ storyId?: string }>).detail?.storyId
+  if (storyId && storyId === route.params.id) load()
+}
+
+onMounted(() => window.addEventListener('stories:changed', handleStoriesChanged))
+onUnmounted(() => window.removeEventListener('stories:changed', handleStoriesChanged))
+
+// --- drag-to-reorder ------------------------------------------------------------
+
+const draggedChapterId = ref<string | null>(null)
+const reorderError = ref<string | null>(null)
+
+const onDragStart = (fileId: string) => {
+  draggedChapterId.value = fileId
+}
+
+/**
+ * Dropping onto a chapter's own row moves the dragged chapter next to it: dragging
+ * down lands it just after that row, dragging up lands it just before -- since
+ * removing the dragged id shifts only the indices between the two, re-inserting at
+ * the target's original index lands on the correct side of it either way.
+ */
+const onDrop = async (targetId: string) => {
+  const draggedId = draggedChapterId.value
+  draggedChapterId.value = null
+  if (!story.value || !draggedId || draggedId === targetId) return
+
+  const ids = story.value.files.map((file) => file.id)
+  const from = ids.indexOf(draggedId)
+  const to = ids.indexOf(targetId)
+  if (from === -1 || to === -1) return
+
+  const [movedId] = ids.splice(from, 1)
+  ids.splice(to, 0, movedId!)
+
+  try {
+    story.value = await filesManagerService.reorderChapters(story.value.id, ids)
+  } catch (e) {
+    reorderError.value = e instanceof Error ? e.message : 'Failed to reorder chapters'
+  }
+}
 
 // --- deleting the story -------------------------------------------------------
 
@@ -161,7 +211,17 @@ const confirmForceDelete = async () => {
       <p v-if="story.summary" class="synopsis">{{ story.summary }}</p>
 
       <ul class="chapters">
-        <li v-for="file in story.files" :key="file.id" class="chapter">
+        <li
+          v-for="file in story.files"
+          :key="file.id"
+          class="chapter"
+          :class="{ dragging: draggedChapterId === file.id }"
+          draggable="true"
+          @dragstart="onDragStart(file.id)"
+          @dragover.prevent
+          @drop="onDrop(file.id)"
+          @dragend="draggedChapterId = null"
+        >
           <router-link :to="{ name: 'write', params: { id: story.id, fileId: file.id } }">
             {{ file.name }}
           </router-link>
@@ -223,6 +283,17 @@ const confirmForceDelete = async () => {
     >
       <p>{{ deleteError }}</p>
     </Modal>
+
+    <Modal
+      :show="!!reorderError"
+      title="Error"
+      confirm-text="OK"
+      hide-cancel
+      @close="reorderError = null"
+      @confirm="reorderError = null"
+    >
+      <p>{{ reorderError }}</p>
+    </Modal>
   </div>
 </template>
 
@@ -263,6 +334,11 @@ h1 {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   background-color: var(--color-background-soft);
+  cursor: grab;
+}
+
+.chapter.dragging {
+  opacity: 0.4;
 }
 
 .chapter a {
