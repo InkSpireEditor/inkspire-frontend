@@ -94,6 +94,18 @@ describe('Modal.vue', () => {
     expect(confirmButton?.classes()).toContain('danger')
   })
 
+  it('hides the cancel button for a pure notification', () => {
+    const wrapper = mount(Modal, {
+      props: { ...defaultProps, hideCancel: true },
+      global: {
+        stubs: { teleport: true }
+      }
+    })
+    const buttons = wrapper.findAll('button')
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]?.text()).toBe('Confirm')
+  })
+
   it('disables buttons when loading is true', () => {
     const wrapper = mount(Modal, {
       props: { ...defaultProps, loading: true },

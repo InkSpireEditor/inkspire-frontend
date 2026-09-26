@@ -137,7 +137,7 @@ onMounted(async () => {
       :show="showError"
       title="Error"
       confirm-text="OK"
-      cancel-text="OK"
+      hide-cancel
       @close="showError = false"
       @confirm="showError = false"
     >
