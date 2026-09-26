@@ -210,6 +210,13 @@ describe('Tree.vue', () => {
     // ------------------------------------
     // UI Tests
     // ------------------------------------
+    it('no longer shows the git panel -- it moved to the dashboard', async () => {
+        const wrapper = mountTree()
+        await flushPromises()
+
+        expect(wrapper.find('.git-panel').exists()).toBe(false)
+    })
+
     it('toggles theme when theme button is clicked', async () => {
         const wrapper = mountTree()
         const themeBtn = wrapper.find('.icon-btn[title="Toggle Theme"]')

@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
  * A story's dashboard: its synopsis, its chapters in story.yaml order with a word
- * count for each and drag-to-reorder, and deleting the story. The git panel lands
- * here in a later step.
+ * count for each and drag-to-reorder, the git panel, and deleting the story.
  */
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -15,6 +14,7 @@ import {
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
 import Modal from '../components/Modal.vue'
+import GitPanel from '../components/GitPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -238,6 +238,8 @@ const confirmForceDelete = async () => {
       <router-link :to="{ name: 'read', params: { id: story.id } }" class="read-link">
         Read
       </router-link>
+
+      <GitPanel />
 
       <div class="danger-zone">
         <button class="delete-story" @click="openDeleteConfirm">Delete story</button>

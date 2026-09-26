@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
-import GitPanel from './GitPanel.vue'
 import { filesManagerService, type FileSystemNode } from '../services/filesManager'
 import { useTheme } from '../services/theme'
 import { useSharedFiles } from '../services/sharedFiles'
@@ -472,7 +471,6 @@ onUnmounted(() => {
       <p>{{ errorMessage }}</p>
     </Modal>
 
-    <GitPanel />
     <ModelSelector />
   </div>
 </template>
