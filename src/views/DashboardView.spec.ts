@@ -2,18 +2,38 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import DashboardView from './DashboardView.vue'
-import { filesManagerService } from '../services/filesManager'
+import { filesManagerService, HoldsError } from '../services/filesManager'
+import { useSharedFiles } from '../services/sharedFiles'
 
-vi.mock('../services/filesManager', () => ({
-  filesManagerService: { getDirContent: vi.fn() }
+vi.mock('../services/filesManager', async () => {
+  const actual = await vi.importActual<typeof import('../services/filesManager')>(
+    '../services/filesManager'
+  )
+  return {
+    ...actual,
+    filesManagerService: { getDirContent: vi.fn(), delDir: vi.fn() }
+  }
+})
+
+// The real singleton would call the real gitService and reach a real network
+// request; only its refresh() is needed here, and it is never asserted on.
+const mockRefreshGitStatus = vi.fn().mockResolvedValue(undefined)
+vi.mock('../services/sharedGit', () => ({
+  useSharedGit: () => ({ refresh: mockRefreshGitStatus })
 }))
 
 const Stub = { template: '<div />' }
+
+/** The one button, of any modal, carrying this exact text. */
+function clickButton(wrapper: ReturnType<typeof mount>, label: string) {
+  return wrapper.findAll('button').find((b) => b.text() === label)?.trigger('click')
+}
 
 async function routerAt(storyId: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/', name: 'home', component: Stub },
       { path: '/story/:id', name: 'dashboard', component: DashboardView },
       { path: '/story/:id/write/:fileId', name: 'write', component: Stub },
       { path: '/story/:id/read', name: 'read', component: Stub }
@@ -26,6 +46,7 @@ async function routerAt(storyId: string) {
 describe('DashboardView.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useSharedFiles().clearSelectedFile()
   })
 
   it('shows the synopsis and the chapters in order, with their status', async () => {
@@ -42,7 +63,7 @@ describe('DashboardView.vue', () => {
     })
     const router = await routerAt('a1b2c3d4e5f60718')
 
-    const wrapper = mount(DashboardView, { global: { plugins: [router] } })
+    const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
     await flushPromises()
 
     expect(filesManagerService.getDirContent).toHaveBeenCalledWith(
@@ -67,7 +88,7 @@ describe('DashboardView.vue', () => {
     })
     const router = await routerAt('a1b2c3d4e5f60718')
 
-    const wrapper = mount(DashboardView, { global: { plugins: [router] } })
+    const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('No chapters yet.')
@@ -77,7 +98,7 @@ describe('DashboardView.vue', () => {
     vi.mocked(filesManagerService.getDirContent).mockRejectedValue(new Error('boom'))
     const router = await routerAt('a1b2c3d4e5f60718')
 
-    const wrapper = mount(DashboardView, { global: { plugins: [router] } })
+    const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
     await flushPromises()
 
     expect(wrapper.find('.error').text()).toBe('boom')
@@ -91,7 +112,7 @@ describe('DashboardView.vue', () => {
       files: []
     })
     const router = await routerAt('a1b2c3d4e5f60718')
-    mount(DashboardView, { global: { plugins: [router] } })
+    mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
     await flushPromises()
 
     await router.push({ name: 'dashboard', params: { id: 'other000000000018' } })
@@ -101,5 +122,131 @@ describe('DashboardView.vue', () => {
       'stories',
       'other000000000018'
     )
+  })
+
+  describe('deleting the story', () => {
+    async function mountLoaded() {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: 'a1b2c3d4e5f60718',
+        name: 'Example Story',
+        summary: '',
+        files: []
+      })
+      const router = await routerAt('a1b2c3d4e5f60718')
+      const wrapper = mount(DashboardView, {
+        global: { plugins: [router], stubs: { teleport: true } }
+      })
+      await flushPromises()
+      return { wrapper, router }
+    }
+
+    it('deletes a clean story in one confirm', async () => {
+      vi.mocked(filesManagerService.delDir).mockResolvedValue(null)
+      const { wrapper, router } = await mountLoaded()
+
+      await clickButton(wrapper, 'Delete story')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+
+      expect(filesManagerService.delDir).toHaveBeenCalledWith('stories', 'a1b2c3d4e5f60718')
+      expect(router.currentRoute.value.name).toBe('home')
+    })
+
+    it('tells the sidebar the tree changed, and refreshes the git panel', async () => {
+      vi.mocked(filesManagerService.delDir).mockResolvedValue(null)
+      const listener = vi.fn()
+      window.addEventListener('stories:changed', listener)
+      const { wrapper } = await mountLoaded()
+
+      await clickButton(wrapper, 'Delete story')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+
+      expect(listener).toHaveBeenCalledTimes(1)
+      expect(mockRefreshGitStatus).toHaveBeenCalled()
+      window.removeEventListener('stories:changed', listener)
+    })
+
+    it('clears the shared selection if it pointed at one of this story\'s own chapters', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: 'a1b2c3d4e5f60718',
+        name: 'Example Story',
+        summary: '',
+        files: [{ id: 'c1c1c1c1c1c1c1c1', name: 'First Chapter', status: '' }]
+      })
+      vi.mocked(filesManagerService.delDir).mockResolvedValue(null)
+      const router = await routerAt('a1b2c3d4e5f60718')
+      const wrapper = mount(DashboardView, {
+        global: { plugins: [router], stubs: { teleport: true } }
+      })
+      await flushPromises()
+      useSharedFiles().setSelectedFile('stories', 'c1c1c1c1c1c1c1c1')
+
+      await clickButton(wrapper, 'Delete story')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+
+      expect(useSharedFiles().selectedFile.value).toBeNull()
+    })
+
+    it('leaves an unrelated selection alone', async () => {
+      vi.mocked(filesManagerService.delDir).mockResolvedValue(null)
+      const { wrapper } = await mountLoaded()
+      useSharedFiles().setSelectedFile('stories', 'unrelated0000000')
+
+      await clickButton(wrapper, 'Delete story')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+
+      expect(useSharedFiles().selectedFile.value).toEqual({
+        space: 'stories',
+        id: 'unrelated0000000'
+      })
+    })
+
+    it('lists what is in the way, and refuses until the name is typed correctly', async () => {
+      vi.mocked(filesManagerService.delDir).mockRejectedValueOnce(
+        new HoldsError('also holds lorebook', ['lorebook'])
+      )
+      const { wrapper, router } = await mountLoaded()
+
+      await clickButton(wrapper, 'Delete story')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('lorebook')
+      const anyway = () =>
+        wrapper.findAll('button').find((b) => b.text() === 'Delete anyway')
+      expect((anyway()?.element as HTMLButtonElement).disabled).toBe(true)
+
+      await wrapper.find('input').setValue('the wrong name')
+      await flushPromises()
+      expect((anyway()?.element as HTMLButtonElement).disabled).toBe(true)
+
+      vi.mocked(filesManagerService.delDir).mockResolvedValueOnce(null)
+      await wrapper.find('input').setValue('Example Story')
+      await flushPromises()
+      expect((anyway()?.element as HTMLButtonElement).disabled).toBe(false)
+
+      await anyway()?.trigger('click')
+      await flushPromises()
+
+      expect(filesManagerService.delDir).toHaveBeenCalledWith('stories', 'a1b2c3d4e5f60718', {
+        force: true
+      })
+      expect(router.currentRoute.value.name).toBe('home')
+    })
+
+    it('shows a plain failure in the error dialog, not the holds dialog', async () => {
+      vi.mocked(filesManagerService.delDir).mockRejectedValueOnce(new Error('Network error'))
+      const { wrapper } = await mountLoaded()
+
+      await clickButton(wrapper, 'Delete story')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Network error')
+      expect(wrapper.text()).not.toContain('Delete anyway')
+    })
   })
 })

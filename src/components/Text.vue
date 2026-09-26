@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { filesManagerService } from '../services/filesManager'
+import { filesManagerService, NotFoundError } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
@@ -9,7 +9,7 @@ import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 
-const { selectedFile } = useSharedFiles()
+const { selectedFile, clearSelectedFile } = useSharedFiles()
 const { selectedModelName } = useSharedModel()
 const { refresh: refreshGitStatus } = useSharedGit()
 
@@ -52,7 +52,15 @@ const loadFile = async (file: FileSelection) => {
     startAutoSave()
   } catch (e) {
     console.error('Error loading file:', e)
-    displayError('Failed to load the file')
+    if (e instanceof NotFoundError) {
+      // The selection is out of date, not broken: the file was renamed, deleted, or
+      // removed by a pull. Dropping it falls back to "No file selected", which is
+      // what this pane shows anyway with nothing open -- there is nothing here for
+      // the reader to act on, so there is nothing worth interrupting them for.
+      clearSelectedFile()
+    } else {
+      displayError('Failed to load the file')
+    }
   }
 }
 
@@ -71,7 +79,18 @@ const save = async () => {
     if (file.space === 'stories') refreshGitStatus().catch(() => {})
   } catch (e) {
     console.error('Error saving file:', e)
-    displayError('Failed to save the file')
+    if (e instanceof NotFoundError) {
+      // Nothing to save into any more. `isDirty` stays true and the text stays on
+      // screen, so the writer can still copy it somewhere -- but the timer has to
+      // stop, or it would raise this same dialog every few seconds.
+      stopAutoSave()
+      displayError(
+        'This file no longer exists. It may have been renamed or deleted elsewhere. ' +
+        'Your text is still here — copy it somewhere safe.'
+      )
+    } else {
+      displayError('Failed to save the file')
+    }
   }
 }
 

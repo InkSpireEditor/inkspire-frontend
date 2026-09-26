@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { filesManagerService } from './filesManager'
+import { filesManagerService, HoldsError, NotFoundError } from './filesManager'
 
 const API_URL = 'http://localhost:8000/api'
 
@@ -284,6 +284,49 @@ describe('filesManagerService', () => {
 
             await expect(filesManagerService.delDir('stories', dirId)).rejects.toThrow('Failed to delete directory')
         })
+
+        it('sends ?force=true only when asked', async () => {
+            const dirId = '456abcdef0123456'
+            fetchSpy.mockResolvedValueOnce({ ok: true, status: 204 } as Response)
+
+            await filesManagerService.delDir('stories', dirId, { force: true })
+
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/dir/${dirId}?force=true`, {
+                method: 'DELETE',
+                headers: jsonHeaders,
+                credentials: 'include',
+            })
+        })
+
+        it('throws a HoldsError naming what is in the way', async () => {
+            const dirId = '456abcdef0123456'
+            fetchSpy.mockResolvedValueOnce({
+                ok: false,
+                status: 409,
+                json: async () => ({
+                    code: 409,
+                    message: '"Example Story" also holds lorebook, which deleting it would remove.',
+                    holds: ['lorebook'],
+                }),
+            } as Response)
+
+            const failure = filesManagerService.delDir('stories', dirId)
+            await expect(failure).rejects.toBeInstanceOf(HoldsError)
+            await expect(failure).rejects.toMatchObject({ holds: ['lorebook'] })
+        })
+
+        it('throws a plain Error, not a HoldsError, when the body carries no holds', async () => {
+            const dirId = '456abcdef0123456'
+            fetchSpy.mockResolvedValueOnce({
+                ok: false,
+                status: 404,
+                json: async () => ({ code: 404, message: 'No story with that id.' }),
+            } as Response)
+
+            const failure = filesManagerService.delDir('stories', dirId)
+            await expect(failure).rejects.not.toBeInstanceOf(HoldsError)
+            await expect(failure).rejects.toThrow('No story with that id.')
+        })
     })
 
     describe('getFileInfo', () => {
@@ -343,6 +386,41 @@ describe('filesManagerService', () => {
                 body: content,
                 credentials: 'include',
             })
+        })
+    })
+
+    describe('a file the API does not have', () => {
+        // Told apart from any other failure because it means the caller's id is out
+        // of date -- renamed, deleted, pulled away -- which a caller can recover from.
+        const fileId = '404abcdef0123456'
+
+        beforeEach(() => {
+            fetchSpy.mockResolvedValue({ ok: false, status: 404 } as Response)
+        })
+
+        it('is a NotFoundError from getFileInfo', async () => {
+            await expect(
+                filesManagerService.getFileInfo('stories', fileId)
+            ).rejects.toBeInstanceOf(NotFoundError)
+        })
+
+        it('is a NotFoundError from getFileContent', async () => {
+            await expect(
+                filesManagerService.getFileContent('stories', fileId)
+            ).rejects.toBeInstanceOf(NotFoundError)
+        })
+
+        it('is a NotFoundError from updateFileContent', async () => {
+            await expect(
+                filesManagerService.updateFileContent('stories', fileId, 'x')
+            ).rejects.toBeInstanceOf(NotFoundError)
+        })
+
+        it('is a plain Error for any other failing status', async () => {
+            fetchSpy.mockResolvedValue({ ok: false, status: 500 } as Response)
+            const failure = filesManagerService.getFileContent('stories', fileId)
+            await expect(failure).rejects.not.toBeInstanceOf(NotFoundError)
+            await expect(failure).rejects.toThrow('Failed to fetch file content')
         })
     })
 

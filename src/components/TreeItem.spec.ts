@@ -202,5 +202,37 @@ describe('TreeItem.vue', () => {
       expect(mockOnSelect).toHaveBeenCalledWith(fileNode)
       expect(mockPush).toHaveBeenCalledWith({ name: 'home' })
     })
+
+    it('still offers Delete on a notes folder', async () => {
+      space.value = 'notes'
+      const wrapper = mountTreeItem(folderNode)
+
+      await wrapper.find('.node-actions-trigger').trigger('click')
+
+      const entries = wrapper.findAll('.context-menu div').map((el) => el.text())
+      expect(entries).toContain('Delete')
+    })
+  })
+
+  describe('deleting a story directory', () => {
+    it('omits Delete from the sidebar menu -- it moved to the dashboard', async () => {
+      space.value = 'stories'
+      const wrapper = mountTreeItem(folderNode)
+
+      await wrapper.find('.node-actions-trigger').trigger('click')
+
+      const entries = wrapper.findAll('.context-menu div').map((el) => el.text())
+      expect(entries).toEqual(['New File', 'Edit'])
+    })
+
+    it('still offers Delete on a chapter', async () => {
+      space.value = 'stories'
+      const wrapper = mountTreeItem(fileNode)
+
+      await wrapper.find('.node-actions-trigger').trigger('click')
+
+      const entries = wrapper.findAll('.context-menu div').map((el) => el.text())
+      expect(entries).toContain('Delete')
+    })
   })
 })

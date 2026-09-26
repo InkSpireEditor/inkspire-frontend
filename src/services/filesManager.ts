@@ -47,6 +47,33 @@ export interface TreeApiResponse {
 
 export type DirApiResponse = DirEntry;
 
+/**
+ * A story delete refused because its directory holds more than its chapters --
+ * `holds` names the entries in the way, straight from the API's response body.
+ */
+export class HoldsError extends Error {
+    holds: string[];
+
+    constructor(message: string, holds: string[]) {
+        super(message);
+        this.name = "HoldsError";
+        this.holds = holds;
+    }
+}
+
+/**
+ * The API has no file with that id. Thrown rather than reported as a general failure
+ * because it means one thing in particular: whatever was holding that id is out of
+ * date -- the file was renamed (which changes its id), deleted, or arrived from a
+ * pull that removed it. A caller can recover from that on its own.
+ */
+export class NotFoundError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "NotFoundError";
+    }
+}
+
 export const filesManagerService = {
     async getTree(space: Space): Promise<TreeApiResponse> {
         const response = await apiFetch(`${API_URL}/${space}/tree`, {
@@ -144,12 +171,29 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async delDir(space: Space, id: string) {
-        const response = await apiFetch(`${API_URL}/${space}/dir/${id}`, {
+    /**
+     * Deletes a directory. Refused (without `force`) while it holds anything besides
+     * what this app itself writes there; the refusal's `holds` names what is in the
+     * way, thrown as a `HoldsError` rather than a plain one so a caller can tell the
+     * two apart. `force: true` deletes it regardless of what it holds.
+     */
+    async delDir(space: Space, id: string, options?: { force?: boolean }) {
+        const query = options?.force ? "?force=true" : "";
+        const response = await apiFetch(`${API_URL}/${space}/dir/${id}${query}`, {
             method: "DELETE",
             headers: jsonHeaders(),
         });
-        if (!response.ok) throw new Error("Failed to delete directory");
+        if (!response.ok) {
+            let body: { message?: string; holds?: string[] } | null = null;
+            try {
+                body = await response.json();
+            } catch {
+                // No JSON body to read -- the plain fallback message is all there is.
+            }
+            const message = body?.message ?? "Failed to delete directory";
+            if (body?.holds) throw new HoldsError(message, body.holds);
+            throw new Error(message);
+        }
         if (response.status === 204) return null;
         return response.json();
     },
@@ -158,6 +202,7 @@ export const filesManagerService = {
         const response = await apiFetch(`${API_URL}/${space}/file/${id}`, {
             headers: jsonHeaders(),
         });
+        if (response.status === 404) throw new NotFoundError("No file with that id");
         if (!response.ok) throw new Error("Failed to fetch file info");
         return response.json();
     },
@@ -166,6 +211,7 @@ export const filesManagerService = {
         const response = await apiFetch(`${API_URL}/${space}/file/${id}/contents`, {
             headers: { ...jsonHeaders(), Accept: "text/plain" },
         });
+        if (response.status === 404) throw new NotFoundError("No file with that id");
         if (!response.ok) throw new Error("Failed to fetch file content");
         return response.text();
     },
@@ -176,6 +222,7 @@ export const filesManagerService = {
             headers: { ...jsonHeaders(), "Content-Type": "text/plain" },
             body: content,
         });
+        if (response.status === 404) throw new NotFoundError("No file with that id");
         if (!response.ok) throw new Error("Failed to update file content");
         if (response.status === 204) return null;
         return response.text();

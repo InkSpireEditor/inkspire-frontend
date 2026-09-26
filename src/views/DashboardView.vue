@@ -1,14 +1,20 @@
 <script setup lang="ts">
 /**
- * A story's dashboard: its synopsis, and its chapters in story.yaml order. The git
- * panel and deleting the story land here in later steps; so does word count and
+ * A story's dashboard: its synopsis, its chapters in story.yaml order, and deleting
+ * the story. The git panel lands here in a later step; so does word count and
  * drag-to-reorder.
  */
 import { onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { filesManagerService, type DirApiResponse } from '../services/filesManager'
+import { useRoute, useRouter } from 'vue-router'
+import { filesManagerService, HoldsError, type DirApiResponse } from '../services/filesManager'
+import { useSharedFiles } from '../services/sharedFiles'
+import { useSharedGit } from '../services/sharedGit'
+import Modal from '../components/Modal.vue'
 
 const route = useRoute()
+const router = useRouter()
+const { selectedFile, clearSelectedFile } = useSharedFiles()
+const { refresh: refreshGitStatus } = useSharedGit()
 const story = ref<DirApiResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -32,6 +38,89 @@ onMounted(load)
 // A story link elsewhere in the tree can be clicked while this view is already
 // open, which changes the param without remounting the component.
 watch(() => route.params.id, load)
+
+// --- deleting the story -------------------------------------------------------
+
+const showDeleteConfirm = ref(false)
+const showDeleteHolds = ref(false)
+const showDeleteError = ref(false)
+const holds = ref<string[]>([])
+const typedName = ref('')
+const deleting = ref(false)
+const deleteError = ref('')
+
+const openDeleteConfirm = () => {
+  showDeleteConfirm.value = true
+}
+
+/**
+ * Common to both delete paths. Three things nothing else does on the story's
+ * behalf once it is gone:
+ *
+ * - The sidebar built its tree before this happened, and has no way to notice on
+ *   its own, so it is told directly.
+ * - The shared file selection may still point at one of this story's own chapters
+ *   -- if it does, '/' would otherwise try to reload a file that no longer exists.
+ * - The git panel's last status is now stale, the same way any other change made
+ *   outside its own buttons already refreshes it.
+ */
+const afterDeletion = () => {
+  window.dispatchEvent(new Event('stories:changed'))
+  if (
+    story.value &&
+    selectedFile.value?.space === 'stories' &&
+    story.value.files.some((file) => file.id === selectedFile.value?.id)
+  ) {
+    clearSelectedFile()
+  }
+  refreshGitStatus().catch(() => {})
+  router.push({ name: 'home' })
+}
+
+/**
+ * First attempt: no force. A clean story deletes outright; one holding anything
+ * else answers with what is in the way, which opens the second, more careful modal
+ * instead of just failing.
+ */
+const confirmDelete = async () => {
+  if (!story.value) return
+
+  deleting.value = true
+  try {
+    await filesManagerService.delDir('stories', story.value.id)
+    showDeleteConfirm.value = false
+    afterDeletion()
+  } catch (e) {
+    showDeleteConfirm.value = false
+    if (e instanceof HoldsError) {
+      holds.value = e.holds
+      typedName.value = ''
+      showDeleteHolds.value = true
+    } else {
+      deleteError.value = e instanceof Error ? e.message : 'Delete failed'
+      showDeleteError.value = true
+    }
+  } finally {
+    deleting.value = false
+  }
+}
+
+/** Second attempt, only reached after typing the story's own name: force it through. */
+const confirmForceDelete = async () => {
+  if (!story.value) return
+
+  deleting.value = true
+  try {
+    await filesManagerService.delDir('stories', story.value.id, { force: true })
+    showDeleteHolds.value = false
+    afterDeletion()
+  } catch (e) {
+    deleteError.value = e instanceof Error ? e.message : 'Delete failed'
+    showDeleteError.value = true
+  } finally {
+    deleting.value = false
+  }
+}
 </script>
 
 <template>
@@ -55,7 +144,51 @@ watch(() => route.params.id, load)
       <router-link :to="{ name: 'read', params: { id: story.id } }" class="read-link">
         Read
       </router-link>
+
+      <div class="danger-zone">
+        <button class="delete-story" @click="openDeleteConfirm">Delete story</button>
+      </div>
     </template>
+
+    <Modal
+      :show="showDeleteConfirm"
+      title="Delete story"
+      confirm-text="Delete"
+      is-danger
+      :loading="deleting"
+      @close="showDeleteConfirm = false"
+      @confirm="confirmDelete"
+    >
+      <p>Delete "{{ story?.name }}"? This removes its chapters too.</p>
+    </Modal>
+
+    <Modal
+      :show="showDeleteHolds"
+      title="This story holds more than its chapters"
+      confirm-text="Delete anyway"
+      is-danger
+      :loading="deleting"
+      :confirm-disabled="typedName.trim() !== story?.name"
+      @close="showDeleteHolds = false"
+      @confirm="confirmForceDelete"
+    >
+      <p>Deleting it would also remove: {{ holds.join(', ') }}.</p>
+      <div class="form-group">
+        <label>Type "{{ story?.name }}" to confirm:</label>
+        <input v-model="typedName" @keyup.enter="confirmForceDelete" />
+      </div>
+    </Modal>
+
+    <Modal
+      :show="showDeleteError"
+      title="Error"
+      confirm-text="OK"
+      hide-cancel
+      @close="showDeleteError = false"
+      @confirm="showDeleteError = false"
+    >
+      <p>{{ deleteError }}</p>
+    </Modal>
   </div>
 </template>
 
@@ -132,5 +265,27 @@ h1 {
 
 .read-link:hover {
   background-color: var(--color-background-mute);
+}
+
+.danger-zone {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.delete-story {
+  padding: 8px 16px;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-danger);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium);
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.delete-story:hover {
+  background-color: var(--color-danger);
+  color: white;
 }
 </style>

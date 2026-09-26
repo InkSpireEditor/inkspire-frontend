@@ -47,6 +47,13 @@ const isFolder = computed(() => {
 })
 
 /**
+ * A story's own delete moved to its dashboard, where it can name what is in the
+ * way and ask for the story's name before it really deletes. A chapter and a notes
+ * folder have no such concern, so their delete stays here.
+ */
+const isStoryDirectory = computed(() => isFolder.value && context.space?.value === 'stories')
+
+/**
  * A directory reads differently in each space: a story is a book, and a directory in
  * the other root is a folder. Files look the same in both, because they are.
  */
@@ -152,7 +159,7 @@ const closeMenu = () => {
             <template v-if="isFolder">
                 <div @click.stop="handleAction('create-file')">New File</div>
                 <div @click.stop="handleAction('edit')">Edit</div>
-                <div @click.stop="handleAction('delete')">Delete</div>
+                <div v-if="!isStoryDirectory" @click.stop="handleAction('delete')">Delete</div>
             </template>
             <!-- File Actions -->
             <template v-else>

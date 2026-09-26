@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, provide, readonly } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
@@ -14,6 +15,8 @@ import { isLoggedIn, logout } from '../services/api'
 const { toggleTheme, isDarkMode } = useTheme()
 const { selectedFileId, setSelectedFile, clearSelectedFile } = useSharedFiles()
 const { refresh: refreshGitStatus } = useSharedGit()
+const route = useRoute()
+const router = useRouter()
 
 /** Best-effort: a stale git panel is a smaller problem than a broken action. */
 const refreshGitStatusQuietly = () => {
@@ -215,6 +218,31 @@ const openModal = (type: 'create-file' | 'create-dir' | 'edit', targetId: string
 }
 
 /**
+ * Renames a file, and follows it to its new id.
+ *
+ * A file's id is derived from its path, so renaming one changes it. Anything still
+ * naming the old id is then pointing at something the API no longer has: the shared
+ * selection, whose next save would fail, and the editor's own URL. Both are moved
+ * across here. A directory keeps its id through a rename, so this is files only.
+ */
+const renameFile = async (space: Space, node: FileSystemNode, name: string) => {
+    const renamed = await filesManagerService.editFile(space, node.id, name)
+    if (!renamed?.id || renamed.id === node.id) return
+
+    if (selectedFileId.value === node.id) {
+        setSelectedFile(space, renamed.id)
+    }
+    if (route.name === 'write' && route.params.fileId === node.id) {
+        // The story id comes from the route being replaced rather than from the node:
+        // it is the one place it is certainly present, and it cannot disagree.
+        router.replace({
+            name: 'write',
+            params: { id: route.params.id, fileId: renamed.id },
+        })
+    }
+}
+
+/**
  * Submits the modal form to perform the requested operation (create/edit).
  */
 const submitModal = async () => {
@@ -247,7 +275,7 @@ const submitModal = async () => {
             if (nodeToEdit.value.type === 'D') {
                 await filesManagerService.editDir(space, nodeToEdit.value.id, name, modalInputContext.value)
             } else {
-                await filesManagerService.editFile(space, nodeToEdit.value.id, name)
+                await renameFile(space, nodeToEdit.value, name)
             }
         }
         
@@ -300,13 +328,25 @@ const handleLogout = async () => {
     clearSelectedFile()
 }
 
+/**
+ * 'stories:changed' is dispatched from outside this component -- today only by
+ * DashboardView.vue, after deleting a story -- for a change to the stories tree
+ * this component did not itself make and so cannot refresh through its own
+ * fetchTree calls. Always refetches, even if the stories tab is not the one open.
+ */
+const handleStoriesChanged = () => {
+    fetchTree('stories')
+}
+
 onMounted(() => {
     fetchTree(activeSpace.value)
     document.addEventListener('click', closeRootMenu)
+    window.addEventListener('stories:changed', handleStoriesChanged)
 })
 
 onUnmounted(() => {
     document.removeEventListener('click', closeRootMenu)
+    window.removeEventListener('stories:changed', handleStoriesChanged)
 })
 </script>
 

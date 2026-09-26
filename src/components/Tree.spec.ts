@@ -9,10 +9,13 @@ import { gitService } from '../services/git'
 import { useSharedFiles } from '../services/sharedFiles'
 import { resetSharedGit } from '../services/sharedGit'
 
-// TreeItem calls useRouter() unconditionally; without this, mounting a real tree
-// with a story node in it crashes the moment its row is clicked.
+// Tree and TreeItem both reach for the router unconditionally; without this,
+// mounting a real tree crashes the moment a story row is clicked.
+const mockReplace = vi.fn().mockResolvedValue(undefined)
+const mockRoute = { name: 'home', params: {} as Record<string, string> }
 vi.mock('vue-router', () => ({
-    useRouter: () => ({ push: vi.fn().mockResolvedValue(undefined) })
+    useRouter: () => ({ push: vi.fn().mockResolvedValue(undefined), replace: mockReplace }),
+    useRoute: () => mockRoute
 }))
 
 // Helper to mount the component
@@ -384,5 +387,88 @@ describe('Tree.vue', () => {
 
         expect(filesManagerService.getDirContent).not.toHaveBeenCalled()
         expect((wrapper.vm as any).modalInputContext).toBe('Background reading.')
+    })
+
+    it('refetches the stories tree on a stories:changed event, from outside the component', async () => {
+        // DashboardView.vue dispatches this after deleting a story -- a change this
+        // component did not make and so cannot know about through its own actions.
+        mountTree()
+        await flushPromises()
+        vi.mocked(filesManagerService.getTree).mockClear()
+
+        window.dispatchEvent(new Event('stories:changed'))
+        await flushPromises()
+
+        expect(filesManagerService.getTree).toHaveBeenCalledWith('stories')
+    })
+
+    describe('renaming a file', () => {
+        /** Opens the rename dialog on the one file in the notes tree. */
+        async function openRenameOn(wrapper: ReturnType<typeof mountTree>) {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [],
+                files: [{ id: 'f1f1f1f1f1f1f1f1', name: 'scratch', status: '' }],
+            })
+            await openTab(wrapper, 'Notes')
+
+            const item = wrapper.findComponent(TreeItem)
+            await item.find('.node-actions-trigger').trigger('click')
+            const edit = item.findAll('.context-menu div').find(d => d.text() === 'Edit')
+            await edit?.trigger('click')
+            return wrapper
+        }
+
+        it('follows the selection to the new id, since a rename changes it', async () => {
+            // Without this the selection names a file the API no longer has, and the
+            // next autosave fails against it.
+            vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new0000000000000' })
+            const wrapper = mountTree()
+            await flushPromises()
+            await openRenameOn(wrapper)
+
+            useSharedFiles().setSelectedFile('notes', 'f1f1f1f1f1f1f1f1')
+            ;(wrapper.vm as any).modalInputName = 'renamed'
+            await (wrapper.vm as any).submitModal()
+            await flushPromises()
+
+            expect(useSharedFiles().selectedFile.value).toEqual({
+                space: 'notes',
+                id: 'new0000000000000',
+            })
+        })
+
+        it('leaves a selection on some other file alone', async () => {
+            vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new0000000000000' })
+            const wrapper = mountTree()
+            await flushPromises()
+            await openRenameOn(wrapper)
+
+            useSharedFiles().setSelectedFile('notes', 'elsewhere00000000')
+            ;(wrapper.vm as any).modalInputName = 'renamed'
+            await (wrapper.vm as any).submitModal()
+            await flushPromises()
+
+            expect(useSharedFiles().selectedFileId.value).toBe('elsewhere00000000')
+        })
+
+        it('replaces the editor URL when it is the renamed file that is open', async () => {
+            vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new0000000000000' })
+            mockRoute.name = 'write'
+            mockRoute.params = { id: 'story00000000000', fileId: 'f1f1f1f1f1f1f1f1' }
+            const wrapper = mountTree()
+            await flushPromises()
+            await openRenameOn(wrapper)
+
+            ;(wrapper.vm as any).modalInputName = 'renamed'
+            await (wrapper.vm as any).submitModal()
+            await flushPromises()
+
+            expect(mockReplace).toHaveBeenCalledWith({
+                name: 'write',
+                params: { id: 'story00000000000', fileId: 'new0000000000000' },
+            })
+            mockRoute.name = 'home'
+            mockRoute.params = {}
+        })
     })
 })

@@ -106,6 +106,18 @@ describe('Modal.vue', () => {
     expect(buttons[0]?.text()).toBe('Confirm')
   })
 
+  it('disables only the confirm button when confirmDisabled is true', () => {
+    const wrapper = mount(Modal, {
+      props: { ...defaultProps, confirmDisabled: true },
+      global: {
+        stubs: { teleport: true }
+      }
+    })
+    const buttons = wrapper.findAll('button')
+    expect((buttons[0]?.element as HTMLButtonElement).disabled).toBe(false)
+    expect((buttons[1]?.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('disables buttons when loading is true', () => {
     const wrapper = mount(Modal, {
       props: { ...defaultProps, loading: true },
