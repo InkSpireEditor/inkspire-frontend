@@ -101,7 +101,7 @@ describe('Text.vue', () => {
     expect(vm.text).toBe('Initial content')
   })
 
-  it('auto-save fires after content change', async () => {
+  it('auto-save fires 2s after the last keystroke, not before', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
@@ -109,13 +109,41 @@ describe('Text.vue', () => {
     await flushPromises()
     await wrapper.vm.$nextTick()
 
-    // Simulate user editing
     const vm = wrapper.vm as any
     vm.handleContentChange('Changed content')
 
-    vi.advanceTimersByTime(5000)
+    vi.advanceTimersByTime(1999)
     await flushPromises()
-    expect(filesManagerService.updateFileContent).toHaveBeenCalled()
+    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(1)
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+  })
+
+  it('debounces a run of keystrokes into a single save', async () => {
+    const wrapper = mount(Text, {
+      global: { stubs: { teleport: true } }
+    })
+    selectedFile.value = OPEN
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const vm = wrapper.vm as any
+    // Each keystroke restarts the 2s wait, so as long as they arrive closer
+    // together than that, nothing saves until the run stops.
+    vm.handleContentChange('C')
+    vi.advanceTimersByTime(1000)
+    vm.handleContentChange('Ch')
+    vi.advanceTimersByTime(1000)
+    vm.handleContentChange('Cha')
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(2000)
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(OPEN.space, OPEN.id, 'Cha')
   })
 
   it('auto-save skips API call when content is unchanged', async () => {
@@ -126,10 +154,46 @@ describe('Text.vue', () => {
     await flushPromises()
     await wrapper.vm.$nextTick()
 
-    // No content change — isDirty remains false
+    // No content change — isDirty remains false, and no debounce was even scheduled
     vi.advanceTimersByTime(5000)
     await flushPromises()
     expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+  })
+
+  it('does not autosave while generating, but flushes once the stream ends', async () => {
+    const wrapper = await mountWithFile()
+
+    let resolveGenerate: () => void = () => {}
+    vi.mocked(llmService.generate).mockImplementation(
+      (_model, _prompt, onDelta) =>
+        new Promise<void>((resolve) => {
+          resolveGenerate = () => {
+            onDelta(' streamed.')
+            resolve()
+          }
+        })
+    )
+
+    // A keystroke just before Generate leaves a pending debounce that generating
+    // should cancel, not let fire mid-stream.
+    const vm = wrapper.vm as any
+    vm.handleContentChange('Changed just before generating')
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+
+    vi.advanceTimersByTime(10000)
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+
+    resolveGenerate()
+    await flushPromises()
+
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
+      'Changed just before generating streamed.'
+    )
   })
 
   describe('a selection the API no longer has', () => {
