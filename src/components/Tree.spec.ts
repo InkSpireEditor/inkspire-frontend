@@ -5,7 +5,9 @@ import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import { filesManagerService, type FileSystemNode, type TreeApiResponse } from '../services/filesManager'
 import { modelService } from '../services/model'
+import { gitService } from '../services/git'
 import { useSharedFiles } from '../services/sharedFiles'
+import { resetSharedGit } from '../services/sharedGit'
 
 // Helper to mount the component
 function mountTree() {
@@ -40,9 +42,14 @@ describe('Tree.vue', () => {
         // Which tab was last open is remembered, so it must not leak between tests.
         localStorage.clear()
         useSharedFiles().clearSelectedFile()
+        resetSharedGit()
 
         // Spy on all service methods
         vi.spyOn(modelService, 'getModels').mockResolvedValue([])
+        vi.spyOn(gitService, 'status').mockResolvedValue({
+            branch: 'main', upstream: 'origin/main', ahead: 0, behind: 0,
+            fetched: false, clean: true, changes: [],
+        })
         vi.spyOn(filesManagerService, 'getTree').mockResolvedValue({ dirs: [], files: [] })
         vi.spyOn(filesManagerService, 'getDirContent').mockResolvedValue(
             { id: '1', name: 'DirA', summary: '', files: [] },

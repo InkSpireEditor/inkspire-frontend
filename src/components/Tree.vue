@@ -3,14 +3,22 @@ import { computed, ref, onMounted, onUnmounted, provide, readonly } from 'vue'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
+import GitPanel from './GitPanel.vue'
 import { filesManagerService, type FileSystemNode } from '../services/filesManager'
 import { useTheme } from '../services/theme'
 import { useSharedFiles } from '../services/sharedFiles'
+import { useSharedGit } from '../services/sharedGit'
 import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../services/spaces'
 import { isLoggedIn, logout } from '../services/api'
 
 const { toggleTheme, isDarkMode } = useTheme()
 const { setSelectedFile, clearSelectedFile } = useSharedFiles()
+const { refresh: refreshGitStatus } = useSharedGit()
+
+/** Best-effort: a stale git panel is a smaller problem than a broken action. */
+const refreshGitStatusQuietly = () => {
+  refreshGitStatus().catch(() => {})
+}
 
 /** Which tab was open last time, so a reload comes back where it was left. */
 const ACTIVE_SPACE_KEY = 'activeSpace'
@@ -245,6 +253,7 @@ const submitModal = async () => {
         
         showModal.value = false
         fetchTree(space) // Refresh tree
+        if (space === 'stories') refreshGitStatusQuietly()
     } catch (e) {
         errorMessage.value = 'Operation failed'
         showError.value = true
@@ -271,6 +280,7 @@ const confirmDelete = async () => {
         }
         showConfirm.value = false
         fetchTree(space)
+        if (space === 'stories') refreshGitStatusQuietly()
     } catch (e) {
         errorMessage.value = 'Delete failed'
         showError.value = true
@@ -387,6 +397,7 @@ onUnmounted(() => {
       <p>{{ errorMessage }}</p>
     </Modal>
 
+    <GitPanel />
     <ModelSelector />
   </div>
 </template>

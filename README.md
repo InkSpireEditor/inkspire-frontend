@@ -23,6 +23,9 @@ InkSpire is a modern web-based text editor designed for writers who want to leve
   holds its chapters; the other tab holds notes, at its root or in a folder.
 - **Clean and Focused Editor**  
   A distraction-free writing environment with a modern interface.
+- **Version Control, Built In**  
+  The story repository is a git working tree. A panel in the sidebar shows what has
+  changed and commits it with one message; saving prose never commits on its own.
 - **Authentication**  
   Secure login system to protect your workspace.
 - **Dynamic UI**  
