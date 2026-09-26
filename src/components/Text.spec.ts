@@ -7,6 +7,7 @@ import { filesManagerService } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import * as sharedFiles from '../services/sharedFiles'
 import * as sharedModel from '../services/sharedModel'
+import * as sharedGit from '../services/sharedGit'
 
 // Mock services
 vi.mock('../services/filesManager', () => ({
@@ -45,6 +46,11 @@ describe('Text.vue', () => {
     vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
       selectedModelName: ref('llama3'),
       setSelectedModel: vi.fn()
+    })
+    vi.spyOn(sharedGit, 'useSharedGit').mockReturnValue({
+      gitStatus: ref(null),
+      refresh: vi.fn().mockResolvedValue(undefined),
+      setStatus: vi.fn()
     })
     
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'test.ink' })
@@ -253,6 +259,11 @@ describe('Text.vue across the two spaces', () => {
     vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
       selectedModelName: ref('llama3'),
       setSelectedModel: vi.fn()
+    })
+    vi.spyOn(sharedGit, 'useSharedGit').mockReturnValue({
+      gitStatus: ref(null),
+      refresh: vi.fn().mockResolvedValue(undefined),
+      setStatus: vi.fn()
     })
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'scratch' })
     vi.mocked(filesManagerService.getFileContent).mockResolvedValue('A list.')

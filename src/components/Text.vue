@@ -4,12 +4,14 @@ import { filesManagerService } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
+import { useSharedGit } from '../services/sharedGit'
 import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 
 const { selectedFile } = useSharedFiles()
 const { selectedModelName } = useSharedModel()
+const { refresh: refreshGitStatus } = useSharedGit()
 
 /** How often the editor writes unsaved changes back to the API, in ms. */
 const AUTO_SAVE_INTERVAL_MS = 5000
@@ -65,6 +67,8 @@ const save = async () => {
   try {
     await filesManagerService.updateFileContent(file.space, file.id, text.value)
     isDirty.value = false
+    // A note is never committed, so only a chapter's save is worth a git refresh.
+    if (file.space === 'stories') refreshGitStatus().catch(() => {})
   } catch (e) {
     console.error('Error saving file:', e)
     displayError('Failed to save the file')
