@@ -235,9 +235,25 @@ const confirmForceDelete = async () => {
         <li v-if="story.files.length === 0" class="empty">No chapters yet.</li>
       </ul>
 
-      <router-link :to="{ name: 'read', params: { id: story.id } }" class="read-link">
-        Read
-      </router-link>
+      <div class="story-links">
+        <router-link :to="{ name: 'read', params: { id: story.id } }" class="read-link">
+          Read
+        </router-link>
+        <router-link
+          v-if="story.timeline"
+          :to="{ name: 'timeline', params: { id: story.id } }"
+          class="read-link"
+        >
+          Timeline
+        </router-link>
+        <router-link
+          v-if="story.lorebook"
+          :to="{ name: 'lore', params: { id: story.id } }"
+          class="read-link"
+        >
+          Lorebook
+        </router-link>
+      </div>
 
       <GitPanel />
 
@@ -369,6 +385,11 @@ h1 {
   color: var(--color-text);
   opacity: 0.7;
   padding: var(--space-2) var(--space-3);
+}
+
+.story-links {
+  display: flex;
+  gap: var(--space-3);
 }
 
 .read-link {
