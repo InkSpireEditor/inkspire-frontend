@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, inject, type Ref } from 'vue'
+import { useRouter } from 'vue-router'
 import type { FileSystemNode } from '../services/filesManager'
 import { useSharedFiles } from '../services/sharedFiles'
 import { DIR_ICONS, type Space } from '../services/spaces'
@@ -34,6 +35,7 @@ interface TreeContext {
 // 'inject' retrieves the state and methods provided by the ancestor 'Tree' component.
 const context = inject<TreeContext>('treeContext')!
 const { onSelect, onAction } = context
+const router = useRouter()
 
 const isOpen = ref(false)
 const showMenu = ref(false)
@@ -43,6 +45,13 @@ const showMenu = ref(false)
 const isFolder = computed(() => {
   return props.node.type === 'D'
 })
+
+/**
+ * A story's own delete moved to its dashboard, where it can name what is in the
+ * way and ask for the story's name before it really deletes. A chapter and a notes
+ * folder have no such concern, so their delete stays here.
+ */
+const isStoryDirectory = computed(() => isFolder.value && context.space?.value === 'stories')
 
 /**
  * A directory reads differently in each space: a story is a book, and a directory in
@@ -82,11 +91,30 @@ const toggle = () => {
   }
 }
 
+/**
+ * A story reads differently than a note: a story directory or chapter has a URL, so
+ * the row navigates there; a notes folder only expands, and a note sets the shared
+ * selection directly, exactly as either already did before routing existed. A note
+ * also returns to '/' -- the only route Text.vue renders under -- since without
+ * that, opening one while a story route is showing would set the selection with
+ * nothing on screen watching it. The disclosure triangle keeps expanding a story
+ * directory too -- see `toggle`.
+ */
 const select = () => {
+  const space = context.space?.value
   if (isFolder.value) {
-    toggle()
+    if (space === 'stories') {
+      router.push({ name: 'dashboard', params: { id: props.node.id } })
+    } else {
+      toggle()
+    }
+    return
+  }
+  if (space === 'stories' && props.node.parentId) {
+    router.push({ name: 'write', params: { id: props.node.parentId, fileId: props.node.id } })
   } else {
     onSelect(props.node)
+    router.push({ name: 'home' }).catch(() => {})
   }
 }
 
@@ -131,7 +159,7 @@ const closeMenu = () => {
             <template v-if="isFolder">
                 <div @click.stop="handleAction('create-file')">New File</div>
                 <div @click.stop="handleAction('edit')">Edit</div>
-                <div @click.stop="handleAction('delete')">Delete</div>
+                <div v-if="!isStoryDirectory" @click.stop="handleAction('delete')">Delete</div>
             </template>
             <!-- File Actions -->
             <template v-else>

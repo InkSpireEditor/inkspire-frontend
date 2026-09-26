@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { filesManagerService } from '../services/filesManager'
+import { filesManagerService, NotFoundError } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
@@ -9,12 +9,12 @@ import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 
-const { selectedFile } = useSharedFiles()
+const { selectedFile, clearSelectedFile } = useSharedFiles()
 const { selectedModelName } = useSharedModel()
 const { refresh: refreshGitStatus } = useSharedGit()
 
-/** How often the editor writes unsaved changes back to the API, in ms. */
-const AUTO_SAVE_INTERVAL_MS = 5000
+/** How long to wait after the last keystroke before writing it back to the API, in ms. */
+const AUTO_SAVE_DEBOUNCE_MS = 2000
 
 // --- Component State ---
 const text = ref('')
@@ -29,8 +29,7 @@ const errorMessage = ref('')
 let autoSaveTimer: number | null = null
 
 /**
- * Loads a file's name and content and starts the auto-save timer for it.
- * Called whenever the selection changes to a file.
+ * Loads a file's name and content. Called whenever the selection changes to a file.
  *
  * The content is the prose alone: the API keeps the file's header out of it, and puts
  * the header back when the prose is saved.
@@ -49,10 +48,18 @@ const loadFile = async (file: FileSelection) => {
     currentFile.value = file
     isDirty.value = false
 
-    startAutoSave()
+    cancelAutoSave()
   } catch (e) {
     console.error('Error loading file:', e)
-    displayError('Failed to load the file')
+    if (e instanceof NotFoundError) {
+      // The selection is out of date, not broken: the file was renamed, deleted, or
+      // removed by a pull. Dropping it falls back to "No file selected", which is
+      // what this pane shows anyway with nothing open -- there is nothing here for
+      // the reader to act on, so there is nothing worth interrupting them for.
+      clearSelectedFile()
+    } else {
+      displayError('Failed to load the file')
+    }
   }
 }
 
@@ -71,21 +78,40 @@ const save = async () => {
     if (file.space === 'stories') refreshGitStatus().catch(() => {})
   } catch (e) {
     console.error('Error saving file:', e)
-    displayError('Failed to save the file')
+    if (e instanceof NotFoundError) {
+      // Nothing to save into any more. `isDirty` stays true and the text stays on
+      // screen, so the writer can still copy it somewhere -- but the debounce has
+      // to stop, or it would raise this same dialog on every further keystroke.
+      cancelAutoSave()
+      displayError(
+        'This file no longer exists. It may have been renamed or deleted elsewhere. ' +
+        'Your text is still here — copy it somewhere safe.'
+      )
+    } else {
+      displayError('Failed to save the file')
+    }
   }
 }
 
-/** Restarts the auto-save timer, replacing any timer left over from a previous file. */
-const startAutoSave = () => {
-  stopAutoSave()
-  autoSaveTimer = window.setInterval(() => {
+/**
+ * (Re)starts the debounce so a save fires once typing pauses, replacing any
+ * still-pending one from an earlier keystroke. Skipped while a generation is
+ * streaming: `handleGenerate`'s own `finally` flushes once it ends, so a
+ * multi-second continuation produces one save rather than one every couple
+ * of seconds.
+ */
+const scheduleAutoSave = () => {
+  cancelAutoSave()
+  if (isGenerating.value) return
+  autoSaveTimer = window.setTimeout(() => {
+    autoSaveTimer = null
     save()
-  }, AUTO_SAVE_INTERVAL_MS)
+  }, AUTO_SAVE_DEBOUNCE_MS)
 }
 
-const stopAutoSave = () => {
+const cancelAutoSave = () => {
   if (autoSaveTimer) {
-    clearInterval(autoSaveTimer)
+    clearTimeout(autoSaveTimer)
     autoSaveTimer = null
   }
 }
@@ -93,6 +119,7 @@ const stopAutoSave = () => {
 const handleContentChange = (newContent: string) => {
   text.value = newContent
   isDirty.value = true
+  scheduleAutoSave()
 }
 
 const isGenerating = ref(false)
@@ -101,9 +128,10 @@ let generation: AbortController | null = null
 /**
  * Appends a continuation of the current text, a chunk at a time as the model writes it.
  *
- * The API saves nothing, so every chunk marks the document dirty and the auto-save
- * timer writes it back. Text that arrived before a failure is kept: it is as much the
- * writer's to keep or undo as anything they typed.
+ * The API saves nothing, so every chunk marks the document dirty; the debounce is
+ * suspended for the duration (see `scheduleAutoSave`), and the `finally` below is
+ * what writes it back, once, when the stream ends. Text that arrived before a
+ * failure is kept: it is as much the writer's to keep or undo as anything they typed.
  */
 const handleGenerate = async () => {
   if (isGenerating.value) return
@@ -115,6 +143,9 @@ const handleGenerate = async () => {
 
   if (!isLoggedIn() || !currentFile.value) return
 
+  // Any debounce left over from typing just before Generate was clicked would
+  // otherwise fire mid-stream -- the finally below is what flushes now instead.
+  cancelAutoSave()
   isGenerating.value = true
   generation = new AbortController()
   try {
@@ -152,7 +183,7 @@ const displayError = (msg: string) => {
 
 // Watch for changes in selected file
 watch(selectedFile, (file) => {
-  stopAutoSave()
+  cancelAutoSave()
   if (file) {
     loadFile(file)
   } else {
@@ -169,7 +200,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  stopAutoSave()
+  cancelAutoSave()
   if (currentFile.value) {
     save()
   }
@@ -200,6 +231,7 @@ onUnmounted(() => {
       :show="showError"
       title="Error"
       confirm-text="OK"
+      hide-cancel
       @close="showError = false"
       @confirm="showError = false"
     >

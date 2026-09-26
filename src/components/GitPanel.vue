@@ -137,7 +137,7 @@ onMounted(async () => {
       :show="showError"
       title="Error"
       confirm-text="OK"
-      cancel-text="OK"
+      hide-cancel
       @close="showError = false"
       @confirm="showError = false"
     >
@@ -148,9 +148,9 @@ onMounted(async () => {
 
 <style scoped>
 .git-panel {
-  padding: 1rem;
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
-  background-color: var(--color-background);
 }
 
 h3 {

@@ -12,6 +12,11 @@ defineProps<{
   isDanger?: boolean
   loading?: boolean
   maxWidth?: string
+  /** For a pure notification with nothing to cancel -- an error, say. */
+  hideCancel?: boolean
+  /** For a confirmation that needs something more than just being open -- typing a
+   * name to match, say -- before it can be confirmed. */
+  confirmDisabled?: boolean
 }>()
 
 const emit = defineEmits(['close', 'confirm'])
@@ -36,13 +41,13 @@ const handleConfirm = () => {
         </div>
 
         <div class="modal-actions">
-          <button @click="handleCancel" :disabled="loading">
+          <button v-if="!hideCancel" @click="handleCancel" :disabled="loading">
             {{ cancelText || 'Cancel' }}
           </button>
-          <button 
-            :class="isDanger ? 'danger' : 'primary'" 
+          <button
+            :class="isDanger ? 'danger' : 'primary'"
             @click="handleConfirm"
-            :disabled="loading"
+            :disabled="loading || confirmDisabled"
           >
             <span v-if="loading">...</span>
             <span v-else>{{ confirmText || 'Save' }}</span>

@@ -3,21 +3,28 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import Text from './Text.vue'
 import Modal from './Modal.vue'
-import { filesManagerService } from '../services/filesManager'
+import { filesManagerService, NotFoundError } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import * as sharedFiles from '../services/sharedFiles'
 import * as sharedModel from '../services/sharedModel'
 import * as sharedGit from '../services/sharedGit'
 
-// Mock services
-vi.mock('../services/filesManager', () => ({
-  filesManagerService: {
-    getFileInfo: vi.fn(),
-    getFileContent: vi.fn(),
-    updateFileContent: vi.fn(),
-    getDirContent: vi.fn()
+// Mock services. NotFoundError is the real class: Text.vue branches on it with
+// instanceof, so a stand-in would not be recognised.
+vi.mock('../services/filesManager', async () => {
+  const actual = await vi.importActual<typeof import('../services/filesManager')>(
+    '../services/filesManager'
+  )
+  return {
+    ...actual,
+    filesManagerService: {
+      getFileInfo: vi.fn(),
+      getFileContent: vi.fn(),
+      updateFileContent: vi.fn(),
+      getDirContent: vi.fn()
+    }
   }
-}))
+})
 
 vi.mock('../services/llm', () => ({
   llmService: {
@@ -41,7 +48,11 @@ describe('Text.vue', () => {
       selectedFile,
       selectedFileId: computed(() => selectedFile.value?.id ?? null),
       setSelectedFile: vi.fn(),
-      clearSelectedFile: vi.fn()
+      // Clears for real, so a test can see what the pane falls back to rather than
+      // only that the call happened.
+      clearSelectedFile: () => {
+        selectedFile.value = null
+      }
     })
     vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
       selectedModelName: ref('llama3'),
@@ -90,7 +101,7 @@ describe('Text.vue', () => {
     expect(vm.text).toBe('Initial content')
   })
 
-  it('auto-save fires after content change', async () => {
+  it('auto-save fires 2s after the last keystroke, not before', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
@@ -98,13 +109,41 @@ describe('Text.vue', () => {
     await flushPromises()
     await wrapper.vm.$nextTick()
 
-    // Simulate user editing
     const vm = wrapper.vm as any
     vm.handleContentChange('Changed content')
 
-    vi.advanceTimersByTime(5000)
+    vi.advanceTimersByTime(1999)
     await flushPromises()
-    expect(filesManagerService.updateFileContent).toHaveBeenCalled()
+    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(1)
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+  })
+
+  it('debounces a run of keystrokes into a single save', async () => {
+    const wrapper = mount(Text, {
+      global: { stubs: { teleport: true } }
+    })
+    selectedFile.value = OPEN
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const vm = wrapper.vm as any
+    // Each keystroke restarts the 2s wait, so as long as they arrive closer
+    // together than that, nothing saves until the run stops.
+    vm.handleContentChange('C')
+    vi.advanceTimersByTime(1000)
+    vm.handleContentChange('Ch')
+    vi.advanceTimersByTime(1000)
+    vm.handleContentChange('Cha')
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(2000)
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(OPEN.space, OPEN.id, 'Cha')
   })
 
   it('auto-save skips API call when content is unchanged', async () => {
@@ -115,10 +154,103 @@ describe('Text.vue', () => {
     await flushPromises()
     await wrapper.vm.$nextTick()
 
-    // No content change — isDirty remains false
+    // No content change — isDirty remains false, and no debounce was even scheduled
     vi.advanceTimersByTime(5000)
     await flushPromises()
     expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+  })
+
+  it('does not autosave while generating, but flushes once the stream ends', async () => {
+    const wrapper = await mountWithFile()
+
+    let resolveGenerate: () => void = () => {}
+    vi.mocked(llmService.generate).mockImplementation(
+      (_model, _prompt, onDelta) =>
+        new Promise<void>((resolve) => {
+          resolveGenerate = () => {
+            onDelta(' streamed.')
+            resolve()
+          }
+        })
+    )
+
+    // A keystroke just before Generate leaves a pending debounce that generating
+    // should cancel, not let fire mid-stream.
+    const vm = wrapper.vm as any
+    vm.handleContentChange('Changed just before generating')
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+
+    vi.advanceTimersByTime(10000)
+    await flushPromises()
+    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+
+    resolveGenerate()
+    await flushPromises()
+
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
+      'Changed just before generating streamed.'
+    )
+  })
+
+  describe('a selection the API no longer has', () => {
+    it('drops the selection instead of raising a dialog, on load', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockRejectedValue(
+        new NotFoundError('No file with that id')
+      )
+      vi.mocked(filesManagerService.getFileContent).mockRejectedValue(
+        new NotFoundError('No file with that id')
+      )
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(selectedFile.value).toBeNull()
+      expect(wrapper.text()).toContain('No file selected')
+      expect(wrapper.findComponent(Modal).props('show')).toBe(false)
+    })
+
+    it('still raises a dialog for any other load failure', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockRejectedValue(new Error('boom'))
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(selectedFile.value).not.toBeNull()
+      expect((wrapper.vm as any).errorMessage).toBe('Failed to load the file')
+    })
+
+    it('says so once on save, and stops retrying', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      vi.mocked(filesManagerService.updateFileContent).mockRejectedValue(
+        new NotFoundError('No file with that id')
+      )
+      const vm = wrapper.vm as any
+      vm.handleContentChange('Changed content')
+
+      vi.advanceTimersByTime(5000)
+      await flushPromises()
+      expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+      expect(vm.errorMessage).toContain('no longer exists')
+
+      // The timer is stopped, so the same dialog does not come back every interval.
+      vi.advanceTimersByTime(20000)
+      await flushPromises()
+      expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+      // The writer's text is still on screen to copy out of.
+      expect(vm.text).toBe('Changed content')
+    })
   })
 
   it('flushes unsaved content to the backend on unmount', async () => {

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, provide, readonly } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
-import GitPanel from './GitPanel.vue'
 import { filesManagerService, type FileSystemNode } from '../services/filesManager'
 import { useTheme } from '../services/theme'
 import { useSharedFiles } from '../services/sharedFiles'
@@ -12,12 +12,28 @@ import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../s
 import { isLoggedIn, logout } from '../services/api'
 
 const { toggleTheme, isDarkMode } = useTheme()
-const { setSelectedFile, clearSelectedFile } = useSharedFiles()
+const { selectedFileId, setSelectedFile, clearSelectedFile } = useSharedFiles()
 const { refresh: refreshGitStatus } = useSharedGit()
+const route = useRoute()
+const router = useRouter()
 
 /** Best-effort: a stale git panel is a smaller problem than a broken action. */
 const refreshGitStatusQuietly = () => {
   refreshGitStatus().catch(() => {})
+}
+
+/**
+ * Tells a story's dashboard, if one happens to be open, that this component just
+ * changed one of that story's own chapters (or the story itself) -- a change the
+ * dashboard has no way to notice through its own fetch. Carried as `detail` rather
+ * than reusing the plain, detail-less 'stories:changed' event this component also
+ * listens for (dispatched by the dashboard after a delete): without a storyId, a
+ * dashboard for an unrelated story would reload for no reason.
+ */
+const notifyDashboard = (storyId: string | null | undefined) => {
+    if (storyId) {
+        window.dispatchEvent(new CustomEvent('stories:changed', { detail: { storyId } }))
+    }
 }
 
 /** Which tab was open last time, so a reload comes back where it was left. */
@@ -215,6 +231,31 @@ const openModal = (type: 'create-file' | 'create-dir' | 'edit', targetId: string
 }
 
 /**
+ * Renames a file, and follows it to its new id.
+ *
+ * A file's id is derived from its path, so renaming one changes it. Anything still
+ * naming the old id is then pointing at something the API no longer has: the shared
+ * selection, whose next save would fail, and the editor's own URL. Both are moved
+ * across here. A directory keeps its id through a rename, so this is files only.
+ */
+const renameFile = async (space: Space, node: FileSystemNode, name: string) => {
+    const renamed = await filesManagerService.editFile(space, node.id, name)
+    if (!renamed?.id || renamed.id === node.id) return
+
+    if (selectedFileId.value === node.id) {
+        setSelectedFile(space, renamed.id)
+    }
+    if (route.name === 'write' && route.params.fileId === node.id) {
+        // The story id comes from the route being replaced rather than from the node:
+        // it is the one place it is certainly present, and it cannot disagree.
+        router.replace({
+            name: 'write',
+            params: { id: route.params.id, fileId: renamed.id },
+        })
+    }
+}
+
+/**
  * Submits the modal form to perform the requested operation (create/edit).
  */
 const submitModal = async () => {
@@ -247,13 +288,24 @@ const submitModal = async () => {
             if (nodeToEdit.value.type === 'D') {
                 await filesManagerService.editDir(space, nodeToEdit.value.id, name, modalInputContext.value)
             } else {
-                await filesManagerService.editFile(space, nodeToEdit.value.id, name)
+                await renameFile(space, nodeToEdit.value, name)
             }
         }
         
         showModal.value = false
         fetchTree(space) // Refresh tree
-        if (space === 'stories') refreshGitStatusQuietly()
+        if (space === 'stories') {
+            refreshGitStatusQuietly()
+            const storyId =
+                modalType.value === 'create-file'
+                    ? targetNodeId.value
+                    : modalType.value === 'edit' && nodeToEdit.value
+                      ? nodeToEdit.value.type === 'D'
+                          ? nodeToEdit.value.id
+                          : nodeToEdit.value.parentId
+                      : null
+            notifyDashboard(storyId)
+        }
     } catch (e) {
         errorMessage.value = 'Operation failed'
         showError.value = true
@@ -268,19 +320,26 @@ const confirmDelete = async () => {
     if (!isLoggedIn() || !nodeToDelete.value) return
 
     const space = activeSpace.value
+    const deletedNode = nodeToDelete.value
     try {
-        if (nodeToDelete.value.type === 'D') {
-            await filesManagerService.delDir(space, nodeToDelete.value.id)
+        if (deletedNode.type === 'D') {
+            await filesManagerService.delDir(space, deletedNode.id)
         } else {
-            if (selectedNodeId.value === nodeToDelete.value.id) {
+            // Compared against the shared selection, not the local selectedNodeId: a
+            // story chapter's selection is now set by the write route rather than by
+            // handleSelect, so selectedNodeId alone would miss it.
+            if (selectedFileId.value === deletedNode.id) {
                 clearSelectedFile()
                 selectedNodeId.value = null
             }
-            await filesManagerService.delFile(space, nodeToDelete.value.id)
+            await filesManagerService.delFile(space, deletedNode.id)
         }
         showConfirm.value = false
         fetchTree(space)
-        if (space === 'stories') refreshGitStatusQuietly()
+        if (space === 'stories') {
+            refreshGitStatusQuietly()
+            notifyDashboard(deletedNode.type === 'D' ? deletedNode.id : deletedNode.parentId)
+        }
     } catch (e) {
         errorMessage.value = 'Delete failed'
         showError.value = true
@@ -297,13 +356,28 @@ const handleLogout = async () => {
     clearSelectedFile()
 }
 
+/**
+ * 'stories:changed' also fires for changes this component made itself --
+ * `notifyDashboard` dispatches it with a `storyId` right after this component's own
+ * `fetchTree` call above, so the refetch here is a harmless repeat in that case. The
+ * case this listener exists for is DashboardView.vue's plain, detail-less dispatch
+ * after deleting a story: a change to the stories tree this component did not make
+ * and so cannot refresh through its own fetchTree calls. Always refetches, even if
+ * the stories tab is not the one open.
+ */
+const handleStoriesChanged = () => {
+    fetchTree('stories')
+}
+
 onMounted(() => {
     fetchTree(activeSpace.value)
     document.addEventListener('click', closeRootMenu)
+    window.addEventListener('stories:changed', handleStoriesChanged)
 })
 
 onUnmounted(() => {
     document.removeEventListener('click', closeRootMenu)
+    window.removeEventListener('stories:changed', handleStoriesChanged)
 })
 </script>
 
@@ -390,14 +464,13 @@ onUnmounted(() => {
       :show="showError"
       title="Error"
       confirm-text="OK"
-      cancel-text="OK"
+      hide-cancel
       @close="showError = false"
       @confirm="showError = false"
     >
       <p>{{ errorMessage }}</p>
     </Modal>
 
-    <GitPanel />
     <ModelSelector />
   </div>
 </template>
