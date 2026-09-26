@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, inject, type Ref } from 'vue'
+import { useRouter } from 'vue-router'
 import type { FileSystemNode } from '../services/filesManager'
 import { useSharedFiles } from '../services/sharedFiles'
 import { DIR_ICONS, type Space } from '../services/spaces'
@@ -34,6 +35,7 @@ interface TreeContext {
 // 'inject' retrieves the state and methods provided by the ancestor 'Tree' component.
 const context = inject<TreeContext>('treeContext')!
 const { onSelect, onAction } = context
+const router = useRouter()
 
 const isOpen = ref(false)
 const showMenu = ref(false)
@@ -82,11 +84,30 @@ const toggle = () => {
   }
 }
 
+/**
+ * A story reads differently than a note: a story directory or chapter has a URL, so
+ * the row navigates there; a notes folder only expands, and a note sets the shared
+ * selection directly, exactly as either already did before routing existed. A note
+ * also returns to '/' -- the only route Text.vue renders under -- since without
+ * that, opening one while a story route is showing would set the selection with
+ * nothing on screen watching it. The disclosure triangle keeps expanding a story
+ * directory too -- see `toggle`.
+ */
 const select = () => {
+  const space = context.space?.value
   if (isFolder.value) {
-    toggle()
+    if (space === 'stories') {
+      router.push({ name: 'dashboard', params: { id: props.node.id } })
+    } else {
+      toggle()
+    }
+    return
+  }
+  if (space === 'stories' && props.node.parentId) {
+    router.push({ name: 'write', params: { id: props.node.parentId, fileId: props.node.id } })
   } else {
     onSelect(props.node)
+    router.push({ name: 'home' }).catch(() => {})
   }
 }
 

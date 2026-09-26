@@ -12,7 +12,7 @@ import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../s
 import { isLoggedIn, logout } from '../services/api'
 
 const { toggleTheme, isDarkMode } = useTheme()
-const { setSelectedFile, clearSelectedFile } = useSharedFiles()
+const { selectedFileId, setSelectedFile, clearSelectedFile } = useSharedFiles()
 const { refresh: refreshGitStatus } = useSharedGit()
 
 /** Best-effort: a stale git panel is a smaller problem than a broken action. */
@@ -272,7 +272,10 @@ const confirmDelete = async () => {
         if (nodeToDelete.value.type === 'D') {
             await filesManagerService.delDir(space, nodeToDelete.value.id)
         } else {
-            if (selectedNodeId.value === nodeToDelete.value.id) {
+            // Compared against the shared selection, not the local selectedNodeId: a
+            // story chapter's selection is now set by the write route rather than by
+            // handleSelect, so selectedNodeId alone would miss it.
+            if (selectedFileId.value === nodeToDelete.value.id) {
                 clearSelectedFile()
                 selectedNodeId.value = null
             }

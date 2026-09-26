@@ -3,7 +3,6 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { isLoggedIn } from './services/api'
 import Login from './components/Login.vue'
 import Tree from './components/Tree.vue'
-import Text from './components/Text.vue'
 
 const isAuthenticated = ref(false)
 const isSidebarOpen = ref(true)
@@ -63,7 +62,7 @@ const handleLoginSuccess = () => {
     </aside>
 
     <main>
-      <Text />
+      <router-view />
     </main>
   </div>
   <Login v-else @login-success="handleLoginSuccess" />

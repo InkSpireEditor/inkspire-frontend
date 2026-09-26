@@ -9,6 +9,12 @@ import { gitService } from '../services/git'
 import { useSharedFiles } from '../services/sharedFiles'
 import { resetSharedGit } from '../services/sharedGit'
 
+// TreeItem calls useRouter() unconditionally; without this, mounting a real tree
+// with a story node in it crashes the moment its row is clicked.
+vi.mock('vue-router', () => ({
+    useRouter: () => ({ push: vi.fn().mockResolvedValue(undefined) })
+}))
+
 // Helper to mount the component
 function mountTree() {
     return mount(Tree, {

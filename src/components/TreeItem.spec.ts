@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import TreeItem from './TreeItem.vue'
 import type { FileSystemNode } from '../services/filesManager'
+
+const mockPush = vi.fn().mockResolvedValue(undefined)
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: mockPush })
+}))
 
 describe('TreeItem.vue', () => {
   const mockOnSelect = vi.fn()
@@ -10,6 +15,12 @@ describe('TreeItem.vue', () => {
   const selectedNodeId = ref<string | null>(null)
 
   const space = ref<'stories' | 'notes'>('stories')
+
+  beforeEach(() => {
+    mockPush.mockClear()
+    mockOnSelect.mockClear()
+    mockOnAction.mockClear()
+  })
 
   const treeContext = {
     selectedNodeId,
@@ -134,5 +145,62 @@ describe('TreeItem.vue', () => {
     
     // handleAction uses onAction('create-file', null, props.node.id)
     expect(mockOnAction).toHaveBeenCalledWith('create-file', null, folderNode.id)
+  })
+
+  describe('in the stories space', () => {
+    const chapterNode: FileSystemNode = {
+      id: '4a1b2c3d4e5f6071',
+      name: 'chapter-one.ink',
+      type: 'F',
+      parentId: '5a1b2c3d4e5f6071'
+    }
+
+    it('navigates to the dashboard on a directory click, without toggling', async () => {
+      space.value = 'stories'
+      const wrapper = mountTreeItem(folderNode)
+
+      await wrapper.find('.tree-node-content').trigger('click')
+
+      expect(mockPush).toHaveBeenCalledWith({ name: 'dashboard', params: { id: folderNode.id } })
+      expect(wrapper.find('.tree-children').exists()).toBe(false)
+      expect(mockOnSelect).not.toHaveBeenCalled()
+    })
+
+    it('still expands on a click on the disclosure triangle', async () => {
+      space.value = 'stories'
+      const wrapper = mountTreeItem(folderNode)
+
+      await wrapper.find('.toggle-icon').trigger('click')
+
+      expect(wrapper.find('.tree-children').exists()).toBe(true)
+      expect(mockPush).not.toHaveBeenCalled()
+    })
+
+    it('navigates to the editor on a chapter click, without calling onSelect', async () => {
+      space.value = 'stories'
+      const wrapper = mountTreeItem(chapterNode)
+
+      await wrapper.find('.tree-node-content').trigger('click')
+
+      expect(mockPush).toHaveBeenCalledWith({
+        name: 'write',
+        params: { id: chapterNode.parentId, fileId: chapterNode.id }
+      })
+      expect(mockOnSelect).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('in the notes space', () => {
+    it('selects a note and returns to \'/\', so Text.vue is there to show it', async () => {
+      // Regression: without the navigation, opening a note while a story route is
+      // showing set the selection with nothing on screen watching it.
+      space.value = 'notes'
+      const wrapper = mountTreeItem(fileNode)
+
+      await wrapper.find('.tree-node-content').trigger('click')
+
+      expect(mockOnSelect).toHaveBeenCalledWith(fileNode)
+      expect(mockPush).toHaveBeenCalledWith({ name: 'home' })
+    })
   })
 })
