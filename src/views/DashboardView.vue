@@ -1,12 +1,17 @@
 <script setup lang="ts">
 /**
- * A story's dashboard: its synopsis, its chapters in story.yaml order, and deleting
- * the story. The git panel lands here in a later step; so does word count and
- * drag-to-reorder.
+ * A story's dashboard: its synopsis, its chapters in story.yaml order with a word
+ * count for each, and deleting the story. The git panel lands here in a later step;
+ * so does drag-to-reorder.
  */
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { filesManagerService, HoldsError, type DirApiResponse } from '../services/filesManager'
+import {
+  filesManagerService,
+  HoldsError,
+  type DirApiResponse,
+  type FileEntry
+} from '../services/filesManager'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
 import Modal from '../components/Modal.vue'
@@ -18,6 +23,28 @@ const { refresh: refreshGitStatus } = useSharedGit()
 const story = ref<DirApiResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const wordCounts = ref<Record<string, number>>({})
+
+/**
+ * Not sent by the API -- the scan reads only a chapter's header, capped at 64 KiB,
+ * so a per-chapter count would force a full-corpus read on every save. Fetched here
+ * instead, one request per chapter, same cost the reading view already pays.
+ * Fire-and-forget: the chapter list renders before these resolve, and each count
+ * fills in on its own rather than holding up the page for the slowest chapter.
+ */
+const loadWordCounts = async (files: FileEntry[]) => {
+  const counted = await Promise.all(
+    files.map(async (file) => {
+      try {
+        const text = await filesManagerService.getFileContent('stories', file.id)
+        return [file.id, text.trim().split(/\s+/).filter(Boolean).length] as const
+      } catch {
+        return null
+      }
+    })
+  )
+  wordCounts.value = Object.fromEntries(counted.filter((entry) => entry !== null))
+}
 
 const load = async () => {
   const id = route.params.id
@@ -25,8 +52,10 @@ const load = async () => {
 
   loading.value = true
   error.value = null
+  wordCounts.value = {}
   try {
     story.value = await filesManagerService.getDirContent('stories', id)
+    loadWordCounts(story.value.files)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load the story'
   } finally {
@@ -136,7 +165,12 @@ const confirmForceDelete = async () => {
           <router-link :to="{ name: 'write', params: { id: story.id, fileId: file.id } }">
             {{ file.name }}
           </router-link>
-          <span v-if="file.status" class="status">{{ file.status }}</span>
+          <span class="chapter-meta">
+            <span v-if="wordCounts[file.id] !== undefined" class="word-count">
+              {{ wordCounts[file.id] }} words
+            </span>
+            <span v-if="file.status" class="status">{{ file.status }}</span>
+          </span>
         </li>
         <li v-if="story.files.length === 0" class="empty">No chapters yet.</li>
       </ul>
@@ -240,6 +274,13 @@ h1 {
   text-decoration: underline;
 }
 
+.chapter-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.word-count,
 .status {
   font-size: 0.8rem;
   color: var(--color-text);

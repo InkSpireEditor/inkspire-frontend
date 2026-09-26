@@ -11,7 +11,7 @@ vi.mock('../services/filesManager', async () => {
   )
   return {
     ...actual,
-    filesManagerService: { getDirContent: vi.fn(), delDir: vi.fn() }
+    filesManagerService: { getDirContent: vi.fn(), getFileContent: vi.fn(), delDir: vi.fn() }
   }
 })
 
@@ -77,6 +77,45 @@ describe('DashboardView.vue', () => {
     expect(chapters).toHaveLength(2)
     expect(chapters[0]?.text()).toContain('First Chapter')
     expect(chapters[0]?.text()).toContain('draft')
+  })
+
+  it('shows a word count per chapter, computed from its fetched prose', async () => {
+    vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+      id: 'a1b2c3d4e5f60718',
+      name: 'Example Story',
+      summary: '',
+      files: [
+        { id: 'c1c1c1c1c1c1c1c1', name: 'First Chapter', status: '' },
+        { id: 'c2c2c2c2c2c2c2c2', name: 'Second Chapter', status: '' }
+      ]
+    })
+    vi.mocked(filesManagerService.getFileContent).mockImplementation(async (_space, id) =>
+      id === 'c1c1c1c1c1c1c1c1' ? 'One two three.' : 'Just two.'
+    )
+    const router = await routerAt('a1b2c3d4e5f60718')
+
+    const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+    await flushPromises()
+
+    const chapters = wrapper.findAll('.chapter')
+    expect(chapters[0]?.text()).toContain('3 words')
+    expect(chapters[1]?.text()).toContain('2 words')
+  })
+
+  it('leaves the count off a chapter whose prose failed to load', async () => {
+    vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+      id: 'a1b2c3d4e5f60718',
+      name: 'Example Story',
+      summary: '',
+      files: [{ id: 'c1c1c1c1c1c1c1c1', name: 'First Chapter', status: '' }]
+    })
+    vi.mocked(filesManagerService.getFileContent).mockRejectedValue(new Error('boom'))
+    const router = await routerAt('a1b2c3d4e5f60718')
+
+    const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+    await flushPromises()
+
+    expect(wrapper.find('.word-count').exists()).toBe(false)
   })
 
   it('says so when a story has no chapters yet', async () => {
