@@ -372,6 +372,70 @@ describe('Text.vue', () => {
       'Initial content as far as here'
     )
   })
+
+  describe('the Read toggle', () => {
+    const readToggle = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('button').find((b) => b.text() === 'Read' || b.text() === 'Edit')!
+
+    it('swaps the editor for the rendered prose, and back', async () => {
+      vi.mocked(filesManagerService.getFileContent).mockResolvedValue('# A Title')
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+
+      expect(wrapper.find('textarea').exists()).toBe(true)
+      expect(readToggle(wrapper).text()).toBe('Read')
+
+      await readToggle(wrapper).trigger('click')
+      expect(wrapper.find('textarea').exists()).toBe(false)
+      expect(wrapper.find('.rendered-prose h1').text()).toBe('A Title')
+      expect(readToggle(wrapper).text()).toBe('Edit')
+
+      await readToggle(wrapper).trigger('click')
+      expect(wrapper.find('textarea').exists()).toBe(true)
+      expect(wrapper.find('.rendered-prose').exists()).toBe(false)
+    })
+
+    it('renders exactly what is currently typed, including an unsaved edit', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      vm.handleContentChange('Something **bold**, not yet saved.')
+      await wrapper.vm.$nextTick()
+
+      await readToggle(wrapper).trigger('click')
+      expect(wrapper.find('.rendered-prose').html()).toContain('<strong>bold</strong>')
+      expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+    })
+
+    it('does not autosave while showing the rendered prose instead of the editor', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await readToggle(wrapper).trigger('click')
+
+      vi.advanceTimersByTime(10000)
+      await flushPromises()
+
+      expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+    })
+
+    it('starts a newly opened file back in edit mode, even if the last one was in Read', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await readToggle(wrapper).trigger('click')
+      expect(readToggle(wrapper).text()).toBe('Edit')
+
+      selectedFile.value = { space: 'notes', id: '0f1e2d3c4b5a6978' }
+      await flushPromises()
+
+      expect(readToggle(wrapper).text()).toBe('Read')
+      expect(wrapper.find('textarea').exists()).toBe(true)
+    })
+  })
 })
 
 describe('Text.vue across the two spaces', () => {

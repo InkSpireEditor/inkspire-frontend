@@ -2,6 +2,7 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
 import { llmService } from '../services/llm'
+import { renderMarkdown } from '../services/markdown'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
 import { useSharedGit } from '../services/sharedGit'
@@ -21,6 +22,9 @@ const text = ref('')
 const fileName = ref('')
 const currentFile = ref<FileSelection | null>(null)
 const isDirty = ref(false)
+/** Shows the current text rendered, in place of the editor, rather than a separate
+ *  page -- there is nothing else on this file worth a whole route of its own. */
+const readMode = ref(false)
 
 // Error state
 const showError = ref(false)
@@ -47,6 +51,7 @@ const loadFile = async (file: FileSelection) => {
     text.value = content
     currentFile.value = file
     isDirty.value = false
+    readMode.value = false
 
     cancelAutoSave()
   } catch (e) {
@@ -190,6 +195,7 @@ watch(selectedFile, (file) => {
     currentFile.value = null
     fileName.value = ''
     text.value = ''
+    readMode.value = false
   }
 })
 
@@ -215,9 +221,14 @@ onUnmounted(() => {
     </div>
 
     <div class="editor-container">
-      <MarkdownEditor :content="text" @content-change="handleContentChange" />
+      <MarkdownEditor v-if="!readMode" :content="text" @content-change="handleContentChange" />
+      <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
+      <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
 
       <div class="actions">
+        <button @click="readMode = !readMode" :disabled="!currentFile">
+          {{ readMode ? 'Edit' : 'Read' }}
+        </button>
         <button @click="save" :disabled="!currentFile">Save</button>
         <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
         <button class="primary" @click="handleGenerate" :disabled="!currentFile || isGenerating" :class="{ generating: isGenerating }">
@@ -276,6 +287,24 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.rendered-prose {
+  flex: 1;
+  min-height: 240px;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-background-soft);
+  color: var(--color-text);
+  line-height: 1.7;
+  overflow-wrap: break-word;
+  box-shadow: var(--shadow-card);
+}
+
+.rendered-prose :deep(p) {
+  margin: 0 0 var(--space-4) 0;
 }
 
 .actions {

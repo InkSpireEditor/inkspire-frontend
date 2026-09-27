@@ -4,16 +4,14 @@
  *
  * Entirely client-side: the API has no bulk-content route, so every chapter's prose
  * is fetched on its own -- the same cost the dashboard's word count already pays --
- * and joined here, one heading per chapter, before being rendered and sanitised.
- * `html: false` keeps markdown-it from passing a chapter's own raw HTML through at
- * all; DOMPurify runs on what it renders regardless, since neither is a substitute
- * for the other.
+ * and joined here, one heading per chapter, before rendering through the shared
+ * `renderMarkdown` (`services/markdown.ts`), the same one the editor's own Read
+ * toggle uses.
  */
 import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import MarkdownIt from 'markdown-it'
-import DOMPurify from 'dompurify'
 import { filesManagerService } from '../services/filesManager'
+import { renderMarkdown } from '../services/markdown'
 
 const route = useRoute()
 const storyName = ref('')
@@ -21,8 +19,6 @@ const html = ref('')
 const hasChapters = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
-
-const md = new MarkdownIt({ html: false, linkify: true })
 
 const load = async () => {
   const id = route.params.id
@@ -42,7 +38,7 @@ const load = async () => {
       .map((file, index) => `## ${file.name}\n\n${bodies[index]}`)
       .join('\n\n')
 
-    html.value = DOMPurify.sanitize(md.render(markdown))
+    html.value = renderMarkdown(markdown)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load the story'
   } finally {

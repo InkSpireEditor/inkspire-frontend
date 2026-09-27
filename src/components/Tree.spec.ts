@@ -278,16 +278,44 @@ describe('Tree.vue', () => {
         expect(vi.mocked(filesManagerService.getTree).mock.calls.filter(c => c[0] === 'notes')).toHaveLength(1)
     })
 
-    it('offers no file at the root of the stories, where a file needs one', async () => {
+    it('offers no generic file at the root of the stories, where a one-shot is what that is called', async () => {
         const wrapper = mountTree()
         await flushPromises()
 
         expect(rootMenuItem(wrapper, 'New File')).toBeUndefined()
+        expect(rootMenuItem(wrapper, 'New One-Shot')).toBeDefined()
         expect(rootMenuItem(wrapper, 'New Story')).toBeDefined()
 
         await openTab(wrapper, 'Notes')
         expect(rootMenuItem(wrapper, 'New File')).toBeDefined()
+        expect(rootMenuItem(wrapper, 'New One-Shot')).toBeUndefined()
         expect(rootMenuItem(wrapper, 'New Directory')).toBeDefined()
+    })
+
+    it('creates a one-shot at the stories root, and does not touch a dashboard', async () => {
+        vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
+        vi.mocked(filesManagerService.addFile).mockResolvedValue({})
+        const notifySpy = vi.fn()
+        window.addEventListener('stories:changed', notifySpy)
+
+        const wrapper = mountTree()
+        await flushPromises()
+        vi.mocked(filesManagerService.getTree).mockClear()
+
+        const newOneShotBtn = rootMenuItem(wrapper, 'New One-Shot')
+        await newOneShotBtn?.trigger('click')
+
+        const modal = wrapper.findComponent(Modal)
+        expect(modal.props('title')).toBe('Create One-Shot')
+        await modal.find('input').setValue('a-solo-piece')
+        await modal.vm.$emit('confirm')
+        await flushPromises()
+
+        expect(filesManagerService.addFile).toHaveBeenCalledWith('stories', 'a-solo-piece', null)
+        expect(filesManagerService.getTree).toHaveBeenCalledWith('stories')
+        expect(notifySpy).not.toHaveBeenCalled()
+
+        window.removeEventListener('stories:changed', notifySpy)
     })
 
     it('lists each space from its own tree, keeping both', async () => {

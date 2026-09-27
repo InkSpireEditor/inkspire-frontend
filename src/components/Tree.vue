@@ -59,7 +59,7 @@ const error = ref<string | null>(null)
 
 // Modal State Management
 const showModal = ref(false)
-const modalType = ref<'create-file' | 'create-dir' | 'edit'>('create-file')
+const modalType = ref<'create-file' | 'create-dir' | 'create-one-shot' | 'edit'>('create-file')
 const modalTitle = ref('')
 const modalInputName = ref('')
 const modalInputContext = ref('')
@@ -164,6 +164,8 @@ const handleRootAction = (action: string) => {
     showRootMenu.value = false
     if (action === 'create-file') {
         openModal('create-file', null)
+    } else if (action === 'create-one-shot') {
+        openModal('create-one-shot', null)
     } else if (action === 'create-dir') {
         openModal('create-dir', null)
     } else if (action === 'logout') {
@@ -207,15 +209,20 @@ const handleNodeAction = (action: string, node: FileSystemNode | null, parentId:
  * @param targetId The ID of the target directory (for creation) or node (for edit).
  * @param node The node object if editing.
  */
-const openModal = (type: 'create-file' | 'create-dir' | 'edit', targetId: string | null, node: FileSystemNode | null = null) => {
+const openModal = (type: 'create-file' | 'create-dir' | 'create-one-shot' | 'edit', targetId: string | null, node: FileSystemNode | null = null) => {
     modalType.value = type
     targetNodeId.value = targetId
     nodeToEdit.value = node
     modalInputName.value = node ? node.name : ''
     modalInputContext.value = ''
-    
+
     if (type === 'create-file') {
         modalTitle.value = 'Create New File'
+        modalContextVisible.value = false
+    } else if (type === 'create-one-shot') {
+        // A one-shot's summary lives in its own header, written later -- same as a
+        // chapter, which is asked for a name alone at creation too.
+        modalTitle.value = 'Create One-Shot'
         modalContextVisible.value = false
     } else if (type === 'create-dir') {
         modalTitle.value = 'Create New Directory'
@@ -282,6 +289,8 @@ const submitModal = async () => {
         const space = activeSpace.value
         if (modalType.value === 'create-file') {
             await filesManagerService.addFile(space, name, targetNodeId.value)
+        } else if (modalType.value === 'create-one-shot') {
+            await filesManagerService.addFile(space, name, null)
         } else if (modalType.value === 'create-dir') {
             await filesManagerService.addDir(space, name, modalInputContext.value)
         } else if (modalType.value === 'edit' && nodeToEdit.value) {
@@ -393,9 +402,11 @@ onUnmounted(() => {
         <div class="root-menu-trigger">
             <button class="icon-btn" @click.stop="showRootMenu = !showRootMenu">⋮</button>
             <div class="root-menu" v-show="showRootMenu">
-                <!-- A chapter belongs to a story, so there is no file to create at the
-                     root of that space. -->
+                <!-- A chapter belongs to a story, so a generic "New File" has no
+                     meaning at the root of that space -- a one-shot is what a loose
+                     file there is called, and gets its own, differently-worded entry. -->
                 <div v-if="allowsRootFiles(activeSpace)" @click="handleRootAction('create-file')">New File</div>
+                <div v-if="activeSpace === 'stories'" @click="handleRootAction('create-one-shot')">New One-Shot</div>
                 <div @click="handleRootAction('create-dir')">
                   {{ activeSpace === 'stories' ? 'New Story' : 'New Directory' }}
                 </div>
