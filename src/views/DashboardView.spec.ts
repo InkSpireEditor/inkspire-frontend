@@ -44,7 +44,9 @@ async function routerAt(storyId: string) {
       { path: '/', name: 'home', component: Stub },
       { path: '/story/:id', name: 'dashboard', component: DashboardView },
       { path: '/story/:id/write/:fileId', name: 'write', component: Stub },
-      { path: '/story/:id/read', name: 'read', component: Stub }
+      { path: '/story/:id/read', name: 'read', component: Stub },
+      { path: '/story/:id/timeline', name: 'timeline', component: Stub },
+      { path: '/story/:id/lore', name: 'lore', component: Stub }
     ]
   })
   await router.push({ name: 'dashboard', params: { id: storyId } })
@@ -86,6 +88,62 @@ describe('DashboardView.vue', () => {
     expect(chapters).toHaveLength(2)
     expect(chapters[0]?.text()).toContain('First Chapter')
     expect(chapters[0]?.text()).toContain('draft')
+  })
+
+  describe('the Timeline and Lorebook links', () => {
+    const linkTexts = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.read-link').map((link) => link.text())
+
+    it('offers neither when the story has neither file', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: 'a1b2c3d4e5f60718',
+        name: 'Example Story',
+        summary: '',
+        timeline: false,
+        lorebook: false,
+        files: []
+      })
+      const router = await routerAt('a1b2c3d4e5f60718')
+
+      const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+
+      expect(linkTexts(wrapper)).toEqual(['Read'])
+    })
+
+    it('offers both when the story has both files', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: 'a1b2c3d4e5f60718',
+        name: 'Example Story',
+        summary: '',
+        timeline: true,
+        lorebook: true,
+        files: []
+      })
+      const router = await routerAt('a1b2c3d4e5f60718')
+
+      const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+
+      expect(linkTexts(wrapper)).toEqual(['Read', 'Timeline', 'Lorebook'])
+    })
+
+    it('offers only the one whose file is present', async () => {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: 'a1b2c3d4e5f60718',
+        name: 'Example Story',
+        summary: '',
+        timeline: true,
+        lorebook: false,
+        files: []
+      })
+      const router = await routerAt('a1b2c3d4e5f60718')
+
+      const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+
+      expect(linkTexts(wrapper)).toEqual(['Read', 'Timeline'])
+    })
   })
 
   it('shows a word count per chapter, computed from its fetched prose', async () => {
