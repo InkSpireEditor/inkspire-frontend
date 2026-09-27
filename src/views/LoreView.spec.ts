@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import LoreView from './LoreView.vue'
-import { loreService, type LoreGraph, type LoreNode } from '../services/lore'
+import { loreService, type LoreGraph, type LoreNode, type LoreEntity } from '../services/lore'
 import { filesManagerService } from '../services/filesManager'
 import { NODE_REL_SIZE, nodeRadius, relSizeAt } from '../services/loreGraph'
 
@@ -39,6 +39,8 @@ const { FakeGraph } = vi.hoisted(() => {
     fakeForces: Record<string, FakeForce> = {}
     destroyed = false
     zoomToFitCalls: unknown[][] = []
+    centerAtCalls: unknown[][] = []
+    zoomCalls: unknown[][] = []
     reheats = 0
     /** Every graphData() the view has set, so a filter's effect is visible. */
     dataSets: unknown[] = []
@@ -51,7 +53,7 @@ const { FakeGraph } = vi.hoisted(() => {
         'graphData', 'backgroundColor', 'nodeId', 'nodeRelSize', 'nodeVal', 'nodeColor',
         'nodeLabel', 'nodeCanvasObjectMode', 'nodeCanvasObject', 'linkColor', 'linkLabel',
         'linkDirectionalArrowLength', 'linkDirectionalArrowRelPos', 'onEngineStop',
-        'onZoom', 'onNodeClick', 'width', 'height', 'centerAt', 'zoom'
+        'onZoom', 'onNodeClick', 'width', 'height'
       ]
       for (const name of accessors) {
         ;(this as unknown as Record<string, unknown>)[name] = (value: unknown) => {
@@ -86,6 +88,16 @@ const { FakeGraph } = vi.hoisted(() => {
 
     zoomToFit(...args: unknown[]) {
       this.zoomToFitCalls.push(args)
+      return this
+    }
+
+    centerAt(...args: unknown[]) {
+      this.centerAtCalls.push(args)
+      return this
+    }
+
+    zoom(...args: unknown[]) {
+      this.zoomCalls.push(args)
       return this
     }
 
@@ -565,6 +577,145 @@ describe('LoreView.vue', () => {
       onEngineStop()
 
       expect(fake.zoomToFitCalls.length).toBe(framedBefore + 1)
+    })
+  })
+
+  describe('the entity panel', () => {
+    const ENTITY_FIXTURE: LoreEntity = {
+      id: 'https://example.test/entity#Doe',
+      local: 'Doe',
+      types: ['Entity', 'Character'],
+      aka: ['Janie'],
+      sections: { personality: 'Steady.', backstory: 'From elsewhere.' },
+      name: 'Jane Doe',
+      age: '32',
+      occupation: null,
+      memberOf: ['Example Guild'],
+      mentorOf: []
+    }
+
+    function clickNode(fake: InstanceType<typeof FakeGraph>, node: unknown = { ...GRAPH_FIXTURE.nodes[0]!, x: 10, y: 20 }) {
+      const onNodeClick = fake.config.onNodeClick as (node: unknown) => void
+      onNodeClick(node)
+    }
+
+    it('moves the camera to the clicked node, same as the CLI page always has', async () => {
+      const { fake } = await mountLoaded()
+      vi.mocked(loreService.getEntity).mockResolvedValue(ENTITY_FIXTURE)
+
+      clickNode(fake)
+
+      expect(fake.centerAtCalls[0]).toEqual([10, 20, 500])
+      expect(fake.zoomCalls[0]).toEqual([4, 500])
+    })
+
+    it('opens the panel with a loading state, then the fetched entity', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      let resolveEntity!: (entity: LoreEntity) => void
+      vi.mocked(loreService.getEntity).mockReturnValue(
+        new Promise((resolve) => { resolveEntity = resolve })
+      )
+
+      clickNode(fake)
+      await flushPromises()
+      expect(wrapper.find('.side-panel').text()).toContain('Loading')
+
+      resolveEntity(ENTITY_FIXTURE)
+      await flushPromises()
+
+      expect(loreService.getEntity).toHaveBeenCalledWith('a1b2c3d4e5f60718', 'Doe')
+      expect(wrapper.find('.entity-name').text()).toBe('Jane Doe')
+      expect(wrapper.find('.entity-types').text()).toBe('Entity, Character')
+    })
+
+    it('shows a populated scalar field but skips one left null', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      vi.mocked(loreService.getEntity).mockResolvedValue(ENTITY_FIXTURE)
+
+      clickNode(fake)
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('age')
+      expect(wrapper.text()).toContain('32')
+      expect(wrapper.text()).not.toContain('occupation')
+    })
+
+    it('shows a non-empty relation as plain text but skips an empty one', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      vi.mocked(loreService.getEntity).mockResolvedValue(ENTITY_FIXTURE)
+
+      clickNode(fake)
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('memberOf')
+      expect(wrapper.text()).toContain('Example Guild')
+      expect(wrapper.text()).not.toContain('mentorOf')
+    })
+
+    it("names the entity's nicknames", async () => {
+      const { wrapper, fake } = await mountLoaded()
+      vi.mocked(loreService.getEntity).mockResolvedValue(ENTITY_FIXTURE)
+
+      clickNode(fake)
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Also known as Janie')
+    })
+
+    it("renders the character layout's prose sections, in that layout's own order", async () => {
+      const { wrapper, fake } = await mountLoaded()
+      vi.mocked(loreService.getEntity).mockResolvedValue(ENTITY_FIXTURE)
+
+      clickNode(fake)
+      await flushPromises()
+
+      const headings = wrapper.findAll('h4').map((h) => h.text())
+      expect(headings).toEqual(['Personality and Traits', 'Backstory'])
+      expect(wrapper.text()).toContain('Steady.')
+      expect(wrapper.text()).toContain('From elsewhere.')
+    })
+
+    it('shows an error in the panel when the entity fails to load', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      vi.mocked(loreService.getEntity).mockRejectedValue(new Error('Nothing in this lorebook is called "Doe".'))
+
+      clickNode(fake)
+      await flushPromises()
+
+      expect(wrapper.find('.side-panel .error').text()).toBe('Nothing in this lorebook is called "Doe".')
+    })
+
+    it('closes the panel, clearing what it showed and sliding it back out', async () => {
+      const { wrapper, fake } = await mountLoaded()
+      vi.mocked(loreService.getEntity).mockResolvedValue(ENTITY_FIXTURE)
+      clickNode(fake)
+      await flushPromises()
+
+      await wrapper.find('.side-panel button.close').trigger('click')
+
+      // Stays mounted -- it is what lets it slide shut rather than vanish --
+      // but is marked collapsed and no longer carries the entity's own text.
+      expect(wrapper.find('.side-panel').classes()).toContain('collapsed')
+      expect(wrapper.text()).not.toContain('Jane Doe')
+    })
+
+    it('closes a stale panel when the story changes', async () => {
+      const { wrapper, router, fake } = await mountLoaded()
+      vi.mocked(loreService.getEntity).mockResolvedValue(ENTITY_FIXTURE)
+      clickNode(fake)
+      await flushPromises()
+      expect(wrapper.find('.side-panel').classes()).not.toContain('collapsed')
+
+      await router.push({ name: 'lore', params: { id: 'other000000000018' } })
+      await flushPromises()
+
+      expect(wrapper.find('.side-panel').classes()).toContain('collapsed')
+    })
+
+    it('starts collapsed, with nothing yet selected', async () => {
+      const { wrapper } = await mountLoaded()
+
+      expect(wrapper.find('.side-panel').classes()).toContain('collapsed')
     })
   })
 

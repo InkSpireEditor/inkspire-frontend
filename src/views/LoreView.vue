@@ -15,7 +15,9 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ForceGraph from 'force-graph'
-import { loreService, type LoreGraph, type LoreLink } from '../services/lore'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
+import { loreService, sectionHeadingsFor, type LoreGraph, type LoreLink, type LoreEntity } from '../services/lore'
 import {
   palette,
   nodeRadius,
@@ -31,6 +33,12 @@ import {
 import { useTheme } from '../services/theme'
 import { filesManagerService } from '../services/filesManager'
 import BackLink from '../components/BackLink.vue'
+import SidePanel from '../components/SidePanel.vue'
+
+const md = new MarkdownIt({ html: false, linkify: true })
+
+/** Fields every entity carries that are not a scalar or a relation to show as a row. */
+const ENTITY_METADATA_FIELDS = new Set(['id', 'local', 'types', 'aka', 'sections'])
 
 const route = useRoute()
 const { currentTheme, isDarkMode } = useTheme()
@@ -45,6 +53,11 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const nodeCount = ref(0)
 const linkCount = ref(0)
+
+/** The clicked node's full record, or null when the panel is closed. */
+const selectedEntity = ref<LoreEntity | null>(null)
+const entityLoading = ref(false)
+const entityError = ref<string | null>(null)
 
 /** Bumped whenever `graphData` is replaced, so the computeds that read it -- which
  *  cannot track a plain variable -- know to run again. */
@@ -157,6 +170,7 @@ const mountGraph = () => {
     .linkDirectionalArrowLength(3.5)
     .linkDirectionalArrowRelPos(1)
     .onZoom(({ k }) => graph?.nodeRelSize(relSizeAt(k)))
+    .onNodeClick(onNodeClick)
     .onEngineStop(() => {
       if (!fittedOnce) {
         graph?.zoomToFit(400, 60)
@@ -226,6 +240,86 @@ const applyFilter = () => {
   graph.graphData(filterGraph(graphData, hiddenTypes.value))
 }
 
+/**
+ * The entity's populated scalar fields, as label/value pairs -- everything that is
+ * not `id`/`local`/`types`/`aka`/`sections` (metadata this panel shows on its own)
+ * or a relation (a string array, shown separately below). `name` leads, since it is
+ * the panel's own heading and should not repeat as a row.
+ */
+const entityScalars = computed((): Array<[string, string]> => {
+  const entity = selectedEntity.value
+  if (!entity) return []
+  return Object.entries(entity)
+    .filter(([key]) => key !== 'name' && !ENTITY_METADATA_FIELDS.has(key))
+    .filter((pair): pair is [string, string] => typeof pair[1] === 'string' && pair[1] !== '')
+})
+
+/** The entity's populated relations -- same field set, but string-array-valued. */
+const entityRelations = computed((): Array<[string, string[]]> => {
+  const entity = selectedEntity.value
+  if (!entity) return []
+  return Object.entries(entity)
+    .filter(([key]) => key !== 'aka' && !ENTITY_METADATA_FIELDS.has(key))
+    .filter(
+      (pair): pair is [string, string[]] => Array.isArray(pair[1]) && pair[1].length > 0
+    )
+})
+
+/**
+ * The entity's prose sections, sanitised HTML, in the order its own layout's heading
+ * map lists them -- not `Object.keys(sections)`, so this is correct even if the API's
+ * own key order ever drifted from it.
+ */
+const entitySections = computed((): Array<{ key: string; heading: string; html: string }> => {
+  const entity = selectedEntity.value
+  if (!entity) return []
+  const headings = sectionHeadingsFor(entity)
+  return Object.entries(headings)
+    .filter(([key]) => entity.sections[key] !== undefined)
+    .map(([key, heading]) => ({
+      key,
+      heading,
+      html: DOMPurify.sanitize(md.render(entity.sections[key]!)),
+    }))
+})
+
+/** Whether the entity panel has anything to show -- drives its slide, not just
+ *  whether it is mounted, since it stays mounted either way (see SidePanel.vue). */
+const entityPanelOpen = computed(
+  () => selectedEntity.value !== null || entityLoading.value || entityError.value !== null
+)
+
+const closeEntity = () => {
+  selectedEntity.value = null
+  entityLoading.value = false
+  entityError.value = null
+}
+
+/** A node click keeps the CLI page's own camera move, and additionally opens the
+ *  entity panel -- an addition, not a replacement. */
+const onNodeClick = async (node: PositionedNode) => {
+  if (node.x !== undefined && node.y !== undefined) {
+    graph?.centerAt(node.x, node.y, 500)
+    graph?.zoom(4, 500)
+  }
+
+  const storyId = route.params.id
+  if (typeof storyId !== 'string') return
+  const local = node.id.split('#').pop()
+  if (!local) return
+
+  entityLoading.value = true
+  entityError.value = null
+  selectedEntity.value = null
+  try {
+    selectedEntity.value = await loreService.getEntity(storyId, local)
+  } catch (e) {
+    entityError.value = e instanceof Error ? e.message : 'Failed to load this entity'
+  } finally {
+    entityLoading.value = false
+  }
+}
+
 const sizeToContainer = () => {
   if (!container.value || !graph) return
   graph.width(container.value.clientWidth).height(container.value.clientHeight)
@@ -254,6 +348,8 @@ const load = async () => {
     searchTerm.value = ''
     graphVersion.value++
     fittedOnce = false
+    // A previous story's selection points at an entity this graph does not have.
+    closeEntity()
     // The container is behind `v-if="!loading"`, so it only exists once this
     // resolves and Vue has patched the DOM.
     loading.value = false
@@ -338,16 +434,17 @@ watch(
               :step="SPACING_STEP"
             />
           </label>
-        </div>
-
-        <div class="graph-area">
-          <div class="graph-canvas" ref="container"></div>
 
           <div class="legend">
-            <h2 @click="toggleAllTypes" role="button" tabindex="0" @keyup.enter="toggleAllTypes">
+            <h2
+              @click="toggleAllTypes"
+              role="button"
+              tabindex="0"
+              @keyup.enter="toggleAllTypes"
+              title="Click a type to show or hide it"
+            >
               Types
             </h2>
-            <p class="legend-hint">click a type to show or hide it</p>
             <ul>
               <li
                 v-for="type in legendTypes"
@@ -367,6 +464,42 @@ watch(
               </li>
             </ul>
           </div>
+        </div>
+
+        <div class="graph-area">
+          <div class="graph-canvas" ref="container"></div>
+
+          <SidePanel :open="entityPanelOpen" title="Entity" @close="closeEntity">
+            <p v-if="entityLoading">Loading…</p>
+            <p v-else-if="entityError" class="error">{{ entityError }}</p>
+            <template v-else-if="selectedEntity">
+              <h3 class="entity-name">{{ selectedEntity.name ?? selectedEntity.local }}</h3>
+              <p class="entity-types">{{ selectedEntity.types.join(', ') }}</p>
+
+              <dl v-if="entityScalars.length > 0" class="entity-fields">
+                <template v-for="[key, value] in entityScalars" :key="key">
+                  <dt>{{ key }}</dt>
+                  <dd>{{ value }}</dd>
+                </template>
+              </dl>
+
+              <p v-if="selectedEntity.aka.length > 0" class="entity-aka">
+                Also known as {{ selectedEntity.aka.join(', ') }}
+              </p>
+
+              <dl v-if="entityRelations.length > 0" class="entity-fields">
+                <template v-for="[key, values] in entityRelations" :key="key">
+                  <dt>{{ key }}</dt>
+                  <dd>{{ values.join(', ') }}</dd>
+                </template>
+              </dl>
+
+              <template v-for="section in entitySections" :key="section.key">
+                <h4>{{ section.heading }}</h4>
+                <div class="entity-prose" v-html="section.html"></div>
+              </template>
+            </template>
+          </SidePanel>
         </div>
       </template>
     </template>
@@ -436,40 +569,45 @@ h1 {
   min-height: 0;
   display: flex;
   gap: var(--space-3);
+  /* Clips the entity panel while it slides off to the right, the same role
+     .app-layout plays for the left sidebar sliding off to the left. */
+  overflow: hidden;
 }
 
+/* Inline, next to Search/Spacing, rather than a sidebar down the side of the
+   canvas -- a handful of chips does not need a whole column to itself, and
+   this leaves the canvas the full width to draw in. */
 .legend {
-  width: 180px;
-  flex-shrink: 0;
-  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .legend h2 {
   margin: 0;
-  font-size: 1rem;
-  color: var(--color-heading);
-  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 
-.legend-hint {
-  margin: 0 0 var(--space-2) 0;
-  font-size: 0.75rem;
-  color: var(--color-text);
-  opacity: 0.6;
-}
-
 .legend ul {
+  display: flex;
+  flex-wrap: wrap;
   list-style: none;
   padding: 0;
   margin: 0;
+  gap: var(--space-2);
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 2px 0;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   color: var(--color-text);
   font-size: 0.85rem;
@@ -508,5 +646,53 @@ h1 {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   overflow: hidden;
+}
+
+.entity-name {
+  margin: 0;
+  color: var(--color-heading);
+  font-weight: var(--font-weight-bold);
+}
+
+.entity-types {
+  margin: 0 0 var(--space-3) 0;
+  color: var(--color-text);
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+.entity-fields {
+  margin: 0 0 var(--space-3) 0;
+}
+
+.entity-fields dt {
+  color: var(--color-text);
+  opacity: 0.7;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  margin-top: var(--space-2);
+}
+
+.entity-fields dd {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.entity-aka {
+  color: var(--color-text);
+  opacity: 0.8;
+  font-size: 0.85rem;
+}
+
+h4 {
+  margin: var(--space-3) 0 var(--space-1) 0;
+  font-size: 0.9rem;
+  color: var(--color-heading);
+}
+
+.entity-prose {
+  color: var(--color-text);
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 </style>
