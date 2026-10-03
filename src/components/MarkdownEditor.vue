@@ -24,7 +24,7 @@
  * two browsers. `ARCHITECTURE.md` §8.1 records what each one showed.
  */
 import { onMounted, ref, watch } from 'vue'
-import { applyEdit, modelFromMetadata, runsOf, type Model } from '../services/provenance'
+import { applyEdit, proseFromMetadata, runsOf, type Prose } from '../services/provenance'
 
 const props = defineProps<{
   content: string
@@ -35,11 +35,11 @@ const emit = defineEmits(['contentChange'])
 const editor = ref<HTMLDivElement | null>(null)
 
 /**
- * Whether to draw the placeholder, decided by the model rather than by the element.
+ * Whether to draw the placeholder, decided by the prose rather than by the element.
  *
  * `:empty` cannot answer this. A browser leaves a stray node behind in an emptied
  * `contenteditable`, so the selector stops matching while the writer sees nothing — which is
- * what it did. The model is the only thing that knows the text is empty, so it is what says
+ * what it did. The prose is the only thing that knows the text is empty, so it is what says
  * so, and the placeholder is a sibling element: drawn over the editable one, never inside it,
  * because anything inside would become part of the prose.
  *
@@ -54,7 +54,7 @@ const empty = ref(props.content.length === 0)
  * Plain, not a `ref`: nothing in the template reads it, and making it reactive would invite
  * a re-render on every keystroke — which is the one thing this component must never do.
  */
-let model: Model = { text: '', prov: [] }
+let prose: Prose = { text: '', prov: [] }
 
 /**
  * Whether this browser can paint highlights at all.
@@ -103,7 +103,7 @@ function locate(target: number): { node: Node; offset: number } | null {
 }
 
 /**
- * Draws the model: one `Range` per non-`user` run, handed to the two registries.
+ * Draws the prose: one `Range` per non-`user` run, handed to the two registries.
  *
  * Writes no DOM. `document.createRange` and `CSS.highlights.set` both mutate nothing, which
  * is why this can run after every keystroke without touching undo.
@@ -114,7 +114,7 @@ function paint(): void {
   }
   const gen = new Highlight()
   const fix = new Highlight()
-  for (const [start, end, kind] of runsOf(model.prov)) {
+  for (const [start, end, kind] of runsOf(prose.prov)) {
     const from = locate(start)
     const to = locate(end)
     if (from === null || to === null) {
@@ -135,23 +135,23 @@ function paint(): void {
 /** The writer typed, pasted, deleted, or undid something. */
 function handleInput(): void {
   const current = editor.value?.textContent ?? ''
-  model = applyEdit(model, current)
-  empty.value = model.text.length === 0
+  prose = applyEdit(prose, current)
+  empty.value = prose.text.length === 0
   paint()
-  emit('contentChange', model.text)
+  emit('contentChange', prose.text)
 }
 
 /**
  * Replaces everything, which is what opening a different file is.
  *
  * The only place that writes `textContent`, and it is reached only when the prop says
- * something the model does not already say. The parent echoes back what this component just
+ * something the prose does not already say. The parent echoes back what this component just
  * emitted, so without that guard every keystroke would rewrite the DOM underneath the caret
  * and throw the browser's undo stack away.
  */
 function reset(body: string): void {
-  model = modelFromMetadata(body, null)
-  empty.value = model.text.length === 0
+  prose = proseFromMetadata(body, null)
+  empty.value = prose.text.length === 0
   if (editor.value !== null) {
     editor.value.textContent = body
   }
@@ -178,7 +178,7 @@ onMounted(() => {
 watch(
   () => props.content,
   (next) => {
-    if (next === model.text) {
+    if (next === prose.text) {
       return
     }
     reset(next)

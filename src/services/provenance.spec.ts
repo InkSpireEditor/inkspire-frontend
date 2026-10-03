@@ -12,17 +12,17 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyEdit,
-  checkModel,
+  checkProse,
   classify,
   diffText,
   joinParagraphs,
-  metadataFromModel,
-  modelFromMetadata,
+  metadataFromProse,
+  proseFromMetadata,
   paragraphHash,
   runsOf,
   splitParagraphs,
   type Kind,
-  type Model,
+  type Prose,
   type ProvenanceMetadata,
 } from './provenance'
 import vectors from './paragraphs.json'
@@ -127,22 +127,22 @@ describe('joinParagraphs', () => {
 
 // --- metadata to a model ---------------------------------------------------
 
-describe('modelFromMetadata', () => {
+describe('proseFromMetadata', () => {
   it('is all user with no metadata at all', () => {
     const body = 'One.\n\nTwo.\n'
-    const model = modelFromMetadata(body, null)
+    const model = proseFromMetadata(body, null)
     expect(model.text).toBe(body)
     expect(model.prov).toHaveLength(body.length)
     expect(new Set(model.prov)).toEqual(new Set(['user']))
   })
 
   it('is all user for an empty body', () => {
-    expect(modelFromMetadata('', null)).toEqual({ text: '', prov: [] })
-    expect(modelFromMetadata('', {})).toEqual({ text: '', prov: [] })
+    expect(proseFromMetadata('', null)).toEqual({ text: '', prov: [] })
+    expect(proseFromMetadata('', {})).toEqual({ text: '', prov: [] })
   })
 
   it('applies a matching entry at the right offsets', () => {
-    const model = modelFromMetadata(`${PARA}\n`, { [PARA_HASH]: PARA_RUNS })
+    const model = proseFromMetadata(`${PARA}\n`, { [PARA_HASH]: PARA_RUNS })
     expect(model.prov).toHaveLength(PARA.length + 1)
     expect(model.prov.slice(0, 18)).toEqual(new Array(18).fill('user'))
     expect(model.prov.slice(18, 45)).toEqual(new Array(27).fill('gen'))
@@ -154,7 +154,7 @@ describe('modelFromMetadata', () => {
 
   it('offsets a second paragraph by everything before it', () => {
     const body = `Untouched.\n\n${PARA}\n`
-    const model = modelFromMetadata(body, { [PARA_HASH]: PARA_RUNS })
+    const model = proseFromMetadata(body, { [PARA_HASH]: PARA_RUNS })
     const base = 'Untouched.\n\n'.length
     expect(model.prov.slice(0, base)).toEqual(new Array(base).fill('user'))
     expect(model.prov.slice(base + 18, base + 45)).toEqual(new Array(27).fill('gen'))
@@ -162,13 +162,13 @@ describe('modelFromMetadata', () => {
 
   it('treats a separator as user even between two generated paragraphs', () => {
     const body = `${PARA}\n\n${PARA}\n`
-    const model = modelFromMetadata(body, { [PARA_HASH]: PARA_RUNS })
+    const model = proseFromMetadata(body, { [PARA_HASH]: PARA_RUNS })
     expect(model.prov.slice(PARA.length, PARA.length + 2)).toEqual(['user', 'user'])
   })
 
   it('leaves a paragraph whose hash is absent all user', () => {
     const body = 'One.\n\nTwo.\n'
-    const model = modelFromMetadata(body, { [paragraphHash('One.')]: [[0, 2, 'gen']] })
+    const model = proseFromMetadata(body, { [paragraphHash('One.')]: [[0, 2, 'gen']] })
     expect(model.prov.slice(0, 2)).toEqual(['gen', 'gen'])
     expect(model.prov.slice(6)).toEqual(new Array(body.length - 6).fill('user'))
   })
@@ -176,7 +176,7 @@ describe('modelFromMetadata', () => {
   it('leaves a paragraph whose hash does not match all user, and its neighbours alone', () => {
     // What a recovery git could not make looks like: one paragraph reset, the rest intact.
     const body = `One.\n\n${PARA}\n`
-    const model = modelFromMetadata(body, {
+    const model = proseFromMetadata(body, {
       [paragraphHash('One.')]: [[0, 4, 'gen']],
       deadbeefdeadbeef: [[0, 10, 'fix']],
     })
@@ -186,18 +186,18 @@ describe('modelFromMetadata', () => {
 
   it('clamps a run reaching past its paragraph rather than throwing', () => {
     // A `.ink` file edited by hand can say anything, and opening a chapter must not fail.
-    const model = modelFromMetadata('One.', { [paragraphHash('One.')]: [[2, 99, 'gen']] })
+    const model = proseFromMetadata('One.', { [paragraphHash('One.')]: [[2, 99, 'gen']] })
     expect(model.prov).toEqual(['user', 'user', 'gen', 'gen'])
   })
 
   it('clamps a negative offset the same way', () => {
-    const model = modelFromMetadata('One.', { [paragraphHash('One.')]: [[-5, 2, 'gen']] })
+    const model = proseFromMetadata('One.', { [paragraphHash('One.')]: [[-5, 2, 'gen']] })
     expect(model.prov).toEqual(['gen', 'gen', 'user', 'user'])
   })
 
   it('does not let one paragraph\'s run spill into the next', () => {
     const body = 'One.\n\nTwo.\n'
-    const model = modelFromMetadata(body, { [paragraphHash('One.')]: [[0, 99, 'gen']] })
+    const model = proseFromMetadata(body, { [paragraphHash('One.')]: [[0, 99, 'gen']] })
     expect(model.prov.slice(0, 4)).toEqual(new Array(4).fill('gen'))
     expect(model.prov.slice(4)).toEqual(new Array(body.length - 4).fill('user'))
   })
@@ -206,13 +206,13 @@ describe('modelFromMetadata', () => {
     // The API carries an unknown kind through so `ink reclassify` cannot destroy a newer
     // build's record. Here the kinds are a closed set, so one that is not in it renders
     // as plain prose rather than as something this build cannot draw.
-    const model = modelFromMetadata('One.', { [paragraphHash('One.')]: [[0, 4, 'ghost']] })
+    const model = proseFromMetadata('One.', { [paragraphHash('One.')]: [[0, 4, 'ghost']] })
     expect(model.prov).toEqual(new Array(4).fill('user'))
   })
 
   it('always leaves one kind per character', () => {
     for (const vector of cases) {
-      const model = modelFromMetadata(vector.body, null)
+      const model = proseFromMetadata(vector.body, null)
       expect(model.prov).toHaveLength(vector.body.length)
     }
   })
@@ -235,19 +235,19 @@ describe('runsOf', () => {
   })
 })
 
-describe('metadataFromModel', () => {
+describe('metadataFromProse', () => {
   it('keys every paragraph, including one with no model-written text', () => {
     // A missing key and an empty list are different things: an empty list says this
     // paragraph is all the writer's, where a missing key says nothing is known and
     // invites the API to recover prose that was never generated.
-    const metadata = metadataFromModel(modelFromMetadata('One.\n\nTwo.\n', null))
+    const metadata = metadataFromProse(proseFromMetadata('One.\n\nTwo.\n', null))
     expect(Object.keys(metadata)).toEqual([paragraphHash('One.'), paragraphHash('Two.')])
     expect(metadata).toEqual({ [paragraphHash('One.')]: [], [paragraphHash('Two.')]: [] })
   })
 
   it('writes offsets relative to the paragraph, not to the body', () => {
     const body = `Untouched.\n\n${PARA}\n`
-    const metadata = metadataFromModel(modelFromMetadata(body, { [PARA_HASH]: PARA_RUNS }))
+    const metadata = metadataFromProse(proseFromMetadata(body, { [PARA_HASH]: PARA_RUNS }))
     expect(metadata[PARA_HASH]).toEqual(PARA_RUNS)
   })
 
@@ -257,31 +257,31 @@ describe('metadataFromModel', () => {
       [PARA_HASH]: PARA_RUNS,
       [paragraphHash('Untouched.')]: [],
     }
-    expect(metadataFromModel(modelFromMetadata(body, sent))).toEqual(sent)
+    expect(metadataFromProse(proseFromMetadata(body, sent))).toEqual(sent)
   })
 
   it('gives two identical paragraphs one entry', () => {
-    const metadata = metadataFromModel(modelFromMetadata('Same.\n\nSame.\n', null))
+    const metadata = metadataFromProse(proseFromMetadata('Same.\n\nSame.\n', null))
     expect(Object.keys(metadata)).toEqual([paragraphHash('Same.')])
   })
 
   it('is empty for a body with no paragraphs', () => {
-    expect(metadataFromModel(modelFromMetadata('', null))).toEqual({})
-    expect(metadataFromModel(modelFromMetadata('\n\n\n', null))).toEqual({})
+    expect(metadataFromProse(proseFromMetadata('', null))).toEqual({})
+    expect(metadataFromProse(proseFromMetadata('\n\n\n', null))).toEqual({})
   })
 
   it('refuses a model whose provenance is out of step with its text', () => {
-    const broken: Model = { text: 'One.', prov: ['user', 'user'] as Kind[] }
-    expect(() => metadataFromModel(broken)).toThrow('out of step')
+    const broken: Prose = { text: 'One.', prov: ['user', 'user'] as Kind[] }
+    expect(() => metadataFromProse(broken)).toThrow('out of step')
   })
 })
 
-describe('checkModel', () => {
+describe('checkProse', () => {
   it('accepts one kind per character and nothing else', () => {
-    expect(() => checkModel({ text: '', prov: [] })).not.toThrow()
-    expect(() => checkModel({ text: 'ab', prov: ['user', 'gen'] })).not.toThrow()
-    expect(() => checkModel({ text: 'ab', prov: ['user'] })).toThrow('out of step')
-    expect(() => checkModel({ text: 'a', prov: ['user', 'gen'] })).toThrow('out of step')
+    expect(() => checkProse({ text: '', prov: [] })).not.toThrow()
+    expect(() => checkProse({ text: 'ab', prov: ['user', 'gen'] })).not.toThrow()
+    expect(() => checkProse({ text: 'ab', prov: ['user'] })).toThrow('out of step')
+    expect(() => checkProse({ text: 'a', prov: ['user', 'gen'] })).toThrow('out of step')
   })
 })
 
@@ -407,29 +407,29 @@ describe('classify', () => {
 // --- applying an edit ------------------------------------------------------
 
 describe('applyEdit', () => {
-  const model = (text: string, prov: Kind[]): Model => ({ text, prov })
+  const prose = (text: string, prov: Kind[]): Prose => ({ text, prov })
 
   it('carries the provenance either side of the edit over untouched', () => {
-    const before = model('abcdef', ['user', 'gen', 'gen', 'gen', 'user', 'user'])
+    const before = prose('abcdef', ['user', 'gen', 'gen', 'gen', 'user', 'user'])
     const after = applyEdit(before, 'abXcdef')
     expect(after.text).toBe('abXcdef')
     expect(after.prov).toEqual(['user', 'gen', 'fix', 'gen', 'gen', 'user', 'user'])
   })
 
   it('marks an insertion after a gen run as written by hand', () => {
-    const before = model('abc', ['gen', 'gen', 'gen'])
+    const before = prose('abc', ['gen', 'gen', 'gen'])
     expect(applyEdit(before, 'abc\n').prov).toEqual(['gen', 'gen', 'gen', 'user'])
   })
 
   it('leaves one kind per character after a pure deletion', () => {
-    const before = model('abcdef', ['user', 'gen', 'gen', 'gen', 'user', 'user'])
+    const before = prose('abcdef', ['user', 'gen', 'gen', 'gen', 'user', 'user'])
     const after = applyEdit(before, 'abef')
     expect(after.prov).toHaveLength(after.text.length)
     expect(after.prov).toEqual(['user', 'gen', 'user', 'user'])
   })
 
   it('leaves one kind per character for every shape of edit', () => {
-    const before = model('abcdef', ['user', 'gen', 'gen', 'gen', 'user', 'user'])
+    const before = prose('abcdef', ['user', 'gen', 'gen', 'gen', 'user', 'user'])
     for (const cur of ['', 'a', 'abcdef', 'abcdefghij', 'XYZ', 'abXYef', 'aXf']) {
       const after = applyEdit(before, cur)
       expect(after.text).toBe(cur)
@@ -438,12 +438,12 @@ describe('applyEdit', () => {
   })
 
   it('returns the same model when nothing changed', () => {
-    const before = model('abc', ['user', 'gen', 'user'])
+    const before = prose('abc', ['user', 'gen', 'user'])
     expect(applyEdit(before, 'abc')).toBe(before)
   })
 
   it('marks a declared insertion as generated wherever it lands', () => {
-    const before = model('abc', ['user', 'user', 'user'])
+    const before = prose('abc', ['user', 'user', 'user'])
     const after = applyEdit(before, 'abcXYZ', 'gen')
     expect(after.prov).toEqual(['user', 'user', 'user', 'gen', 'gen', 'gen'])
   })
@@ -454,7 +454,7 @@ describe('applyEdit', () => {
 
   it('survives a whole typing session with the invariant intact', () => {
     // Character by character, the way the editor will drive it.
-    let current = modelFromMetadata('', null)
+    let current = proseFromMetadata('', null)
     for (const char of 'Once, on a cold morning.\n\nShe left.') {
       current = applyEdit(current, current.text + char)
       expect(current.prov).toHaveLength(current.text.length)
@@ -465,9 +465,9 @@ describe('applyEdit', () => {
 
   it('round-trips through metadata after an edit', () => {
     // The whole point: an edit, then a save, then a load, and the colours are the same.
-    const before = modelFromMetadata(`${PARA}\n`, { [PARA_HASH]: PARA_RUNS })
+    const before = proseFromMetadata(`${PARA}\n`, { [PARA_HASH]: PARA_RUNS })
     const edited = applyEdit(before, `${PARA}\nAnd she left.`)
-    const reloaded = modelFromMetadata(edited.text, metadataFromModel(edited))
+    const reloaded = proseFromMetadata(edited.text, metadataFromProse(edited))
     expect(reloaded.prov).toEqual(edited.prov)
   })
 })

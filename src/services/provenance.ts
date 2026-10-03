@@ -44,9 +44,15 @@ export type ProvenanceMetadata = Record<string, [number, number, string][]>
  * The editor's own shape: the whole open text, and one kind per character of it.
  *
  * `prov.length === text.length` always, with no exception. Every function here either
- * preserves that or builds it from scratch, and `checkModel` is what says so out loud.
+ * preserves that or builds it from scratch, and `checkProse` is what says so out loud.
+ *
+ * Named for the content rather than called `Model`, because **`model` already means the
+ * language model** throughout this application — `sharedModel`, `ModelSelector`,
+ * `selectedModelName`, `/api/llm/models` — and the comments here use it in that sense too,
+ * as in "written by a model". A second meaning for the same word in the same files would
+ * make both unreadable.
  */
-export interface Model {
+export interface Prose {
   text: string
   prov: Kind[]
 }
@@ -159,7 +165,7 @@ interface Placed {
  * Each of `body`'s paragraphs with its own offset into `body`.
  *
  * A paragraph carries where it is rather than a caller indexing two parallel arrays,
- * which is what keeps the offset arithmetic in one place: a model is per character of the
+ * which is what keeps the offset arithmetic in one place: a `Prose` is per character of the
  * whole body, while a stored run is relative to its paragraph, and this is the only thing
  * that converts between the two.
  */
@@ -193,7 +199,7 @@ function placed(body: string): Placed[] {
  *
  * Separators are always `user`: a blank line between two paragraphs belongs to neither.
  */
-export function modelFromMetadata(body: string, metadata: ProvenanceMetadata | null): Model {
+export function proseFromMetadata(body: string, metadata: ProvenanceMetadata | null): Prose {
   const prov: Kind[] = new Array(body.length).fill(USER)
   if (metadata === null) {
     return { text: body, prov }
@@ -238,7 +244,7 @@ export function runsOf(prov: Kind[]): Run[] {
 }
 
 /**
- * `model` as the `metadata` field of `PUT /file/{id}/document`.
+ * `prose` as the `metadata` field of `PUT /file/{id}/document`.
  *
  * **Every paragraph gets an entry, including one with no model-written text**, whose
  * entry is an empty list. A missing key and an empty list are different things: an empty
@@ -250,28 +256,28 @@ export function runsOf(prov: Kind[]): Run[] {
  * Two identical paragraphs share one key, and so one entry (§7.3). They cannot be told
  * apart, so they cannot hold different runs.
  */
-export function metadataFromModel(model: Model): ProvenanceMetadata {
-  checkModel(model)
+export function metadataFromProse(prose: Prose): ProvenanceMetadata {
+  checkProse(prose)
   const metadata: ProvenanceMetadata = {}
-  for (const { para, start } of placed(model.text)) {
-    metadata[paragraphHash(para)] = runsOf(model.prov.slice(start, start + para.length))
+  for (const { para, start } of placed(prose.text)) {
+    metadata[paragraphHash(para)] = runsOf(prose.prov.slice(start, start + para.length))
   }
   return metadata
 }
 
 /**
- * Throws unless `model` holds exactly one kind per character.
+ * Throws unless `prose` holds exactly one kind per character.
  *
- * The invariant everything else is allowed to assume. A model that has drifted out of
+ * The invariant everything else is allowed to assume. A `Prose` that has drifted out of
  * step renders the wrong characters in colour and saves runs over the wrong offsets, and
- * both are quiet failures — so this is loud instead, and called wherever a model crosses
+ * both are quiet failures — so this is loud instead, and called wherever a `Prose` crosses
  * into or out of this module.
  */
-export function checkModel(model: Model): void {
-  if (model.prov.length !== model.text.length) {
+export function checkProse(prose: Prose): void {
+  if (prose.prov.length !== prose.text.length) {
     throw new Error(
-      `provenance is out of step with the text: ${model.prov.length} kinds for ` +
-        `${model.text.length} characters`,
+      `provenance is out of step with the text: ${prose.prov.length} kinds for ` +
+        `${prose.text.length} characters`,
     )
   }
 }
@@ -354,7 +360,7 @@ export function classify(
 }
 
 /**
- * `model` brought up to date with `cur`, the text as it is now.
+ * `prose` brought up to date with `cur`, the text as it is now.
  *
  * The provenance of characters either side of the edit is carried over untouched, which is
  * what makes this cheap enough to run on every keystroke: nothing is recomputed, one stretch
@@ -364,21 +370,21 @@ export function classify(
  * silently corrupts a file — colour drawn on the wrong characters, and runs saved against the
  * wrong offsets — so it is loud rather than quiet.
  */
-export function applyEdit(model: Model, cur: string, declared?: Kind): Model {
-  checkModel(model)
-  if (model.text === cur) {
-    return model
+export function applyEdit(prose: Prose, cur: string, declared?: Kind): Prose {
+  checkProse(prose)
+  if (prose.text === cur) {
+    return prose
   }
 
-  const { start, removedLen, inserted } = diffText(model.text, cur)
-  const kind = classify(model.prov, start, removedLen, declared)
+  const { start, removedLen, inserted } = diffText(prose.text, cur)
+  const kind = classify(prose.prov, start, removedLen, declared)
   const prov = [
-    ...model.prov.slice(0, start),
+    ...prose.prov.slice(0, start),
     ...new Array<Kind>(inserted.length).fill(kind),
-    ...model.prov.slice(start + removedLen),
+    ...prose.prov.slice(start + removedLen),
   ]
 
-  const next: Model = { text: cur, prov }
-  checkModel(next)
+  const next: Prose = { text: cur, prov }
+  checkProse(next)
   return next
 }

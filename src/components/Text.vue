@@ -3,10 +3,10 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
 import {
   applyEdit,
-  metadataFromModel,
-  modelFromMetadata,
+  metadataFromProse,
+  proseFromMetadata,
   type Kind,
-  type Model,
+  type Prose,
   type ProvenanceMetadata,
 } from '../services/provenance'
 import { llmService } from '../services/llm'
@@ -52,7 +52,7 @@ const errorMessage = ref('')
 let autoSaveTimer: number | null = null
 
 /** The text and its provenance as one value, which is what the pure functions take. */
-const model = (): Model => ({ text: text.value, prov: prov.value })
+const current = (): Prose => ({ text: text.value, prov: prov.value })
 
 /**
  * Replaces the text, keeping provenance in step with it.
@@ -62,14 +62,14 @@ const model = (): Model => ({ text: text.value, prov: prov.value })
  * hold one kind per character, which is the one error here that silently corrupts a file.
  */
 const setText = (next: string, declared?: Kind) => {
-  const updated = applyEdit(model(), next, declared)
+  const updated = applyEdit(current(), next, declared)
   text.value = updated.text
   prov.value = updated.prov
 }
 
 /** Starts fresh from what the API answered, discarding whatever was open. */
-const openModel = (body: string, metadata: ProvenanceMetadata | null) => {
-  const opened = modelFromMetadata(body, metadata)
+const openProse = (body: string, metadata: ProvenanceMetadata | null) => {
+  const opened = proseFromMetadata(body, metadata)
   text.value = opened.text
   prov.value = opened.prov
 }
@@ -92,7 +92,7 @@ const loadFile = async (file: FileSelection) => {
     ])
 
     fileName.value = info.name
-    openModel(document.body, document.metadata)
+    openProse(document.body, document.metadata)
     currentFile.value = file
     isDirty.value = false
     readMode.value = false
@@ -129,7 +129,7 @@ const save = async () => {
       file.space,
       file.id,
       text.value,
-      metadataFromModel(model())
+      metadataFromProse(current())
     )
     isDirty.value = false
     // A note is never committed, so only a chapter's save is worth a git refresh.
@@ -250,7 +250,7 @@ watch(selectedFile, (file) => {
   } else {
     currentFile.value = null
     fileName.value = ''
-    openModel('', null)
+    openProse('', null)
     readMode.value = false
   }
 })

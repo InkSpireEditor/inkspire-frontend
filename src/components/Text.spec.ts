@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { metadataFromModel, modelFromMetadata } from '../services/provenance'
+import { metadataFromProse, proseFromMetadata } from '../services/provenance'
 import { mount, flushPromises } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import Text from './Text.vue'
@@ -38,7 +38,7 @@ vi.mock('../services/llm', () => ({
  * paragraph, each an empty run list. Derived rather than written out, so a test says what
  * it means instead of carrying a hash nobody can check by eye.
  */
-const handwritten = (body: string) => metadataFromModel(modelFromMetadata(body, null))
+const handwritten = (body: string) => metadataFromProse(proseFromMetadata(body, null))
 
 describe('Text.vue', () => {
   let selectedFile: any
