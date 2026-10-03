@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { filesManagerService, HoldsError, NotFoundError } from './filesManager'
+import type { ProvenanceMetadata } from './provenance'
 
 const API_URL = 'http://localhost:8000/api'
 
@@ -367,25 +368,83 @@ describe('filesManagerService', () => {
         })
     })
 
-    describe('updateFileContent', () => {
-        it('should send PUT request with text body', async () => {
-            const fileId = '1abcdef012345678'
-            const content = 'new content'
+    describe('the document routes', () => {
+        // Prose and provenance travel together in both directions, because a section
+        // derived from the body may not be written without it.
+        const fileId = 'd0cabcdef0123456'
+        const metadata: ProvenanceMetadata = { '47f57caaa4fb330e': [[18, 45, 'gen']] }
 
+        it('parses body, metadata and reconciled from a GET', async () => {
             fetchSpy.mockResolvedValueOnce({
                 ok: true,
-                status: 200,
-                text: async () => 'Success',
+                json: async () => ({ body: 'Once.\n', metadata, reconciled: null }),
             } as Response)
 
-            const response = await filesManagerService.updateFileContent('stories', fileId, content)
-            expect(response).toBe('Success')
-            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/${fileId}/contents`, {
-                method: 'PUT',
-                headers: { ...jsonHeaders, 'Content-Type': 'text/plain' },
-                body: content,
+            const answered = await filesManagerService.getDocument('stories', fileId)
+            expect(answered).toEqual({ body: 'Once.\n', metadata, reconciled: null })
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/${fileId}/document`, {
+                headers: jsonHeaders,
                 credentials: 'include',
             })
+        })
+
+        it('reads a null metadata as a file the editor has never saved', async () => {
+            fetchSpy.mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ body: 'Once.\n', metadata: null, reconciled: null }),
+            } as Response)
+
+            const answered = await filesManagerService.getDocument('stories', fileId)
+            expect(answered.metadata).toBeNull()
+        })
+
+        it('reads what a load had to put right', async () => {
+            const reconciled = {
+                revision: 'b3f08da',
+                recovered: ['39f4ef4afdf22890'],
+                reset: [],
+                dropped: ['47f57caaa4fb330e'],
+            }
+            fetchSpy.mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ body: 'Once.\n', metadata, reconciled }),
+            } as Response)
+
+            const answered = await filesManagerService.getDocument('stories', fileId)
+            expect(answered.reconciled).toEqual(reconciled)
+        })
+
+        it('sends both parts in one PUT', async () => {
+            fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) } as Response)
+
+            await filesManagerService.putDocument('stories', fileId, 'Once.\n', metadata)
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/${fileId}/document`, {
+                method: 'PUT',
+                headers: jsonHeaders,
+                body: JSON.stringify({ body: 'Once.\n', metadata }),
+                credentials: 'include',
+            })
+        })
+
+        it('sends a null metadata to remove the section', async () => {
+            fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) } as Response)
+
+            await filesManagerService.putDocument('notes', fileId, 'Once.\n', null)
+            const [, init] = fetchSpy.mock.calls[0] ?? []
+            expect(JSON.parse(String(init?.body))).toEqual({ body: 'Once.\n', metadata: null })
+        })
+
+        it('serves both roots', async () => {
+            fetchSpy.mockResolvedValue({
+                ok: true,
+                json: async () => ({ body: '', metadata: null, reconciled: null }),
+            } as Response)
+
+            await filesManagerService.getDocument('notes', fileId)
+            expect(fetchSpy).toHaveBeenCalledWith(
+                `${API_URL}/notes/file/${fileId}/document`,
+                expect.anything(),
+            )
         })
     })
 
@@ -410,9 +469,15 @@ describe('filesManagerService', () => {
             ).rejects.toBeInstanceOf(NotFoundError)
         })
 
-        it('is a NotFoundError from updateFileContent', async () => {
+        it('is a NotFoundError from getDocument', async () => {
             await expect(
-                filesManagerService.updateFileContent('stories', fileId, 'x')
+                filesManagerService.getDocument('stories', fileId)
+            ).rejects.toBeInstanceOf(NotFoundError)
+        })
+
+        it('is a NotFoundError from putDocument', async () => {
+            await expect(
+                filesManagerService.putDocument('stories', fileId, 'x', null)
             ).rejects.toBeInstanceOf(NotFoundError)
         })
 

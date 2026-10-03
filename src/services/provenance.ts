@@ -275,3 +275,110 @@ export function checkModel(model: Model): void {
     )
   }
 }
+
+// --- what one edit did -----------------------------------------------------
+
+/** The one stretch of text an edit replaced, and what it put there. */
+export interface Edit {
+  /** Where the change starts, counting in characters from the start of the text. */
+  start: number
+  /** How many characters were removed. */
+  removedLen: number
+  /** What was inserted in their place. */
+  inserted: string
+}
+
+/**
+ * What changed between `old` and `cur`, as one replaced stretch.
+ *
+ * A prefix and suffix trim, not a real diff: the browser reports one `input` event per edit,
+ * so there is exactly one changed stretch to find and no need to align anything. Typing,
+ * deleting, pasting and replacing a selection all arrive this way.
+ *
+ * The answer is not unique when a repeated character is involved — typing a second `a` into
+ * `aa` could be read as inserting at any of three offsets — and it does not matter: every
+ * reading describes the same text, and `classify` only looks at the characters either side,
+ * which are the same characters whichever reading is taken.
+ */
+export function diffText(old: string, cur: string): Edit {
+  let start = 0
+  const shortest = Math.min(old.length, cur.length)
+  while (start < shortest && old[start] === cur[start]) {
+    start += 1
+  }
+
+  let tail = 0
+  while (
+    tail < shortest - start &&
+    old[old.length - 1 - tail] === cur[cur.length - 1 - tail]
+  ) {
+    tail += 1
+  }
+
+  return {
+    start,
+    removedLen: old.length - start - tail,
+    inserted: cur.slice(start, cur.length - tail),
+  }
+}
+
+/** Whether a character was written by a model, counting out of bounds as "not". */
+function isAI(kind: Kind | undefined): boolean {
+  return kind === 'gen' || kind === 'fix'
+}
+
+/**
+ * The kind to give text inserted at `start`, replacing `removedLen` characters.
+ *
+ * A correction is text inserted **strictly inside** model-written text: the character before
+ * it and the character after it are both the model's. Out of bounds counts as not the
+ * model's, so text typed immediately after a generated run — a newline included — stays the
+ * writer's own. The looser rule, where either neighbour being AI was enough, turned a
+ * trailing Enter into a correction; this is the rule that replaced it.
+ *
+ * Replacing the tail of a generated run, or replacing a whole one, yields `user` for the same
+ * reason: `fix` means an edit *within* model prose, not wholesale replacement of it.
+ *
+ * `declared` overrides all of it, and is how a generated insertion is marked `gen`.
+ */
+export function classify(
+  prov: Kind[],
+  start: number,
+  removedLen: number,
+  declared?: Kind,
+): Kind {
+  if (declared !== undefined) {
+    return declared
+  }
+  return isAI(prov[start - 1]) && isAI(prov[start + removedLen]) ? 'fix' : USER
+}
+
+/**
+ * `model` brought up to date with `cur`, the text as it is now.
+ *
+ * The provenance of characters either side of the edit is carried over untouched, which is
+ * what makes this cheap enough to run on every keystroke: nothing is recomputed, one stretch
+ * is spliced.
+ *
+ * Throws if the result would not hold one kind per character. That is the one error here that
+ * silently corrupts a file — colour drawn on the wrong characters, and runs saved against the
+ * wrong offsets — so it is loud rather than quiet.
+ */
+export function applyEdit(model: Model, cur: string, declared?: Kind): Model {
+  checkModel(model)
+  if (model.text === cur) {
+    return model
+  }
+
+  const { start, removedLen, inserted } = diffText(model.text, cur)
+  const kind = classify(model.prov, start, removedLen, declared)
+  const prov = [
+    ...model.prov.slice(0, start),
+    ...new Array<Kind>(inserted.length).fill(kind),
+    ...model.prov.slice(start + removedLen),
+  ]
+
+  const next: Model = { text: cur, prov }
+  checkModel(next)
+  return next
+}

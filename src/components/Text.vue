@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
+import {
+  applyEdit,
+  metadataFromModel,
+  modelFromMetadata,
+  type Kind,
+  type Model,
+  type ProvenanceMetadata,
+} from '../services/provenance'
 import { llmService } from '../services/llm'
 import { renderMarkdown } from '../services/markdown'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
@@ -19,6 +27,17 @@ const AUTO_SAVE_DEBOUNCE_MS = 2000
 
 // --- Component State ---
 const text = ref('')
+/**
+ * One kind per character of `text`, which is what a save writes back as the file's
+ * provenance section.
+ *
+ * Kept beside the text rather than inside it: provenance is separate metadata, not markup,
+ * so nothing here parses or escapes anything. Nothing draws it yet -- `MarkdownEditor` is
+ * still a plain textarea -- but it has to be maintained from the moment saves go through
+ * the document route, because a save that sent the prose with provenance keyed to older
+ * prose would have the next load discard it.
+ */
+const prov = ref<Kind[]>([])
 const fileName = ref('')
 const currentFile = ref<FileSelection | null>(null)
 const isDirty = ref(false)
@@ -32,23 +51,48 @@ const errorMessage = ref('')
 
 let autoSaveTimer: number | null = null
 
+/** The text and its provenance as one value, which is what the pure functions take. */
+const model = (): Model => ({ text: text.value, prov: prov.value })
+
+/**
+ * Replaces the text, keeping provenance in step with it.
+ *
+ * The only thing allowed to change the text once a file is open. `applyEdit` carries the
+ * provenance either side of the change over untouched and throws if the result would not
+ * hold one kind per character, which is the one error here that silently corrupts a file.
+ */
+const setText = (next: string, declared?: Kind) => {
+  const updated = applyEdit(model(), next, declared)
+  text.value = updated.text
+  prov.value = updated.prov
+}
+
+/** Starts fresh from what the API answered, discarding whatever was open. */
+const openModel = (body: string, metadata: ProvenanceMetadata | null) => {
+  const opened = modelFromMetadata(body, metadata)
+  text.value = opened.text
+  prov.value = opened.prov
+}
+
 /**
  * Loads a file's name and content. Called whenever the selection changes to a file.
  *
- * The content is the prose alone: the API keeps the file's header out of it, and puts
- * the header back when the prose is saved.
+ * The prose comes with its provenance, already reconciled against what the prose says now
+ * (§7.5), so a chapter edited outside the editor opens with its runs on the right
+ * characters rather than with a drift the writer has to notice. The header is not part of
+ * either: the API keeps it out and puts it back at the write.
  */
 const loadFile = async (file: FileSelection) => {
   if (!isLoggedIn()) return
 
   try {
-    const [info, content] = await Promise.all([
+    const [info, document] = await Promise.all([
       filesManagerService.getFileInfo(file.space, file.id),
-      filesManagerService.getFileContent(file.space, file.id)
+      filesManagerService.getDocument(file.space, file.id)
     ])
 
     fileName.value = info.name
-    text.value = content
+    openModel(document.body, document.metadata)
     currentFile.value = file
     isDirty.value = false
     readMode.value = false
@@ -69,15 +113,24 @@ const loadFile = async (file: FileSelection) => {
 }
 
 /**
- * Saves the current text content to the backend.
- * No-op when content has not changed since the last save.
+ * Saves the prose and its provenance together.
+ *
+ * One request for both, because a section derived from the body may not be written without
+ * it: sent separately, the stored hashes would stop matching the prose and the next load
+ * would discard provenance the writer had just created. No-op when nothing has changed
+ * since the last save.
  */
 const save = async () => {
   const file = currentFile.value
   if (!isLoggedIn() || !file || !isDirty.value) return
 
   try {
-    await filesManagerService.updateFileContent(file.space, file.id, text.value)
+    await filesManagerService.putDocument(
+      file.space,
+      file.id,
+      text.value,
+      metadataFromModel(model())
+    )
     isDirty.value = false
     // A note is never committed, so only a chapter's save is worth a git refresh.
     if (file.space === 'stories') refreshGitStatus().catch(() => {})
@@ -122,7 +175,7 @@ const cancelAutoSave = () => {
 }
 
 const handleContentChange = (newContent: string) => {
-  text.value = newContent
+  setText(newContent)
   isDirty.value = true
   scheduleAutoSave()
 }
@@ -158,7 +211,10 @@ const handleGenerate = async () => {
       selectedModelName.value,
       text.value,
       (delta) => {
-        text.value += delta
+        // Undeclared, so this counts as the writer's for now. Marking a continuation as
+        // `gen` is its own step, and doing it here would be a provenance claim the editor
+        // cannot yet draw.
+        setText(text.value + delta)
         isDirty.value = true
       },
       generation.signal
@@ -194,7 +250,7 @@ watch(selectedFile, (file) => {
   } else {
     currentFile.value = null
     fileName.value = ''
-    text.value = ''
+    openModel('', null)
     readMode.value = false
   }
 })

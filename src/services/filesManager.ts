@@ -1,6 +1,34 @@
 import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
 import type { Space } from './spaces';
+import type { ProvenanceMetadata } from './provenance';
+
+/**
+ * What a load had to put right, per paragraph, or `null` where it had nothing to.
+ *
+ * `GET /document` reconciles provenance a hand edit left stale before answering (§7.5), so
+ * the editor is handed metadata that already matches the prose. Nothing displays this yet;
+ * it is here so a later interface can say what happened without the route changing.
+ */
+export interface Reconciled {
+    revision: string | null;
+    recovered: string[];
+    reset: string[];
+    dropped: string[];
+}
+
+/**
+ * A file's prose and its provenance, which travel together in both directions.
+ *
+ * `metadata` of `null` means the file has no provenance section at all -- the editor has
+ * never saved it. An empty object means it has one and it is empty, which is a different
+ * thing: the prose is all the writer's. A `PUT` of `null` removes the section.
+ */
+export interface DocumentResponse {
+    body: string;
+    metadata: ProvenanceMetadata | null;
+    reconciled: Reconciled | null;
+}
 
 export interface FileSystemNode {
     id: string;
@@ -216,15 +244,39 @@ export const filesManagerService = {
         return response.text();
     },
 
-    async updateFileContent(space: Space, id: string, content: string) {
-        const response = await apiFetch(`${API_URL}/${space}/file/${id}/contents`, {
-            method: "PUT",
-            headers: { ...jsonHeaders(), "Content-Type": "text/plain" },
-            body: content,
+    /**
+     * A file's prose and provenance in one request, with stale provenance already put
+     * right by the API.
+     */
+    async getDocument(space: Space, id: string): Promise<DocumentResponse> {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}/document`, {
+            headers: jsonHeaders(),
         });
         if (response.status === 404) throw new NotFoundError("No file with that id");
-        if (!response.ok) throw new Error("Failed to update file content");
-        if (response.status === 204) return null;
-        return response.text();
+        if (!response.ok) throw new Error("Failed to fetch document");
+        return response.json();
+    },
+
+    /**
+     * Replaces a file's prose and its provenance together.
+     *
+     * One request for both, because a section derived from the body may not be written
+     * without it: written separately, the hashes would stop matching the prose and the next
+     * load would discard provenance the writer had just created.
+     */
+    async putDocument(
+        space: Space,
+        id: string,
+        body: string,
+        metadata: ProvenanceMetadata | null,
+    ) {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}/document`, {
+            method: "PUT",
+            headers: jsonHeaders(),
+            body: JSON.stringify({ body, metadata }),
+        });
+        if (response.status === 404) throw new NotFoundError("No file with that id");
+        if (!response.ok) throw new Error("Failed to save document");
+        return response.json();
     },
 };
