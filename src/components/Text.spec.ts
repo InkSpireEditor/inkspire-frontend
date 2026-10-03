@@ -40,6 +40,12 @@ vi.mock('../services/llm', () => ({
  */
 const handwritten = (body: string) => metadataFromProse(proseFromMetadata(body, null))
 
+/**
+ * What `MarkdownEditor` emits after a writer types `body`. The editor owns provenance, so a
+ * test standing in for it hands over the whole prose rather than a string.
+ */
+const typed = (body: string) => proseFromMetadata(body, null)
+
 describe('Text.vue', () => {
   let selectedFile: any
 
@@ -122,7 +128,7 @@ describe('Text.vue', () => {
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as any
-    vm.handleContentChange('Changed content')
+    vm.handleProseChange(typed('Changed content'))
 
     vi.advanceTimersByTime(1999)
     await flushPromises()
@@ -144,11 +150,11 @@ describe('Text.vue', () => {
     const vm = wrapper.vm as any
     // Each keystroke restarts the 2s wait, so as long as they arrive closer
     // together than that, nothing saves until the run stops.
-    vm.handleContentChange('C')
+    vm.handleProseChange(typed('C'))
     vi.advanceTimersByTime(1000)
-    vm.handleContentChange('Ch')
+    vm.handleProseChange(typed('Ch'))
     vi.advanceTimersByTime(1000)
-    vm.handleContentChange('Cha')
+    vm.handleProseChange(typed('Cha'))
     await flushPromises()
     expect(filesManagerService.putDocument).not.toHaveBeenCalled()
 
@@ -194,7 +200,7 @@ describe('Text.vue', () => {
     // A keystroke just before Generate leaves a pending debounce that generating
     // should cancel, not let fire mid-stream.
     const vm = wrapper.vm as any
-    vm.handleContentChange('Changed just before generating')
+    vm.handleProseChange(typed('Changed just before generating'))
     await clickButton(wrapper, 'Generate')
     await flushPromises()
 
@@ -255,7 +261,7 @@ describe('Text.vue', () => {
         new NotFoundError('No file with that id')
       )
       const vm = wrapper.vm as any
-      vm.handleContentChange('Changed content')
+      vm.handleProseChange(typed('Changed content'))
 
       vi.advanceTimersByTime(5000)
       await flushPromises()
@@ -282,7 +288,7 @@ describe('Text.vue', () => {
 
     // Simulate user editing so isDirty is true
     const vm = wrapper.vm as any
-    vm.handleContentChange('Unsaved content')
+    vm.handleProseChange(typed('Unsaved content'))
 
     wrapper.unmount()
     await flushPromises()
@@ -427,7 +433,7 @@ describe('Text.vue', () => {
       await flushPromises()
 
       const vm = wrapper.vm as any
-      vm.handleContentChange('Something **bold**, not yet saved.')
+      vm.handleProseChange(typed('Something **bold**, not yet saved.'))
       await wrapper.vm.$nextTick()
 
       await readToggle(wrapper).trigger('click')

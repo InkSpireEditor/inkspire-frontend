@@ -3,9 +3,15 @@
  * The editor body: a `contenteditable` div that colours text by who wrote it.
  *
  * Deliberately uncontrolled beyond the initial value, exactly as the textarea it replaces
- * was: it emits every keystroke as `contentChange` and lets the parent own the text, so
- * typing is never interrupted by a re-render. The public contract is unchanged — prop
- * `content`, emit `contentChange` with the plain text.
+ * was: it emits every change and the parent stores it, so typing is never interrupted by a
+ * re-render.
+ *
+ * **This component owns the provenance.** It is the only place that can: a correction is
+ * decided from the characters either side of an edit, which only the `input` handler sees;
+ * an undo has to put an older provenance back, which only a snapshot taken here can do; and
+ * a generated insertion is known to be generated only at the moment it is inserted. A parent
+ * handed nothing but the text could not work any of that out, so it is handed the prose
+ * instead and stores it.
  *
  * **Nothing here writes to the element's DOM while the writer is editing**, and that is the
  * whole design rather than an optimisation. Colour is drawn with the CSS Custom Highlight
@@ -23,14 +29,31 @@
  * All of that was settled in `contenteditable-demo/index.html`, demos 4 to 10, by hand in
  * two browsers. `ARCHITECTURE.md` §8.1 records what each one showed.
  */
-import { onMounted, ref, watch } from 'vue'
-import { applyEdit, proseFromMetadata, runsOf, type Prose } from '../services/provenance'
+import { onMounted, ref, toRaw, watch } from 'vue'
+import { applyEdit, runsOf, type Prose } from '../services/provenance'
 
+/**
+ * The prose to show, text and provenance together.
+ *
+ * One prop rather than a string and a provenance map side by side: they are one value, and
+ * two props that have to change together is two chances to change only one of them.
+ */
 const props = defineProps<{
-  content: string
+  prose: Prose
 }>()
 
-const emit = defineEmits(['contentChange'])
+/**
+ * Every change, as the whole prose.
+ *
+ * **This component is the only owner of provenance**, so it is the only thing that may
+ * compute it, and the parent's job is to store what it is handed. Emitting just the text
+ * would force the parent to derive provenance a second time, from a string that cannot say
+ * whether an insertion was generated or whether an undo put an older state back — and a
+ * second derivation is a second answer.
+ */
+const emit = defineEmits<{
+  proseChange: [Prose]
+}>()
 
 const editor = ref<HTMLDivElement | null>(null)
 
@@ -46,15 +69,15 @@ const editor = ref<HTMLDivElement | null>(null)
  * Initialised from the prop rather than defaulted to `true` and corrected on mount, or the
  * first paint of an existing chapter draws the placeholder over its prose for one frame.
  */
-const empty = ref(props.content.length === 0)
+const empty = ref(props.prose.text.length === 0)
 
 /**
- * The text and one kind per character of it.
+ * The prose as this component has it.
  *
  * Plain, not a `ref`: nothing in the template reads it, and making it reactive would invite
  * a re-render on every keystroke — which is the one thing this component must never do.
  */
-let prose: Prose = { text: '', prov: [] }
+let prose: Prose = props.prose
 
 /**
  * Whether this browser can paint highlights at all.
@@ -138,22 +161,21 @@ function handleInput(): void {
   prose = applyEdit(prose, current)
   empty.value = prose.text.length === 0
   paint()
-  emit('contentChange', prose.text)
+  emit('proseChange', prose)
 }
 
 /**
  * Replaces everything, which is what opening a different file is.
  *
- * The only place that writes `textContent`, and it is reached only when the prop says
- * something the prose does not already say. The parent echoes back what this component just
- * emitted, so without that guard every keystroke would rewrite the DOM underneath the caret
- * and throw the browser's undo stack away.
+ * The only place that writes `textContent`. Doing that discards the browser's undo stack
+ * for everything in the element, so it is reached only when the text itself has changed
+ * from outside — never on the way back from something this component emitted.
  */
-function reset(body: string): void {
-  prose = proseFromMetadata(body, null)
+function reset(next: Prose): void {
+  prose = toRaw(next)
   empty.value = prose.text.length === 0
   if (editor.value !== null) {
-    editor.value.textContent = body
+    editor.value.textContent = prose.text
   }
   paint()
 }
@@ -172,13 +194,22 @@ onMounted(() => {
       element.contentEditable = 'true'
     }
   }
-  reset(props.content)
+  reset(props.prose)
 })
 
 watch(
-  () => props.content,
+  () => props.prose,
   (next) => {
-    if (next === prose.text) {
+    if (next.text === prose.text) {
+      // The same text, so the DOM already shows it and must not be rewritten — that is the
+      // whole question this guard answers, and it is why the comparison is on the text
+      // rather than on the object. The provenance may still differ, so it is adopted and
+      // repainted; painting writes nothing.
+      //
+      // Not compared by identity: a prop reaches this through a reactive proxy, so the
+      // object a parent stores and hands back is never the one that was emitted.
+      prose = toRaw(next)
+      paint()
       return
     }
     reset(next)

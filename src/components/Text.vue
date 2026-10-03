@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
 import {
   applyEdit,
   metadataFromProse,
   proseFromMetadata,
-  type Kind,
   type Prose,
   type ProvenanceMetadata,
 } from '../services/provenance'
@@ -26,18 +25,17 @@ const { refresh: refreshGitStatus } = useSharedGit()
 const AUTO_SAVE_DEBOUNCE_MS = 2000
 
 // --- Component State ---
-const text = ref('')
 /**
- * One kind per character of `text`, which is what a save writes back as the file's
- * provenance section.
+ * The open file's prose and its provenance, as one value.
  *
- * Kept beside the text rather than inside it: provenance is separate metadata, not markup,
- * so nothing here parses or escapes anything. Nothing draws it yet -- `MarkdownEditor` is
- * still a plain textarea -- but it has to be maintained from the moment saves go through
- * the document route, because a save that sent the prose with provenance keyed to older
- * prose would have the next load discard it.
+ * **Stored here, computed in `MarkdownEditor`.** This component is the editor's store and
+ * the API's client; it never works out provenance for itself. Deriving it in both places
+ * would be two answers to one question, and only the editor can give the right one — see
+ * its own docstring for why.
  */
-const prov = ref<Kind[]>([])
+const prose = ref<Prose>(proseFromMetadata('', null))
+/** The prose as text, which is what the reading view and a generation prompt want. */
+const text = computed(() => prose.value.text)
 const fileName = ref('')
 const currentFile = ref<FileSelection | null>(null)
 const isDirty = ref(false)
@@ -51,27 +49,16 @@ const errorMessage = ref('')
 
 let autoSaveTimer: number | null = null
 
-/** The text and its provenance as one value, which is what the pure functions take. */
-const current = (): Prose => ({ text: text.value, prov: prov.value })
-
-/**
- * Replaces the text, keeping provenance in step with it.
- *
- * The only thing allowed to change the text once a file is open. `applyEdit` carries the
- * provenance either side of the change over untouched and throws if the result would not
- * hold one kind per character, which is the one error here that silently corrupts a file.
- */
-const setText = (next: string, declared?: Kind) => {
-  const updated = applyEdit(current(), next, declared)
-  text.value = updated.text
-  prov.value = updated.prov
+/** Stores a change the editor made. */
+const handleProseChange = (next: Prose) => {
+  prose.value = next
+  isDirty.value = true
+  scheduleAutoSave()
 }
 
 /** Starts fresh from what the API answered, discarding whatever was open. */
 const openProse = (body: string, metadata: ProvenanceMetadata | null) => {
-  const opened = proseFromMetadata(body, metadata)
-  text.value = opened.text
-  prov.value = opened.prov
+  prose.value = proseFromMetadata(body, metadata)
 }
 
 /**
@@ -129,7 +116,7 @@ const save = async () => {
       file.space,
       file.id,
       text.value,
-      metadataFromProse(current())
+      metadataFromProse(prose.value)
     )
     isDirty.value = false
     // A note is never committed, so only a chapter's save is worth a git refresh.
@@ -174,12 +161,6 @@ const cancelAutoSave = () => {
   }
 }
 
-const handleContentChange = (newContent: string) => {
-  setText(newContent)
-  isDirty.value = true
-  scheduleAutoSave()
-}
-
 const isGenerating = ref(false)
 let generation: AbortController | null = null
 
@@ -211,10 +192,11 @@ const handleGenerate = async () => {
       selectedModelName.value,
       text.value,
       (delta) => {
-        // Undeclared, so this counts as the writer's for now. Marking a continuation as
-        // `gen` is its own step, and doing it here would be a provenance claim the editor
-        // cannot yet draw.
-        setText(text.value + delta)
+        // The last place outside `MarkdownEditor` that changes the prose. It moves into the
+        // editor as `appendGenerated`, which is what lets a continuation be marked as
+        // generated at the moment it is inserted; undeclared here, it counts as the
+        // writer's.
+        prose.value = applyEdit(prose.value, prose.value.text + delta)
         isDirty.value = true
       },
       generation.signal
@@ -277,7 +259,7 @@ onUnmounted(() => {
     </div>
 
     <div class="editor-container">
-      <MarkdownEditor v-if="!readMode" :content="text" @content-change="handleContentChange" />
+      <MarkdownEditor v-if="!readMode" :prose="prose" @prose-change="handleProseChange" />
       <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
       <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
 

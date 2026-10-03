@@ -12,6 +12,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MarkdownEditor from './MarkdownEditor.vue'
+import { proseFromMetadata, type Prose } from '../services/provenance'
+
+/** A file with no provenance recorded, which is what most of these cases open with. */
+const plain = (body: string): Prose => proseFromMetadata(body, null)
 
 /** What the browser does when a writer types: it edits the DOM, then tells us. */
 const type = (wrapper: ReturnType<typeof mount>, text: string, inputType = 'insertText') => {
@@ -20,44 +24,51 @@ const type = (wrapper: ReturnType<typeof mount>, text: string, inputType = 'inse
   element.dispatchEvent(new InputEvent('input', { inputType }))
 }
 
+/** The prose from the last change the component emitted. */
+const emittedProse = (wrapper: ReturnType<typeof mount>, index = 0): Prose =>
+  wrapper.emitted('proseChange')![index]![0] as Prose
+
 describe('MarkdownEditor.vue', () => {
   it('is a contenteditable and not a textarea', () => {
-    const wrapper = mount(MarkdownEditor, { props: { content: '' } })
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('') } })
     expect(wrapper.find('textarea').exists()).toBe(false)
     expect(wrapper.find('[contenteditable]').exists()).toBe(true)
   })
 
-  it('renders the content prop', () => {
-    const content = '# Hello World'
-    const wrapper = mount(MarkdownEditor, { props: { content } })
-    expect(wrapper.find('[contenteditable]').element.textContent).toBe(content)
+  it('renders the prose it is given', () => {
+    const body = '# Hello World'
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain(body) } })
+    expect(wrapper.find('[contenteditable]').element.textContent).toBe(body)
   })
 
   it('emits contentChange on input', () => {
-    const wrapper = mount(MarkdownEditor, { props: { content: '' } })
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('') } })
     type(wrapper, 'new content')
 
-    expect(wrapper.emitted()).toHaveProperty('contentChange')
-    expect(wrapper.emitted('contentChange')![0]).toEqual(['new content'])
+    expect(wrapper.emitted()).toHaveProperty('proseChange')
+    expect(emittedProse(wrapper).text).toBe('new content')
   })
 
   it('emits the text as it stands, not the keystroke', () => {
     // The parent owns the text, so what it needs is the whole of it.
-    const wrapper = mount(MarkdownEditor, { props: { content: 'Once' } })
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once') } })
     type(wrapper, 'Once.')
     type(wrapper, 'Once. Twice.')
-    expect(wrapper.emitted('contentChange')).toEqual([['Once.'], ['Once. Twice.']])
+    expect(wrapper.emitted('proseChange')!.map(([p]) => (p as Prose).text)).toEqual([
+      'Once.',
+      'Once. Twice.',
+    ])
   })
 
   it('carries newlines through, since the prose has them', () => {
-    const wrapper = mount(MarkdownEditor, { props: { content: '' } })
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('') } })
     type(wrapper, 'One.\n\nTwo.\n', 'insertParagraph')
-    expect(wrapper.emitted('contentChange')![0]).toEqual(['One.\n\nTwo.\n'])
+    expect(emittedProse(wrapper).text).toBe('One.\n\nTwo.\n')
   })
 
-  it('replaces the displayed text when the content prop changes', async () => {
-    const wrapper = mount(MarkdownEditor, { props: { content: 'first' } })
-    await wrapper.setProps({ content: 'second' })
+  it('replaces the displayed text when the prose prop changes', async () => {
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('first') } })
+    await wrapper.setProps({ prose: plain('second') })
     expect(wrapper.find('[contenteditable]').element.textContent).toBe('second')
   })
 
@@ -65,12 +76,15 @@ describe('MarkdownEditor.vue', () => {
     // The one case that matters: a parent that stores what it is handed and passes it back
     // would otherwise have every keystroke rewrite the element under the caret, which
     // discards the browser's undo entry for it.
-    const wrapper = mount(MarkdownEditor, { props: { content: '' } })
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('') } })
     const element = wrapper.find('[contenteditable]').element
     type(wrapper, 'typed')
 
+    // Exactly what a parent that stores what it is handed passes back. Vue delivers it
+    // through a reactive proxy, so this is also what proves the guard does not rely on the
+    // object's identity surviving that.
     const spy = vi.spyOn(element, 'textContent', 'set')
-    await wrapper.setProps({ content: 'typed' })
+    await wrapper.setProps({ prose: emittedProse(wrapper) })
     expect(spy).not.toHaveBeenCalled()
   })
 
@@ -78,18 +92,18 @@ describe('MarkdownEditor.vue', () => {
     // jsdom never has it, so this is the path every other test here takes too. Asserted by
     // name anyway, because it is the behaviour a browser without the API also gets.
     expect(typeof CSS).toBe('undefined')
-    const wrapper = mount(MarkdownEditor, { props: { content: 'Once.' } })
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
     expect(() => type(wrapper, 'Once. Twice.')).not.toThrow()
-    expect(wrapper.emitted('contentChange')![0]).toEqual(['Once. Twice.'])
+    expect(emittedProse(wrapper).text).toBe('Once. Twice.')
   })
 
   it('survives being emptied and refilled', () => {
-    const wrapper = mount(MarkdownEditor, { props: { content: 'Once.' } })
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
     expect(() => {
       type(wrapper, '', 'deleteContentBackward')
       type(wrapper, 'A')
     }).not.toThrow()
-    expect(wrapper.emitted('contentChange')).toEqual([[''], ['A']])
+    expect(wrapper.emitted('proseChange')!.map(([p]) => (p as Prose).text)).toEqual(['', 'A'])
   })
 
   describe('the placeholder', () => {
@@ -97,17 +111,17 @@ describe('MarkdownEditor.vue', () => {
     // emptied contenteditable, so the selector stops matching while the writer sees
     // nothing -- which is what it did before this was model-driven.
     it('shows when there is no text', () => {
-      const wrapper = mount(MarkdownEditor, { props: { content: '' } })
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('') } })
       expect(wrapper.find('.placeholder').exists()).toBe(true)
     })
 
     it('does not show when a file has prose', () => {
-      const wrapper = mount(MarkdownEditor, { props: { content: 'Once.' } })
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
       expect(wrapper.find('.placeholder').exists()).toBe(false)
     })
 
     it('goes away on the first character and comes back when all of it is deleted', async () => {
-      const wrapper = mount(MarkdownEditor, { props: { content: '' } })
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('') } })
       type(wrapper, 'O')
       await wrapper.vm.$nextTick()
       expect(wrapper.find('.placeholder').exists()).toBe(false)
@@ -118,16 +132,30 @@ describe('MarkdownEditor.vue', () => {
     })
 
     it('is outside the editable element, so it can never become prose', () => {
-      const wrapper = mount(MarkdownEditor, { props: { content: '' } })
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('') } })
       const editable = wrapper.find('[contenteditable]').element
       expect(editable.textContent).toBe('')
       expect(editable.querySelector('.placeholder')).toBeNull()
     })
 
     it('comes back when the open file is replaced by an empty one', async () => {
-      const wrapper = mount(MarkdownEditor, { props: { content: 'Once.' } })
-      await wrapper.setProps({ content: '' })
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
+      await wrapper.setProps({ prose: plain('') })
       expect(wrapper.find('.placeholder').exists()).toBe(true)
+    })
+  })
+
+  it('adopts new provenance for the same text without touching the DOM', () => {
+    // A repaint is not a rewrite. Painting creates no node, so provenance can change under
+    // unchanged text without costing the writer their undo stack.
+    const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
+    const element = wrapper.find('[contenteditable]').element
+    const spy = vi.spyOn(element, 'textContent', 'set')
+
+    const marked: Prose = { text: 'Once.', prov: ['gen', 'gen', 'gen', 'gen', 'gen'] }
+    return wrapper.setProps({ prose: marked }).then(() => {
+      expect(spy).not.toHaveBeenCalled()
+      expect(element.textContent).toBe('Once.')
     })
   })
 })
