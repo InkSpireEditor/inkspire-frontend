@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { metadataFromProse, proseFromMetadata } from '../services/provenance'
+import { applyEdit, metadataFromProse, proseFromMetadata, type Prose } from '../services/provenance'
 import { mount, flushPromises } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import Text from './Text.vue'
+import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
 import { llmService } from '../services/llm'
@@ -45,6 +46,13 @@ const handwritten = (body: string) => metadataFromProse(proseFromMetadata(body, 
  * test standing in for it hands over the whole prose rather than a string.
  */
 const typed = (body: string) => proseFromMetadata(body, null)
+
+/**
+ * The provenance a save sends after a continuation: `before` is the writer's, `added` is the
+ * model's. Derived, so a test states the shape rather than a hash and a pair of offsets.
+ */
+const continued = (before: string, added: string) =>
+  metadataFromProse(applyEdit(typed(before), before + added, 'gen'))
 
 describe('Text.vue', () => {
   let selectedFile: any
@@ -216,7 +224,7 @@ describe('Text.vue', () => {
       OPEN.space,
       OPEN.id,
       'Changed just before generating streamed.',
-      handwritten('Changed just before generating streamed.')
+      continued('Changed just before generating', ' streamed.')
     )
   })
 
@@ -344,7 +352,7 @@ describe('Text.vue', () => {
       OPEN.space,
       OPEN.id,
       'Initial content and then.',
-      handwritten('Initial content and then.')
+      continued('Initial content', ' and then.')
     )
   })
 
@@ -396,7 +404,7 @@ describe('Text.vue', () => {
       OPEN.space,
       OPEN.id,
       'Initial content as far as here',
-      handwritten('Initial content as far as here')
+      continued('Initial content', ' as far as here')
     )
   })
 
@@ -465,6 +473,68 @@ describe('Text.vue', () => {
 
       expect(readToggle(wrapper).text()).toBe('Read')
       expect(wrapper.find('[contenteditable]').exists()).toBe(true)
+    })
+  })
+
+
+  describe('a chapter that already has provenance', () => {
+    // The chain this proves, link by link: GET /document answers body and metadata ->
+    // openProse builds a Prose from *both* -> the prose prop carries it -> the editor's
+    // watcher adopts it without rebuilding from the text. Before the editor owned
+    // provenance its prop was a bare string and it called proseFromMetadata(body, null),
+    // and that `null` threw away everything a file had recorded.
+    const PARA = 'The door creaked. The streets glistened like wet glass under the lamplight.'
+    const PARA_HASH = '47f57caaa4fb330e'
+
+    const openWithRuns = async () => {
+      vi.mocked(filesManagerService.getDocument).mockResolvedValue({
+        body: `${PARA}\n`,
+        metadata: { [PARA_HASH]: [[18, 45, 'gen'], [45, 54, 'fix']] },
+        reconciled: null
+      })
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      return wrapper
+    }
+
+    it('hands the stored runs to the editor, not a blank slate', async () => {
+      const wrapper = await openWithRuns()
+      const given = wrapper.findComponent(MarkdownEditor).props('prose') as Prose
+
+      expect(given.text).toBe(`${PARA}\n`)
+      expect(given.prov).toHaveLength(PARA.length + 1)
+      expect(given.prov.slice(18, 45)).toEqual(new Array(27).fill('gen'))
+      expect(given.prov.slice(45, 54)).toEqual(new Array(9).fill('fix'))
+      expect(given.prov[75]).toBe('user')
+    })
+
+    it('saves them back unchanged when nothing was edited', async () => {
+      const wrapper = await openWithRuns()
+      const vm = wrapper.vm as any
+      vm.isDirty = true
+      await vm.save()
+
+      expect(filesManagerService.putDocument).toHaveBeenCalledWith(OPEN.space, OPEN.id, `${PARA}\n`, {
+        [PARA_HASH]: [[18, 45, 'gen'], [45, 54, 'fix']]
+      })
+    })
+
+    it('still has them after the editor is unmounted and brought back', async () => {
+      // Which is what the Read toggle does. The editor rebuilds from the prop on mount, so
+      // it has to be the prose and not the text.
+      const wrapper = await openWithRuns()
+      const vm = wrapper.vm as any
+
+      vm.readMode = true
+      await wrapper.vm.$nextTick()
+      expect(wrapper.findComponent(MarkdownEditor).exists()).toBe(false)
+
+      vm.readMode = false
+      await wrapper.vm.$nextTick()
+      const given = wrapper.findComponent(MarkdownEditor).props('prose') as Prose
+      expect(given.prov.slice(18, 45)).toEqual(new Array(27).fill('gen'))
     })
   })
 })

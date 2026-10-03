@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
 import {
-  applyEdit,
   metadataFromProse,
   proseFromMetadata,
   type Prose,
@@ -36,6 +35,14 @@ const AUTO_SAVE_DEBOUNCE_MS = 2000
 const prose = ref<Prose>(proseFromMetadata('', null))
 /** The prose as text, which is what the reading view and a generation prompt want. */
 const text = computed(() => prose.value.text)
+/**
+ * The editor, so a streamed continuation can be handed to it.
+ *
+ * It owns provenance, so it is the only thing that can record that a model wrote something —
+ * which is known only at the moment of insertion and cannot be worked out from the text
+ * afterwards.
+ */
+const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null)
 const fileName = ref('')
 const currentFile = ref<FileSelection | null>(null)
 const isDirty = ref(false)
@@ -182,6 +189,14 @@ const handleGenerate = async () => {
 
   if (!isLoggedIn() || !currentFile.value) return
 
+  // The editor has to be mounted to receive the continuation, and in Read mode it is not.
+  // Leaving Read mode is better than refusing to generate from it: the writer is about to
+  // have new prose, which is the state they wanted anyway.
+  if (readMode.value) {
+    readMode.value = false
+    await nextTick()
+  }
+
   // Any debounce left over from typing just before Generate was clicked would
   // otherwise fire mid-stream -- the finally below is what flushes now instead.
   cancelAutoSave()
@@ -192,11 +207,10 @@ const handleGenerate = async () => {
       selectedModelName.value,
       text.value,
       (delta) => {
-        // The last place outside `MarkdownEditor` that changes the prose. It moves into the
-        // editor as `appendGenerated`, which is what lets a continuation be marked as
-        // generated at the moment it is inserted; undeclared here, it counts as the
-        // writer's.
-        prose.value = applyEdit(prose.value, prose.value.text + delta)
+        // Handed to the editor rather than appended here, so it goes in through the
+        // browser's own insert command -- undoable like anything typed -- and is recorded as
+        // written by a model. The editor emits the result, which `handleProseChange` stores.
+        editor.value?.appendGenerated(delta)
         isDirty.value = true
       },
       generation.signal
@@ -259,7 +273,7 @@ onUnmounted(() => {
     </div>
 
     <div class="editor-container">
-      <MarkdownEditor v-if="!readMode" :prose="prose" @prose-change="handleProseChange" />
+      <MarkdownEditor v-if="!readMode" ref="editor" :prose="prose" @prose-change="handleProseChange" />
       <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
       <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
 

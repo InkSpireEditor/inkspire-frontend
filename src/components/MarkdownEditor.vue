@@ -36,6 +36,7 @@ import {
   findSnapshot,
   pushSnapshot,
   runsOf,
+  type Kind,
   type Prose,
   type Snapshots,
 } from '../services/provenance'
@@ -97,6 +98,16 @@ let prose: Prose = props.prose
  */
 let undoStack: Snapshots = []
 let redoStack: Snapshots = []
+
+/**
+ * The kind to give the next insertion, where it is not the writer's own.
+ *
+ * Set around `appendGenerated`'s insertion and read by the `input` handler, because the
+ * insertion goes through the browser's own editing command and so comes back as an ordinary
+ * `input` event. There is nothing in that event to say a model wrote it — the only moment
+ * that is known is the moment it is inserted, which is why this exists at all.
+ */
+let pending: Kind | undefined
 
 /**
  * Whether this browser can paint highlights at all.
@@ -220,17 +231,89 @@ function handleInput(event: Event): void {
   if (inputType === 'historyUndo' || inputType === 'historyRedo') {
     rewind(current, inputType === 'historyUndo')
   } else {
-    undoStack = pushSnapshot(undoStack, prose)
-    // Anything new makes the redo branch unreachable, exactly as the browser's own stack
-    // does — so it is dropped rather than left to be matched against later.
-    redoStack = []
-    prose = applyEdit(prose, current)
+    recordEdit(current, pending)
   }
+  settle()
+}
 
+/** One new state: the one before it becomes a snapshot, and the redo branch is gone. */
+function recordEdit(current: string, declared?: Kind): void {
+  undoStack = pushSnapshot(undoStack, prose)
+  // Anything new makes the redo branch unreachable, exactly as the browser's own stack
+  // does — so it is dropped rather than left to be matched against later.
+  redoStack = []
+  prose = applyEdit(prose, current, declared)
+}
+
+/** What every change ends with, however it arrived. */
+function settle(): void {
   empty.value = prose.text.length === 0
   paint()
   emit('proseChange', prose)
 }
+
+/**
+ * Puts the caret at the end of the prose, where a continuation goes.
+ *
+ * At the end rather than wherever the writer last left it, because that is where a
+ * continuation of the whole chapter belongs and it is what the direct append this replaces
+ * did. Inserting at the caret is a later feature, and needs the prompt to be built around
+ * the cursor first (§4).
+ */
+function caretToEnd(element: HTMLElement): boolean {
+  const selection = window.getSelection()
+  if (selection === null) {
+    return false
+  }
+  const range = document.createRange()
+  range.selectNodeContents(element)
+  range.collapse(false)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  return true
+}
+
+/**
+ * Appends `delta` as text a model wrote.
+ *
+ * **Inserted through `document.execCommand('insertText')`, not by writing the DOM**, so it
+ * lands on the browser's own undo stack and can be undone like anything the writer typed.
+ * Only its provenance is ours to declare, and `pending` is how that reaches the `input`
+ * handler the command itself triggers.
+ *
+ * One call per streamed chunk, so one undo step per chunk: undoing a long continuation takes
+ * several presses. Accepted, because the alternative is to buffer the whole generation and
+ * show the writer nothing until it ends, which is the feature.
+ *
+ * Where `execCommand` is missing — jsdom, and any browser that has dropped it — the text is
+ * written directly instead. That costs the browser's undo entry for this insertion alone;
+ * everything else keeps working, which is the point of not making it a hard requirement.
+ */
+function appendGenerated(delta: string): void {
+  const element = editor.value
+  if (element === null || delta === '') {
+    return
+  }
+
+  pending = 'gen'
+  try {
+    const inserted =
+      typeof document.execCommand === 'function' &&
+      caretToEnd(element) &&
+      document.execCommand('insertText', false, delta)
+    if (inserted) {
+      // `execCommand` fired `input` synchronously, so the handler has already run.
+      return
+    }
+    element.textContent = prose.text + delta
+    recordEdit(element.textContent, pending)
+    settle()
+  } finally {
+    pending = undefined
+  }
+}
+
+defineExpose({ appendGenerated })
 
 /**
  * Replaces everything, which is what opening a different file is.

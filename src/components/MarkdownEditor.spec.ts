@@ -258,4 +258,62 @@ describe('MarkdownEditor.vue', () => {
       expect(event.defaultPrevented).toBe(false)
     })
   })
+
+  describe('a generated continuation', () => {
+    // `document.execCommand` is absent in jsdom, so these exercise the written-directly
+    // fallback. What cannot be checked here is the thing the command exists for -- that the
+    // insertion lands on the browser's own undo stack -- which is the hand test.
+    it('is absent from this environment, which is why there is a fallback', () => {
+      expect(typeof document.execCommand).not.toBe('function')
+    })
+
+    it('marks what it appends as written by a model', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
+      wrapper.vm.appendGenerated(' Twice.')
+
+      const answered = emittedProse(wrapper)
+      expect(answered.text).toBe('Once. Twice.')
+      expect(answered.prov.slice(0, 5)).toEqual(new Array(5).fill('user'))
+      expect(answered.prov.slice(5)).toEqual(new Array(7).fill('gen'))
+    })
+
+    it('marks every chunk of a stream, not only the first', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
+      for (const delta of [' and', ' then', ' this.']) {
+        wrapper.vm.appendGenerated(delta)
+      }
+
+      const answered = emittedProse(wrapper, 2)
+      expect(answered.text).toBe('Once. and then this.')
+      expect(answered.prov.slice(5)).toEqual(new Array(15).fill('gen'))
+    })
+
+    it('does not let the declared kind leak into what the writer types next', () => {
+      // `pending` is cleared whatever happens, so the keystroke after a continuation is the
+      // writer's. Typing at the end of a generated run is theirs by the rule anyway, which
+      // is why this asserts on a leak rather than on the rule.
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
+      wrapper.vm.appendGenerated(' Twice.')
+      type(wrapper, 'Once. Twice. Thrice.')
+
+      const answered = emittedProse(wrapper, 1)
+      expect(answered.prov.slice(12)).toEqual(new Array(8).fill('user'))
+    })
+
+    it('can be undone like anything typed', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
+      wrapper.vm.appendGenerated(' Twice.')
+      type(wrapper, 'Once.', 'historyUndo')
+
+      const answered = emittedProse(wrapper, 1)
+      expect(answered.text).toBe('Once.')
+      expect(answered.prov).toEqual(new Array(5).fill('user'))
+    })
+
+    it('ignores an empty chunk rather than recording a state for it', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
+      wrapper.vm.appendGenerated('')
+      expect(wrapper.emitted('proseChange')).toBeUndefined()
+    })
+  })
 })
