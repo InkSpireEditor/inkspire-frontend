@@ -388,3 +388,60 @@ export function applyEdit(prose: Prose, cur: string, declared?: Kind): Prose {
   checkProse(next)
   return next
 }
+
+// --- shadowing the browser's undo ------------------------------------------
+
+/**
+ * How many past states are kept.
+ *
+ * A ceiling rather than a complete history: past it the oldest is dropped and an undo that
+ * far back falls through to the diff, which is approximate but never wrong about the text.
+ */
+export const MAX_SNAPSHOTS = 200
+
+/**
+ * Past states, oldest first, so the newest is the last entry.
+ *
+ * The browser owns undo — it reverts the text itself and reports `historyUndo` — so this
+ * exists only to put the matching *provenance* back, which the browser knows nothing about.
+ */
+export type Snapshots = readonly Prose[]
+
+/**
+ * `stack` with `prose` on top, dropping the oldest past `MAX_SNAPSHOTS`.
+ *
+ * **A `Prose` is never mutated in place, so a snapshot needs no copy of the array.**
+ * `applyEdit` builds a new one every time, which leaves whatever was pushed untouched for
+ * free. Anything that starts editing `prov` in place has to start copying here instead.
+ */
+export function pushSnapshot(stack: Snapshots, prose: Prose): Snapshots {
+  const grown = [...stack, prose]
+  return grown.length > MAX_SNAPSHOTS ? grown.slice(grown.length - MAX_SNAPSHOTS) : grown
+}
+
+/**
+ * The newest snapshot whose text is `text`, or `-1`.
+ *
+ * **Searched from the top without removing anything.** The browser's undo steps are coarser
+ * than one per `input` event, so the match is not necessarily the newest entry — and popping
+ * while searching empties the stack on the first miss, which is what an earlier version of
+ * this did and why every later undo fell through to the diff.
+ */
+export function findSnapshot(stack: Snapshots, text: string): number {
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    if (stack[index]?.text === text) {
+      return index
+    }
+  }
+  return -1
+}
+
+/**
+ * `stack` with the entry at `at` and everything above it removed.
+ *
+ * The match is dropped along with the newer entries because it is about to become the
+ * current state, and a state is either current or a snapshot, never both.
+ */
+export function dropFrom(stack: Snapshots, at: number): Snapshots {
+  return at < 0 ? stack : stack.slice(0, at)
+}

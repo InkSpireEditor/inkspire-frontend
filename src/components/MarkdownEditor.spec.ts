@@ -12,7 +12,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MarkdownEditor from './MarkdownEditor.vue'
-import { proseFromMetadata, type Prose } from '../services/provenance'
+import { proseFromMetadata, type Kind, type Prose } from '../services/provenance'
 
 /** A file with no provenance recorded, which is what most of these cases open with. */
 const plain = (body: string): Prose => proseFromMetadata(body, null)
@@ -156,6 +156,106 @@ describe('MarkdownEditor.vue', () => {
     return wrapper.setProps({ prose: marked }).then(() => {
       expect(spy).not.toHaveBeenCalled()
       expect(element.textContent).toBe('Once.')
+    })
+  })
+
+  describe('shadowing the browser undo', () => {
+    // The browser reverts the text itself and reports historyUndo; these stacks exist only
+    // to put the provenance back. jsdom can dispatch an InputEvent with any inputType, so
+    // all of this is testable here -- what is not is whether the browser's own undo stack
+    // survives, which is what the hand test and demo 10 are for.
+    const generated = (text: string): Prose => ({
+      text,
+      prov: new Array<Kind>(text.length).fill('gen'),
+    })
+
+    /** Deleting inside a generated run, which is what makes the two paths tell apart. */
+    const deleteInside = (wrapper: ReturnType<typeof mount>) =>
+      type(wrapper, 'ad', 'deleteContentBackward')
+
+    it('restores the provenance a snapshot holds, rather than diffing back to it', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: generated('abcd') } })
+      deleteInside(wrapper)
+      expect(emittedProse(wrapper, 0).prov).toEqual(['gen', 'gen'])
+
+      type(wrapper, 'abcd', 'historyUndo')
+
+      // Restored. Diffing forward would read the reinstated characters as an insertion
+      // strictly inside generated text and call them a correction -- gen, fix, fix, gen.
+      expect(emittedProse(wrapper, 1).prov).toEqual(['gen', 'gen', 'gen', 'gen'])
+    })
+
+    it('redoes back to the state the undo left', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: generated('abcd') } })
+      deleteInside(wrapper)
+      type(wrapper, 'abcd', 'historyUndo')
+      type(wrapper, 'ad', 'historyRedo')
+
+      expect(emittedProse(wrapper, 2).text).toBe('ad')
+      expect(emittedProse(wrapper, 2).prov).toEqual(['gen', 'gen'])
+    })
+
+    it('undoes and redoes repeatedly without drifting', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: generated('abcd') } })
+      deleteInside(wrapper)
+      for (let round = 0; round < 3; round += 1) {
+        type(wrapper, 'abcd', 'historyUndo')
+        type(wrapper, 'ad', 'historyRedo')
+      }
+      const last = emittedProse(wrapper, wrapper.emitted('proseChange')!.length - 1)
+      expect(last.text).toBe('ad')
+      expect(last.prov).toEqual(['gen', 'gen'])
+    })
+
+    it('diffs forward when no snapshot matches, keeping the invariant', () => {
+      // A state older than the ceiling, or one the browser coalesced in a way nothing was
+      // recorded for. Approximate by nature and accepted: it can attribute a character to
+      // the wrong writer, never be wrong about the text.
+      const wrapper = mount(MarkdownEditor, { props: { prose: generated('abcd') } })
+      type(wrapper, 'abXd', 'historyUndo')
+
+      const answered = emittedProse(wrapper, 0)
+      expect(answered.text).toBe('abXd')
+      expect(answered.prov).toHaveLength(4)
+    })
+
+    it('drops the redo branch as soon as anything new is typed', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: generated('abcd') } })
+      deleteInside(wrapper)
+      type(wrapper, 'abcd', 'historyUndo')
+      type(wrapper, 'abcdX')
+
+      // Nothing to redo to any more, so this falls through to the diff rather than
+      // reinstating the state the undo came from. `['gen', 'user']` is what diffing
+      // 'abcdX' down to 'ad' gives; the snapshot would have said `['gen', 'gen']`, and
+      // getting that here would mean a dropped branch had been matched against.
+      type(wrapper, 'ad', 'historyRedo')
+      const last = emittedProse(wrapper, 3)
+      expect(last.text).toBe('ad')
+      expect(last.prov).toEqual(['gen', 'user'])
+    })
+
+    it('forgets the history of a file that is no longer open', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: generated('abcd') } })
+      deleteInside(wrapper)
+      await wrapper.setProps({ prose: plain('Another chapter.') })
+
+      // The old file's states are gone, so this cannot match one -- which is right: the
+      // browser's own undo stack did not survive the textContent write either.
+      type(wrapper, 'abcd', 'historyUndo')
+      expect(emittedProse(wrapper, 1).prov).toEqual(new Array(4).fill('user'))
+    })
+
+    it('does not intercept any key', () => {
+      // No preventDefault, no keydown handler: the browser is left to do the undoing. A
+      // handler here is what would have to be kept in step with every shortcut on every
+      // platform.
+      const element = mount(MarkdownEditor, { props: { prose: plain('a') } })
+        .find('[contenteditable]')
+      expect(element.attributes('onkeydown')).toBeUndefined()
+      const event = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, cancelable: true })
+      element.element.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
     })
   })
 })

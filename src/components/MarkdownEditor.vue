@@ -30,7 +30,15 @@
  * two browsers. `ARCHITECTURE.md` §8.1 records what each one showed.
  */
 import { onMounted, ref, toRaw, watch } from 'vue'
-import { applyEdit, runsOf, type Prose } from '../services/provenance'
+import {
+  applyEdit,
+  dropFrom,
+  findSnapshot,
+  pushSnapshot,
+  runsOf,
+  type Prose,
+  type Snapshots,
+} from '../services/provenance'
 
 /**
  * The prose to show, text and provenance together.
@@ -78,6 +86,17 @@ const empty = ref(props.prose.text.length === 0)
  * a re-render on every keystroke — which is the one thing this component must never do.
  */
 let prose: Prose = props.prose
+
+/**
+ * Provenance for states the browser can undo and redo back to.
+ *
+ * **The browser keeps owning undo.** It reverts the text itself and reports `historyUndo` or
+ * `historyRedo` on the `input` event; nothing here intercepts a key, calls `preventDefault`
+ * or maintains a command log. These two stacks hold only the thing the browser cannot know:
+ * which characters were whose at each of those states.
+ */
+let undoStack: Snapshots = []
+let redoStack: Snapshots = []
 
 /**
  * Whether this browser can paint highlights at all.
@@ -155,10 +174,59 @@ function paint(): void {
   CSS.highlights.set(FIX, fix)
 }
 
-/** The writer typed, pasted, deleted, or undid something. */
-function handleInput(): void {
+/**
+ * Puts provenance back to the state the browser just restored.
+ *
+ * Where no snapshot matches — the state is older than the ceiling, or the browser coalesced
+ * steps in a way nothing was recorded for — the provenance is diffed forward to the restored
+ * text instead. That is approximate by nature and accepted: it can attribute a character to
+ * the wrong writer, but it can never be wrong about the text, and the invariant holds either
+ * way.
+ */
+function rewind(current: string, undoing: boolean): void {
+  const take = undoing ? undoStack : redoStack
+  const give = undoing ? redoStack : undoStack
+
+  const at = findSnapshot(take, current)
+  const restored = at >= 0 ? take[at] : undefined
+  const nextTake = dropFrom(take, at)
+  const nextGive = pushSnapshot(give, prose)
+
+  prose = restored ?? applyEdit(prose, current)
+  if (undoing) {
+    undoStack = nextTake
+    redoStack = nextGive
+  } else {
+    redoStack = nextTake
+    undoStack = nextGive
+  }
+}
+
+/**
+ * The writer typed, pasted, deleted, or undid something.
+ *
+ * **Snapshots are pushed here, on `input`, and not on `beforeinput`.**
+ * `document.execCommand` — which is how a generated continuation is inserted — fires `input`
+ * but *not* `beforeinput`, so pushing there misses every programmatic insertion and leaves
+ * the stack describing states that never existed.
+ *
+ * Enter is not intercepted, and neither is anything else. With provenance held per character
+ * in an array, a newline is just another character.
+ */
+function handleInput(event: Event): void {
   const current = editor.value?.textContent ?? ''
-  prose = applyEdit(prose, current)
+  const inputType = (event as InputEvent).inputType
+
+  if (inputType === 'historyUndo' || inputType === 'historyRedo') {
+    rewind(current, inputType === 'historyUndo')
+  } else {
+    undoStack = pushSnapshot(undoStack, prose)
+    // Anything new makes the redo branch unreachable, exactly as the browser's own stack
+    // does — so it is dropped rather than left to be matched against later.
+    redoStack = []
+    prose = applyEdit(prose, current)
+  }
+
   empty.value = prose.text.length === 0
   paint()
   emit('proseChange', prose)
@@ -173,6 +241,10 @@ function handleInput(): void {
  */
 function reset(next: Prose): void {
   prose = toRaw(next)
+  // A different file has no shared history with the one that was open, and the browser's own
+  // undo stack does not survive the `textContent` write below either.
+  undoStack = []
+  redoStack = []
   empty.value = prose.text.length === 0
   if (editor.value !== null) {
     editor.value.textContent = prose.text

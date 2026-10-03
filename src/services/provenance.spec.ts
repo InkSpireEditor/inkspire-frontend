@@ -11,8 +11,12 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  MAX_SNAPSHOTS,
   applyEdit,
   checkProse,
+  dropFrom,
+  findSnapshot,
+  pushSnapshot,
   classify,
   diffText,
   joinParagraphs,
@@ -24,6 +28,7 @@ import {
   type Kind,
   type Prose,
   type ProvenanceMetadata,
+  type Snapshots,
 } from './provenance'
 import vectors from './paragraphs.json'
 
@@ -469,5 +474,71 @@ describe('applyEdit', () => {
     const edited = applyEdit(before, `${PARA}\nAnd she left.`)
     const reloaded = proseFromMetadata(edited.text, metadataFromProse(edited))
     expect(reloaded.prov).toEqual(edited.prov)
+  })
+})
+
+// --- the snapshot stack ----------------------------------------------------
+
+describe('the snapshot stack', () => {
+  const at = (text: string): Prose => proseFromMetadata(text, null)
+
+  it('pushes onto the top', () => {
+    const stack = pushSnapshot(pushSnapshot([], at('a')), at('ab'))
+    expect(stack.map((entry) => entry.text)).toEqual(['a', 'ab'])
+  })
+
+  it('does not mutate the stack it was given', () => {
+    const before: Snapshots = [at('a')]
+    pushSnapshot(before, at('ab'))
+    expect(before.map((entry) => entry.text)).toEqual(['a'])
+  })
+
+  it('needs no copy of the provenance, because nothing edits it in place', () => {
+    // The reason a snapshot is the Prose itself and not a clone of it. `applyEdit` builds a
+    // new array every time, so what was pushed is untouched for free.
+    const original = at('ab')
+    const stack = pushSnapshot([], original)
+    applyEdit(original, 'abc')
+    expect(stack[0]).toBe(original)
+    expect(stack[0]!.prov).toHaveLength(2)
+  })
+
+  it('drops the oldest past the ceiling', () => {
+    let stack: Snapshots = []
+    for (let index = 0; index < MAX_SNAPSHOTS + 10; index += 1) {
+      stack = pushSnapshot(stack, at(`state ${index}`))
+    }
+    expect(stack).toHaveLength(MAX_SNAPSHOTS)
+    expect(stack[0]!.text).toBe('state 10')
+    expect(stack[MAX_SNAPSHOTS - 1]!.text).toBe(`state ${MAX_SNAPSHOTS + 9}`)
+  })
+
+  it('finds the newest match without mutating anything', () => {
+    // The browser's undo steps are coarser than one input event, so the match is not
+    // necessarily the top entry -- and popping while searching empties the stack on the
+    // first miss, which is what an earlier version did.
+    const stack: Snapshots = [at('a'), at('ab'), at('abc')]
+    expect(findSnapshot(stack, 'ab')).toBe(1)
+    expect(stack).toHaveLength(3)
+  })
+
+  it('prefers the newest of two equal states', () => {
+    const stack: Snapshots = [at('ab'), at('abc'), at('ab')]
+    expect(findSnapshot(stack, 'ab')).toBe(2)
+  })
+
+  it('answers -1 for a state it never saw', () => {
+    expect(findSnapshot([at('a')], 'zzz')).toBe(-1)
+    expect(findSnapshot([], 'a')).toBe(-1)
+  })
+
+  it('discards the match and everything above it, keeping what is below', () => {
+    const stack: Snapshots = [at('a'), at('ab'), at('abc')]
+    expect(dropFrom(stack, 1).map((entry) => entry.text)).toEqual(['a'])
+  })
+
+  it('leaves the stack alone when there was no match', () => {
+    const stack: Snapshots = [at('a'), at('ab')]
+    expect(dropFrom(stack, -1)).toBe(stack)
   })
 })
