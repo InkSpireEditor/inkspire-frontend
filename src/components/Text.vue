@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, ref, watch, onMounted, onUnmounted } from 'vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
+import {
+  metadataFromProse,
+  proseFromMetadata,
+  type Prose,
+  type ProvenanceMetadata,
+} from '../services/provenance'
 import { llmService } from '../services/llm'
 import { renderMarkdown } from '../services/markdown'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
@@ -18,7 +24,25 @@ const { refresh: refreshGitStatus } = useSharedGit()
 const AUTO_SAVE_DEBOUNCE_MS = 2000
 
 // --- Component State ---
-const text = ref('')
+/**
+ * The open file's prose and its provenance, as one value.
+ *
+ * **Stored here, computed in `MarkdownEditor`.** This component is the editor's store and
+ * the API's client; it never works out provenance for itself. Deriving it in both places
+ * would be two answers to one question, and only the editor can give the right one — see
+ * its own docstring for why.
+ */
+const prose = ref<Prose>(proseFromMetadata('', null))
+/** The prose as text, which is what the reading view and a generation prompt want. */
+const text = computed(() => prose.value.text)
+/**
+ * The editor, so a streamed continuation can be handed to it.
+ *
+ * It owns provenance, so it is the only thing that can record that a model wrote something —
+ * which is known only at the moment of insertion and cannot be worked out from the text
+ * afterwards.
+ */
+const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null)
 const fileName = ref('')
 const currentFile = ref<FileSelection | null>(null)
 const isDirty = ref(false)
@@ -32,23 +56,37 @@ const errorMessage = ref('')
 
 let autoSaveTimer: number | null = null
 
+/** Stores a change the editor made. */
+const handleProseChange = (next: Prose) => {
+  prose.value = next
+  isDirty.value = true
+  scheduleAutoSave()
+}
+
+/** Starts fresh from what the API answered, discarding whatever was open. */
+const openProse = (body: string, metadata: ProvenanceMetadata | null) => {
+  prose.value = proseFromMetadata(body, metadata)
+}
+
 /**
  * Loads a file's name and content. Called whenever the selection changes to a file.
  *
- * The content is the prose alone: the API keeps the file's header out of it, and puts
- * the header back when the prose is saved.
+ * The prose comes with its provenance, already reconciled against what the prose says now
+ * (§7.5), so a chapter edited outside the editor opens with its runs on the right
+ * characters rather than with a drift the writer has to notice. The header is not part of
+ * either: the API keeps it out and puts it back at the write.
  */
 const loadFile = async (file: FileSelection) => {
   if (!isLoggedIn()) return
 
   try {
-    const [info, content] = await Promise.all([
+    const [info, document] = await Promise.all([
       filesManagerService.getFileInfo(file.space, file.id),
-      filesManagerService.getFileContent(file.space, file.id)
+      filesManagerService.getDocument(file.space, file.id)
     ])
 
     fileName.value = info.name
-    text.value = content
+    openProse(document.body, document.metadata)
     currentFile.value = file
     isDirty.value = false
     readMode.value = false
@@ -69,15 +107,24 @@ const loadFile = async (file: FileSelection) => {
 }
 
 /**
- * Saves the current text content to the backend.
- * No-op when content has not changed since the last save.
+ * Saves the prose and its provenance together.
+ *
+ * One request for both, because a section derived from the body may not be written without
+ * it: sent separately, the stored hashes would stop matching the prose and the next load
+ * would discard provenance the writer had just created. No-op when nothing has changed
+ * since the last save.
  */
 const save = async () => {
   const file = currentFile.value
   if (!isLoggedIn() || !file || !isDirty.value) return
 
   try {
-    await filesManagerService.updateFileContent(file.space, file.id, text.value)
+    await filesManagerService.putDocument(
+      file.space,
+      file.id,
+      text.value,
+      metadataFromProse(prose.value)
+    )
     isDirty.value = false
     // A note is never committed, so only a chapter's save is worth a git refresh.
     if (file.space === 'stories') refreshGitStatus().catch(() => {})
@@ -121,12 +168,6 @@ const cancelAutoSave = () => {
   }
 }
 
-const handleContentChange = (newContent: string) => {
-  text.value = newContent
-  isDirty.value = true
-  scheduleAutoSave()
-}
-
 const isGenerating = ref(false)
 let generation: AbortController | null = null
 
@@ -148,6 +189,14 @@ const handleGenerate = async () => {
 
   if (!isLoggedIn() || !currentFile.value) return
 
+  // The editor has to be mounted to receive the continuation, and in Read mode it is not.
+  // Leaving Read mode is better than refusing to generate from it: the writer is about to
+  // have new prose, which is the state they wanted anyway.
+  if (readMode.value) {
+    readMode.value = false
+    await nextTick()
+  }
+
   // Any debounce left over from typing just before Generate was clicked would
   // otherwise fire mid-stream -- the finally below is what flushes now instead.
   cancelAutoSave()
@@ -158,7 +207,10 @@ const handleGenerate = async () => {
       selectedModelName.value,
       text.value,
       (delta) => {
-        text.value += delta
+        // Handed to the editor rather than appended here, so it goes in through the
+        // browser's own insert command -- undoable like anything typed -- and is recorded as
+        // written by a model. The editor emits the result, which `handleProseChange` stores.
+        editor.value?.appendGenerated(delta)
         isDirty.value = true
       },
       generation.signal
@@ -194,7 +246,7 @@ watch(selectedFile, (file) => {
   } else {
     currentFile.value = null
     fileName.value = ''
-    text.value = ''
+    openProse('', null)
     readMode.value = false
   }
 })
@@ -221,7 +273,7 @@ onUnmounted(() => {
     </div>
 
     <div class="editor-container">
-      <MarkdownEditor v-if="!readMode" :content="text" @content-change="handleContentChange" />
+      <MarkdownEditor v-if="!readMode" ref="editor" :prose="prose" @prose-change="handleProseChange" />
       <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
       <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
 

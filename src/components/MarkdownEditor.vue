@@ -1,28 +1,390 @@
 <script setup lang="ts">
 /**
- * Plain textarea wrapper for the editor body. Deliberately uncontrolled beyond
- * the initial value: it emits every keystroke as 'contentChange' and lets the
- * parent own the text, so typing is never interrupted by a re-render.
+ * The editor body: a `contenteditable` div that colours text by who wrote it.
+ *
+ * Deliberately uncontrolled beyond the initial value, exactly as the textarea it replaces
+ * was: it emits every change and the parent stores it, so typing is never interrupted by a
+ * re-render.
+ *
+ * **This component owns the provenance.** It is the only place that can: a correction is
+ * decided from the characters either side of an edit, which only the `input` handler sees;
+ * an undo has to put an older provenance back, which only a snapshot taken here can do; and
+ * a generated insertion is known to be generated only at the moment it is inserted. A parent
+ * handed nothing but the text could not work any of that out, so it is handed the prose
+ * instead and stores it.
+ *
+ * **Nothing here writes to the element's DOM while the writer is editing**, and that is the
+ * whole design rather than an optimisation. Colour is drawn with the CSS Custom Highlight
+ * API, which creates no node: a `Highlight` holds `Range` objects and `::highlight()` paints
+ * them. Wrapping characters in coloured spans was measured instead and does not work — the
+ * one region a re-wrap ever touches is the text just typed, and re-wrapping it discards the
+ * browser's undo entry for it. Highlights cost nothing, so Ctrl+Z keeps working.
+ *
+ * Provenance is held as one kind per character in a plain array, not in the ranges. A live
+ * `Range` survives text being typed into it but is destroyed by any edit to the paragraph
+ * structure — pressing Enter inside a coloured run, or merging two paragraphs with backspace
+ * — which was measured too. So the array is the store and the ranges are only a render
+ * target, rebuilt from it after every edit.
+ *
+ * All of that was settled in `contenteditable-demo/index.html`, demos 4 to 10, by hand in
+ * two browsers. `ARCHITECTURE.md` §8.1 records what each one showed.
+ */
+import { onMounted, ref, toRaw, watch } from 'vue'
+import {
+  applyEdit,
+  dropFrom,
+  findSnapshot,
+  pushSnapshot,
+  runsOf,
+  type Kind,
+  type Prose,
+  type Snapshots,
+} from '../services/provenance'
+
+/**
+ * The prose to show, text and provenance together.
+ *
+ * One prop rather than a string and a provenance map side by side: they are one value, and
+ * two props that have to change together is two chances to change only one of them.
  */
 const props = defineProps<{
-  content: string
+  prose: Prose
 }>()
 
-const emit = defineEmits(['contentChange'])
+/**
+ * Every change, as the whole prose.
+ *
+ * **This component is the only owner of provenance**, so it is the only thing that may
+ * compute it, and the parent's job is to store what it is handed. Emitting just the text
+ * would force the parent to derive provenance a second time, from a string that cannot say
+ * whether an insertion was generated or whether an undo put an older state back — and a
+ * second derivation is a second answer.
+ */
+const emit = defineEmits<{
+  proseChange: [Prose]
+}>()
 
-const handleInput = (event: Event) => {
-  const target = event.target as HTMLTextAreaElement
-  emit('contentChange', target.value)
+const editor = ref<HTMLDivElement | null>(null)
+
+/**
+ * Whether to draw the placeholder, decided by the prose rather than by the element.
+ *
+ * `:empty` cannot answer this. A browser leaves a stray node behind in an emptied
+ * `contenteditable`, so the selector stops matching while the writer sees nothing — which is
+ * what it did. The prose is the only thing that knows the text is empty, so it is what says
+ * so, and the placeholder is a sibling element: drawn over the editable one, never inside it,
+ * because anything inside would become part of the prose.
+ *
+ * Initialised from the prop rather than defaulted to `true` and corrected on mount, or the
+ * first paint of an existing chapter draws the placeholder over its prose for one frame.
+ */
+const empty = ref(props.prose.text.length === 0)
+
+/**
+ * The prose as this component has it.
+ *
+ * Plain, not a `ref`: nothing in the template reads it, and making it reactive would invite
+ * a re-render on every keystroke — which is the one thing this component must never do.
+ */
+let prose: Prose = props.prose
+
+/**
+ * Provenance for states the browser can undo and redo back to.
+ *
+ * **The browser keeps owning undo.** It reverts the text itself and reports `historyUndo` or
+ * `historyRedo` on the `input` event; nothing here intercepts a key, calls `preventDefault`
+ * or maintains a command log. These two stacks hold only the thing the browser cannot know:
+ * which characters were whose at each of those states.
+ */
+let undoStack: Snapshots = []
+let redoStack: Snapshots = []
+
+/**
+ * The kind to give the next insertion, where it is not the writer's own.
+ *
+ * Set around `appendGenerated`'s insertion and read by the `input` handler, because the
+ * insertion goes through the browser's own editing command and so comes back as an ordinary
+ * `input` event. There is nothing in that event to say a model wrote it — the only moment
+ * that is known is the moment it is inserted, which is why this exists at all.
+ */
+let pending: Kind | undefined
+
+/**
+ * Whether this browser can paint highlights at all.
+ *
+ * Checked rather than assumed, because jsdom has neither `CSS.highlights` nor `Highlight`
+ * (§8.3), so every automated test runs the unpainted path. That is also honest degradation:
+ * a browser without the API shows uncoloured prose and stays completely usable.
+ */
+const canPaint =
+  typeof CSS !== 'undefined' &&
+  CSS.highlights !== undefined &&
+  typeof Highlight !== 'undefined'
+
+/**
+ * Registry names. `CSS.highlights` is a global registry shared by the whole page, so these
+ * are prefixed rather than named `gen` and `fix`.
+ */
+const GEN = 'ink-gen'
+const FIX = 'ink-fix'
+
+/**
+ * An offset into the text as a position in the DOM, whatever node structure editing left
+ * behind.
+ *
+ * A `contenteditable` is free to split its text across several nodes, and does: typing,
+ * pasting and pressing Enter each restructure it differently. Walking the text nodes and
+ * counting is what makes a character offset meaningful without caring how.
+ */
+function locate(target: number): { node: Node; offset: number } | null {
+  const root = editor.value
+  if (root === null) {
+    return null
+  }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let position = 0
+  let node = walker.nextNode()
+  while (node !== null) {
+    const length = node.textContent?.length ?? 0
+    if (position + length >= target) {
+      return { node, offset: target - position }
+    }
+    position += length
+    node = walker.nextNode()
+  }
+  return null
 }
+
+/**
+ * Draws the prose: one `Range` per non-`user` run, handed to the two registries.
+ *
+ * Writes no DOM. `document.createRange` and `CSS.highlights.set` both mutate nothing, which
+ * is why this can run after every keystroke without touching undo.
+ */
+function paint(): void {
+  if (!canPaint) {
+    return
+  }
+  const gen = new Highlight()
+  const fix = new Highlight()
+  for (const [start, end, kind] of runsOf(prose.prov)) {
+    const from = locate(start)
+    const to = locate(end)
+    if (from === null || to === null) {
+      continue
+    }
+    const range = document.createRange()
+    range.setStart(from.node, from.offset)
+    range.setEnd(to.node, to.offset)
+    ;(kind === 'gen' ? gen : fix).add(range)
+  }
+  // A correction sits inside generated text, so where the two overlap the correction is the
+  // one worth seeing.
+  fix.priority = 1
+  CSS.highlights.set(GEN, gen)
+  CSS.highlights.set(FIX, fix)
+}
+
+/**
+ * Puts provenance back to the state the browser just restored.
+ *
+ * Where no snapshot matches — the state is older than the ceiling, or the browser coalesced
+ * steps in a way nothing was recorded for — the provenance is diffed forward to the restored
+ * text instead. That is approximate by nature and accepted: it can attribute a character to
+ * the wrong writer, but it can never be wrong about the text, and the invariant holds either
+ * way.
+ */
+function rewind(current: string, undoing: boolean): void {
+  const take = undoing ? undoStack : redoStack
+  const give = undoing ? redoStack : undoStack
+
+  const at = findSnapshot(take, current)
+  const restored = at >= 0 ? take[at] : undefined
+  const nextTake = dropFrom(take, at)
+  const nextGive = pushSnapshot(give, prose)
+
+  prose = restored ?? applyEdit(prose, current)
+  if (undoing) {
+    undoStack = nextTake
+    redoStack = nextGive
+  } else {
+    redoStack = nextTake
+    undoStack = nextGive
+  }
+}
+
+/**
+ * The writer typed, pasted, deleted, or undid something.
+ *
+ * **Snapshots are pushed here, on `input`, and not on `beforeinput`.**
+ * `document.execCommand` — which is how a generated continuation is inserted — fires `input`
+ * but *not* `beforeinput`, so pushing there misses every programmatic insertion and leaves
+ * the stack describing states that never existed.
+ *
+ * Enter is not intercepted, and neither is anything else. With provenance held per character
+ * in an array, a newline is just another character.
+ */
+function handleInput(event: Event): void {
+  const current = editor.value?.textContent ?? ''
+  const inputType = (event as InputEvent).inputType
+
+  if (inputType === 'historyUndo' || inputType === 'historyRedo') {
+    rewind(current, inputType === 'historyUndo')
+  } else {
+    recordEdit(current, pending)
+  }
+  settle()
+}
+
+/** One new state: the one before it becomes a snapshot, and the redo branch is gone. */
+function recordEdit(current: string, declared?: Kind): void {
+  undoStack = pushSnapshot(undoStack, prose)
+  // Anything new makes the redo branch unreachable, exactly as the browser's own stack
+  // does — so it is dropped rather than left to be matched against later.
+  redoStack = []
+  prose = applyEdit(prose, current, declared)
+}
+
+/** What every change ends with, however it arrived. */
+function settle(): void {
+  empty.value = prose.text.length === 0
+  paint()
+  emit('proseChange', prose)
+}
+
+/**
+ * Puts the caret at the end of the prose, where a continuation goes.
+ *
+ * At the end rather than wherever the writer last left it, because that is where a
+ * continuation of the whole chapter belongs and it is what the direct append this replaces
+ * did. Inserting at the caret is a later feature, and needs the prompt to be built around
+ * the cursor first (§4).
+ */
+function caretToEnd(element: HTMLElement): boolean {
+  const selection = window.getSelection()
+  if (selection === null) {
+    return false
+  }
+  const range = document.createRange()
+  range.selectNodeContents(element)
+  range.collapse(false)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  return true
+}
+
+/**
+ * Appends `delta` as text a model wrote.
+ *
+ * **Inserted through `document.execCommand('insertText')`, not by writing the DOM**, so it
+ * lands on the browser's own undo stack and can be undone like anything the writer typed.
+ * Only its provenance is ours to declare, and `pending` is how that reaches the `input`
+ * handler the command itself triggers.
+ *
+ * One call per streamed chunk, so one undo step per chunk: undoing a long continuation takes
+ * several presses. Accepted, because the alternative is to buffer the whole generation and
+ * show the writer nothing until it ends, which is the feature.
+ *
+ * Where `execCommand` is missing — jsdom, and any browser that has dropped it — the text is
+ * written directly instead. That costs the browser's undo entry for this insertion alone;
+ * everything else keeps working, which is the point of not making it a hard requirement.
+ */
+function appendGenerated(delta: string): void {
+  const element = editor.value
+  if (element === null || delta === '') {
+    return
+  }
+
+  pending = 'gen'
+  try {
+    const inserted =
+      typeof document.execCommand === 'function' &&
+      caretToEnd(element) &&
+      document.execCommand('insertText', false, delta)
+    if (inserted) {
+      // `execCommand` fired `input` synchronously, so the handler has already run.
+      return
+    }
+    element.textContent = prose.text + delta
+    recordEdit(element.textContent, pending)
+    settle()
+  } finally {
+    pending = undefined
+  }
+}
+
+defineExpose({ appendGenerated })
+
+/**
+ * Replaces everything, which is what opening a different file is.
+ *
+ * The only place that writes `textContent`. Doing that discards the browser's undo stack
+ * for everything in the element, so it is reached only when the text itself has changed
+ * from outside — never on the way back from something this component emitted.
+ */
+function reset(next: Prose): void {
+  prose = toRaw(next)
+  // A different file has no shared history with the one that was open, and the browser's own
+  // undo stack does not survive the `textContent` write below either.
+  undoStack = []
+  redoStack = []
+  empty.value = prose.text.length === 0
+  if (editor.value !== null) {
+    editor.value.textContent = prose.text
+  }
+  paint()
+}
+
+onMounted(() => {
+  const element = editor.value
+  if (element !== null) {
+    // The template declares `contenteditable="true"`, which every browser understands, and
+    // this upgrades it: `plaintext-only` is what keeps pasted markup out of the prose. A
+    // browser that does not accept the value throws rather than ignoring it, and is left on
+    // the plain setting. Declaring the attribute rather than only setting the property also
+    // means it is really in the markup — jsdom accepts the property and reflects nothing.
+    try {
+      element.contentEditable = 'plaintext-only'
+    } catch {
+      element.contentEditable = 'true'
+    }
+  }
+  reset(props.prose)
+})
+
+watch(
+  () => props.prose,
+  (next) => {
+    if (next.text === prose.text) {
+      // The same text, so the DOM already shows it and must not be rewritten — that is the
+      // whole question this guard answers, and it is why the comparison is on the text
+      // rather than on the object. The provenance may still differ, so it is adopted and
+      // repainted; painting writes nothing.
+      //
+      // Not compared by identity: a prop reaches this through a reactive proxy, so the
+      // object a parent stores and hands back is never the one that was emitted.
+      prose = toRaw(next)
+      paint()
+      return
+    }
+    reset(next)
+  },
+)
 </script>
 
 <template>
   <div class="markdown-editor">
-    <textarea 
-      :value="content" 
+    <div
+      ref="editor"
+      class="surface"
+      contenteditable="true"
+      role="textbox"
+      aria-multiline="true"
+      aria-label="Chapter text"
       @input="handleInput"
-      placeholder="Start writing..."
-    ></textarea>
+    ></div>
+    <!-- A sibling, never a child: anything inside the editable element is prose. -->
+    <div v-if="empty" class="placeholder" aria-hidden="true">Start writing...</div>
   </div>
 </template>
 
@@ -34,9 +396,11 @@ const handleInput = (event: Event) => {
   flex: 1;
   min-height: 0;
   display: flex;
+  /* So the placeholder can be laid over the writing surface. */
+  position: relative;
 }
 
-textarea {
+.surface {
   width: 100%;
   flex: 1;
   min-height: 240px;
@@ -49,16 +413,62 @@ textarea {
     Menlo, Consolas, monospace;
   font-size: 1rem;
   line-height: 1.7;
-  resize: none;
+  /* The prose carries its own newlines, so they have to be honoured rather than collapsed;
+     `pre-wrap` is what a textarea did implicitly. `break-word` keeps a long unbroken string
+     from widening the pane. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow-y: auto;
   /* Raised writing surface above the recessed canvas. */
   box-shadow: var(--shadow-card);
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
-textarea:focus {
+.surface:focus {
   outline: none;
   border-color: var(--color-primary);
   /* Keep the card elevation, add the focus ring on top. */
   box-shadow: var(--focus-ring), var(--shadow-card);
+}
+
+/* A contenteditable has no placeholder attribute, so it is drawn rather than declared.
+   `:empty` is false the moment the browser leaves a stray <br> behind, which is why this is
+   also guarded on the element not being focused. */
+/* Laid over the surface at exactly its own padding, font and line-height, so the first
+   character lands where the placeholder's first character was. Click-through, so clicking it
+   puts the caret in the editor underneath. */
+.placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 1.25rem 1.5rem;
+  font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
+    Menlo, Consolas, monospace;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--color-text);
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Generated text, and generated text the writer has since corrected.
+
+   `::highlight()` accepts only a narrow set of properties -- `color`, `background-color`,
+   `text-decoration` and its longhands, `text-shadow`, `-webkit-text-stroke` -- so anything
+   else declared here is ignored rather than applied.
+
+   A background tint rather than a foreground colour, so the prose keeps full contrast
+   whichever kind it is. The hues are the ones `contenteditable-demo` demo 10 used, at a low
+   enough alpha to sit on either theme's background: green for what a model wrote, amber for
+   what the writer has corrected in it. Literal rather than drawn from the theme's custom
+   properties, because neither of these means "primary" or "danger" -- they are their own
+   thing and have to stay distinguishable from both. */
+.surface::highlight(ink-gen) {
+  background-color: rgba(111, 209, 139, 0.22);
+}
+
+.surface::highlight(ink-fix) {
+  background-color: rgba(255, 180, 84, 0.26);
 }
 </style>

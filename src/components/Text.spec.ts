@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { applyEdit, metadataFromProse, proseFromMetadata, type Prose } from '../services/provenance'
 import { mount, flushPromises } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import Text from './Text.vue'
+import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
 import { llmService } from '../services/llm'
@@ -19,8 +21,8 @@ vi.mock('../services/filesManager', async () => {
     ...actual,
     filesManagerService: {
       getFileInfo: vi.fn(),
-      getFileContent: vi.fn(),
-      updateFileContent: vi.fn(),
+      getDocument: vi.fn(),
+      putDocument: vi.fn(),
       getDirContent: vi.fn()
     }
   }
@@ -31,6 +33,26 @@ vi.mock('../services/llm', () => ({
     generate: vi.fn()
   }
 }))
+
+/**
+ * The provenance a save sends for prose nothing model-written has touched: one entry per
+ * paragraph, each an empty run list. Derived rather than written out, so a test says what
+ * it means instead of carrying a hash nobody can check by eye.
+ */
+const handwritten = (body: string) => metadataFromProse(proseFromMetadata(body, null))
+
+/**
+ * What `MarkdownEditor` emits after a writer types `body`. The editor owns provenance, so a
+ * test standing in for it hands over the whole prose rather than a string.
+ */
+const typed = (body: string) => proseFromMetadata(body, null)
+
+/**
+ * The provenance a save sends after a continuation: `before` is the writer's, `added` is the
+ * model's. Derived, so a test states the shape rather than a hash and a pair of offsets.
+ */
+const continued = (before: string, added: string) =>
+  metadataFromProse(applyEdit(typed(before), before + added, 'gen'))
 
 describe('Text.vue', () => {
   let selectedFile: any
@@ -65,7 +87,11 @@ describe('Text.vue', () => {
     })
     
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'test.ink' })
-    vi.mocked(filesManagerService.getFileContent).mockResolvedValue('Initial content')
+    vi.mocked(filesManagerService.getDocument).mockResolvedValue({
+      body: 'Initial content',
+      metadata: null,
+      reconciled: null
+    })
     vi.mocked(filesManagerService.getDirContent).mockResolvedValue(
     { id: '1', name: 'Example Story', summary: '', files: [] },
   )
@@ -110,15 +136,15 @@ describe('Text.vue', () => {
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as any
-    vm.handleContentChange('Changed content')
+    vm.handleProseChange(typed('Changed content'))
 
     vi.advanceTimersByTime(1999)
     await flushPromises()
-    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+    expect(filesManagerService.putDocument).not.toHaveBeenCalled()
 
     vi.advanceTimersByTime(1)
     await flushPromises()
-    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
   })
 
   it('debounces a run of keystrokes into a single save', async () => {
@@ -132,18 +158,23 @@ describe('Text.vue', () => {
     const vm = wrapper.vm as any
     // Each keystroke restarts the 2s wait, so as long as they arrive closer
     // together than that, nothing saves until the run stops.
-    vm.handleContentChange('C')
+    vm.handleProseChange(typed('C'))
     vi.advanceTimersByTime(1000)
-    vm.handleContentChange('Ch')
+    vm.handleProseChange(typed('Ch'))
     vi.advanceTimersByTime(1000)
-    vm.handleContentChange('Cha')
+    vm.handleProseChange(typed('Cha'))
     await flushPromises()
-    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+    expect(filesManagerService.putDocument).not.toHaveBeenCalled()
 
     vi.advanceTimersByTime(2000)
     await flushPromises()
-    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
-    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(OPEN.space, OPEN.id, 'Cha')
+    expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.putDocument).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
+      'Cha',
+      handwritten('Cha')
+    )
   })
 
   it('auto-save skips API call when content is unchanged', async () => {
@@ -157,7 +188,7 @@ describe('Text.vue', () => {
     // No content change — isDirty remains false, and no debounce was even scheduled
     vi.advanceTimersByTime(5000)
     await flushPromises()
-    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+    expect(filesManagerService.putDocument).not.toHaveBeenCalled()
   })
 
   it('does not autosave while generating, but flushes once the stream ends', async () => {
@@ -177,22 +208,23 @@ describe('Text.vue', () => {
     // A keystroke just before Generate leaves a pending debounce that generating
     // should cancel, not let fire mid-stream.
     const vm = wrapper.vm as any
-    vm.handleContentChange('Changed just before generating')
+    vm.handleProseChange(typed('Changed just before generating'))
     await clickButton(wrapper, 'Generate')
     await flushPromises()
 
     vi.advanceTimersByTime(10000)
     await flushPromises()
-    expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+    expect(filesManagerService.putDocument).not.toHaveBeenCalled()
 
     resolveGenerate()
     await flushPromises()
 
-    expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
-    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+    expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.putDocument).toHaveBeenCalledWith(
       OPEN.space,
       OPEN.id,
-      'Changed just before generating streamed.'
+      'Changed just before generating streamed.',
+      continued('Changed just before generating', ' streamed.')
     )
   })
 
@@ -201,7 +233,7 @@ describe('Text.vue', () => {
       vi.mocked(filesManagerService.getFileInfo).mockRejectedValue(
         new NotFoundError('No file with that id')
       )
-      vi.mocked(filesManagerService.getFileContent).mockRejectedValue(
+      vi.mocked(filesManagerService.getDocument).mockRejectedValue(
         new NotFoundError('No file with that id')
       )
       const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
@@ -233,28 +265,28 @@ describe('Text.vue', () => {
       await flushPromises()
       await wrapper.vm.$nextTick()
 
-      vi.mocked(filesManagerService.updateFileContent).mockRejectedValue(
+      vi.mocked(filesManagerService.putDocument).mockRejectedValue(
         new NotFoundError('No file with that id')
       )
       const vm = wrapper.vm as any
-      vm.handleContentChange('Changed content')
+      vm.handleProseChange(typed('Changed content'))
 
       vi.advanceTimersByTime(5000)
       await flushPromises()
-      expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+      expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
       expect(vm.errorMessage).toContain('no longer exists')
 
       // The timer is stopped, so the same dialog does not come back every interval.
       vi.advanceTimersByTime(20000)
       await flushPromises()
-      expect(filesManagerService.updateFileContent).toHaveBeenCalledTimes(1)
+      expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
       // The writer's text is still on screen to copy out of.
       expect(vm.text).toBe('Changed content')
     })
   })
 
   it('flushes unsaved content to the backend on unmount', async () => {
-    vi.mocked(filesManagerService.updateFileContent).mockResolvedValue('OK')
+    vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
@@ -264,15 +296,16 @@ describe('Text.vue', () => {
 
     // Simulate user editing so isDirty is true
     const vm = wrapper.vm as any
-    vm.handleContentChange('Unsaved content')
+    vm.handleProseChange(typed('Unsaved content'))
 
     wrapper.unmount()
     await flushPromises()
 
-    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+    expect(filesManagerService.putDocument).toHaveBeenCalledWith(
       OPEN.space,
       OPEN.id,
-      'Unsaved content'
+      'Unsaved content',
+      handwritten('Unsaved content')
     )
   })
 
@@ -284,7 +317,7 @@ describe('Text.vue', () => {
     selectedFile.value = OPEN
     await flushPromises()
     await wrapper.vm.$nextTick()
-    vi.mocked(filesManagerService.updateFileContent).mockClear()
+    vi.mocked(filesManagerService.putDocument).mockClear()
     return wrapper
   }
 
@@ -315,10 +348,11 @@ describe('Text.vue', () => {
     const vm = wrapper.vm as any
     expect(vm.text).toBe('Initial content and then.')
     // The API writes nothing now, so the client has to save what it appended.
-    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+    expect(filesManagerService.putDocument).toHaveBeenCalledWith(
       OPEN.space,
       OPEN.id,
-      'Initial content and then.'
+      'Initial content and then.',
+      continued('Initial content', ' and then.')
     )
   })
 
@@ -366,10 +400,11 @@ describe('Text.vue', () => {
     expect(vm.text).toBe('Initial content as far as here')
     expect(vm.errorMessage).toBe('provider went away')
     // Partial text is still the writer's, so it is saved rather than discarded.
-    expect(filesManagerService.updateFileContent).toHaveBeenCalledWith(
+    expect(filesManagerService.putDocument).toHaveBeenCalledWith(
       OPEN.space,
       OPEN.id,
-      'Initial content as far as here'
+      'Initial content as far as here',
+      continued('Initial content', ' as far as here')
     )
   })
 
@@ -378,21 +413,25 @@ describe('Text.vue', () => {
       wrapper.findAll('button').find((b) => b.text() === 'Read' || b.text() === 'Edit')!
 
     it('swaps the editor for the rendered prose, and back', async () => {
-      vi.mocked(filesManagerService.getFileContent).mockResolvedValue('# A Title')
+      vi.mocked(filesManagerService.getDocument).mockResolvedValue({
+        body: '# A Title',
+        metadata: null,
+        reconciled: null
+      })
       const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
       selectedFile.value = OPEN
       await flushPromises()
 
-      expect(wrapper.find('textarea').exists()).toBe(true)
+      expect(wrapper.find('[contenteditable]').exists()).toBe(true)
       expect(readToggle(wrapper).text()).toBe('Read')
 
       await readToggle(wrapper).trigger('click')
-      expect(wrapper.find('textarea').exists()).toBe(false)
+      expect(wrapper.find('[contenteditable]').exists()).toBe(false)
       expect(wrapper.find('.rendered-prose h1').text()).toBe('A Title')
       expect(readToggle(wrapper).text()).toBe('Edit')
 
       await readToggle(wrapper).trigger('click')
-      expect(wrapper.find('textarea').exists()).toBe(true)
+      expect(wrapper.find('[contenteditable]').exists()).toBe(true)
       expect(wrapper.find('.rendered-prose').exists()).toBe(false)
     })
 
@@ -402,12 +441,12 @@ describe('Text.vue', () => {
       await flushPromises()
 
       const vm = wrapper.vm as any
-      vm.handleContentChange('Something **bold**, not yet saved.')
+      vm.handleProseChange(typed('Something **bold**, not yet saved.'))
       await wrapper.vm.$nextTick()
 
       await readToggle(wrapper).trigger('click')
       expect(wrapper.find('.rendered-prose').html()).toContain('<strong>bold</strong>')
-      expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+      expect(filesManagerService.putDocument).not.toHaveBeenCalled()
     })
 
     it('does not autosave while showing the rendered prose instead of the editor', async () => {
@@ -419,7 +458,7 @@ describe('Text.vue', () => {
       vi.advanceTimersByTime(10000)
       await flushPromises()
 
-      expect(filesManagerService.updateFileContent).not.toHaveBeenCalled()
+      expect(filesManagerService.putDocument).not.toHaveBeenCalled()
     })
 
     it('starts a newly opened file back in edit mode, even if the last one was in Read', async () => {
@@ -433,7 +472,69 @@ describe('Text.vue', () => {
       await flushPromises()
 
       expect(readToggle(wrapper).text()).toBe('Read')
-      expect(wrapper.find('textarea').exists()).toBe(true)
+      expect(wrapper.find('[contenteditable]').exists()).toBe(true)
+    })
+  })
+
+
+  describe('a chapter that already has provenance', () => {
+    // The chain this proves, link by link: GET /document answers body and metadata ->
+    // openProse builds a Prose from *both* -> the prose prop carries it -> the editor's
+    // watcher adopts it without rebuilding from the text. Before the editor owned
+    // provenance its prop was a bare string and it called proseFromMetadata(body, null),
+    // and that `null` threw away everything a file had recorded.
+    const PARA = 'The door creaked. The streets glistened like wet glass under the lamplight.'
+    const PARA_HASH = '47f57caaa4fb330e'
+
+    const openWithRuns = async () => {
+      vi.mocked(filesManagerService.getDocument).mockResolvedValue({
+        body: `${PARA}\n`,
+        metadata: { [PARA_HASH]: [[18, 45, 'gen'], [45, 54, 'fix']] },
+        reconciled: null
+      })
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      return wrapper
+    }
+
+    it('hands the stored runs to the editor, not a blank slate', async () => {
+      const wrapper = await openWithRuns()
+      const given = wrapper.findComponent(MarkdownEditor).props('prose') as Prose
+
+      expect(given.text).toBe(`${PARA}\n`)
+      expect(given.prov).toHaveLength(PARA.length + 1)
+      expect(given.prov.slice(18, 45)).toEqual(new Array(27).fill('gen'))
+      expect(given.prov.slice(45, 54)).toEqual(new Array(9).fill('fix'))
+      expect(given.prov[75]).toBe('user')
+    })
+
+    it('saves them back unchanged when nothing was edited', async () => {
+      const wrapper = await openWithRuns()
+      const vm = wrapper.vm as any
+      vm.isDirty = true
+      await vm.save()
+
+      expect(filesManagerService.putDocument).toHaveBeenCalledWith(OPEN.space, OPEN.id, `${PARA}\n`, {
+        [PARA_HASH]: [[18, 45, 'gen'], [45, 54, 'fix']]
+      })
+    })
+
+    it('still has them after the editor is unmounted and brought back', async () => {
+      // Which is what the Read toggle does. The editor rebuilds from the prop on mount, so
+      // it has to be the prose and not the text.
+      const wrapper = await openWithRuns()
+      const vm = wrapper.vm as any
+
+      vm.readMode = true
+      await wrapper.vm.$nextTick()
+      expect(wrapper.findComponent(MarkdownEditor).exists()).toBe(false)
+
+      vm.readMode = false
+      await wrapper.vm.$nextTick()
+      const given = wrapper.findComponent(MarkdownEditor).props('prose') as Prose
+      expect(given.prov.slice(18, 45)).toEqual(new Array(27).fill('gen'))
     })
   })
 })
@@ -462,7 +563,11 @@ describe('Text.vue across the two spaces', () => {
       setStatus: vi.fn()
     })
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'scratch' })
-    vi.mocked(filesManagerService.getFileContent).mockResolvedValue('A list.')
+    vi.mocked(filesManagerService.getDocument).mockResolvedValue({
+      body: 'A list.',
+      metadata: null,
+      reconciled: null
+    })
   })
 
   afterEach(() => {
@@ -477,7 +582,7 @@ describe('Text.vue across the two spaces', () => {
     await flushPromises()
 
     expect(filesManagerService.getFileInfo).toHaveBeenCalledWith('notes', '0f1e2d3c4b5a6978')
-    expect(filesManagerService.getFileContent).toHaveBeenCalledWith('notes', '0f1e2d3c4b5a6978')
+    expect(filesManagerService.getDocument).toHaveBeenCalledWith('notes', '0f1e2d3c4b5a6978')
     expect(wrapper.text()).toContain('scratch')
   })
 })
