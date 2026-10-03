@@ -408,16 +408,16 @@ describe('Text.vue', () => {
       selectedFile.value = OPEN
       await flushPromises()
 
-      expect(wrapper.find('textarea').exists()).toBe(true)
+      expect(wrapper.find('[contenteditable]').exists()).toBe(true)
       expect(readToggle(wrapper).text()).toBe('Read')
 
       await readToggle(wrapper).trigger('click')
-      expect(wrapper.find('textarea').exists()).toBe(false)
+      expect(wrapper.find('[contenteditable]').exists()).toBe(false)
       expect(wrapper.find('.rendered-prose h1').text()).toBe('A Title')
       expect(readToggle(wrapper).text()).toBe('Edit')
 
       await readToggle(wrapper).trigger('click')
-      expect(wrapper.find('textarea').exists()).toBe(true)
+      expect(wrapper.find('[contenteditable]').exists()).toBe(true)
       expect(wrapper.find('.rendered-prose').exists()).toBe(false)
     })
 
@@ -458,7 +458,7 @@ describe('Text.vue', () => {
       await flushPromises()
 
       expect(readToggle(wrapper).text()).toBe('Read')
-      expect(wrapper.find('textarea').exists()).toBe(true)
+      expect(wrapper.find('[contenteditable]').exists()).toBe(true)
     })
   })
 })
