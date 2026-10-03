@@ -10,19 +10,26 @@
 
 ![CI](https://github.com/InkSpireEditor/inkspire-frontend/actions/workflows/ci.yml/badge.svg?branch=main)
 
-InkSpire is a modern web-based text editor designed for writers who want to leverage the power of AI to enhance their creative process. It provides a clean and organized interface for managing files and directories, along with AI-powered tools to rephrase, translate, and generate text.
+InkSpire is a web-based text editor for writing novels, with a language model available where you are already writing. It organises a novel as stories and chapters, generates continuations on request, and keeps a record of which words came from a model and which are yours.
 
 ---
 
 ## ✨ Features
 
-- **AI-Powered Writing Tools**  
-  Rephrase, translate, or expand text directly in your editor.
+- **Continuations from a language model**  
+  Generate from where the chapter has got to, streamed a chunk at a time, from whichever
+  provider is configured. Nothing is written to disk until you save.
+- **You can see what you wrote and what a model did**  
+  Every character carries who wrote it. A model's prose is tinted green, and the parts of it
+  you have since corrected are amber. The record is kept in the chapter file beside the
+  prose, so it is still there after a reload — and it is recovered from git if you edit the
+  file outside the editor.
 - **File System Navigation**  
   Two tabs in the sidebar: the stories, and everything that is not a novel. A story
   holds its chapters; the other tab holds notes, at its root or in a folder.
 - **Clean and Focused Editor**  
-  A distraction-free writing environment with a modern interface.
+  A distraction-free writing environment, with the browser's own undo left in charge —
+  Ctrl+Z steps back through your edits and the colours go with it.
 - **Version Control, Built In**  
   The story repository is a git working tree. A panel in the sidebar shows what has
   changed and commits it with one message; saving prose never commits on its own.
@@ -38,6 +45,8 @@ InkSpire is a modern web-based text editor designed for writers who want to leve
 - [Vue.js](https://vuejs.org/) — The Progressive JavaScript Framework
 - [Vite](https://vitejs.dev/) — Next Generation Frontend Tooling
 - [TypeScript](https://www.typescriptlang.org/) — Strongly-typed JavaScript for safer development
+- [@noble/hashes](https://github.com/paulmillr/noble-hashes) — the one hash the provenance
+  record is keyed by, which has to match the API's byte for byte
 
 ---
 
