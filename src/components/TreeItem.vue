@@ -194,6 +194,9 @@ li {
   align-items: center;
   gap: 8px;
   padding: 0 8px 0 0; /* Left padding is handled by inline style */
+  /* Reserved on every row, not just .selected, so turning it blue doesn't push
+     this row's icon and name 4px to the right of every other row's. */
+  border-left: 4px solid transparent;
   cursor: pointer;
   height: 40px;
   transition: background-color 0.2s;
@@ -206,7 +209,7 @@ li {
 
 .tree-node-content.selected {
   background-color: var(--color-primary-soft);
-  border-left: 4px solid var(--color-primary);
+  border-left-color: var(--color-primary);
 }
 
 .toggle-icon, .spacer {
