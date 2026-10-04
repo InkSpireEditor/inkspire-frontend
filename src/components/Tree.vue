@@ -97,11 +97,17 @@ provide('treeContext', {
  * the files at the root, which is the one arrangement the API does not decide.
  *
  * Both spaces answer the same shape, so this reads either one.
+ *
+ * `silent` skips the loading flag: a refresh after an action (create, rename, delete)
+ * has a tree already on screen, and flipping `loading` swaps the whole `<ul>` out for
+ * the "Loading..." div, unmounting every TreeItem -- which resets each one's own
+ * `isOpen` back to closed. Only the first fetch of a space, with nothing to show yet,
+ * needs it.
  */
-const fetchTree = async (space: Space) => {
+const fetchTree = async (space: Space, { silent = false }: { silent?: boolean } = {}) => {
   if (!isLoggedIn()) return
 
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const response = await filesManagerService.getTree(space)
 
@@ -131,7 +137,7 @@ const fetchTree = async (space: Space) => {
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Unknown error'
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -309,7 +315,7 @@ const submitModal = async () => {
         }
         
         showModal.value = false
-        fetchTree(space) // Refresh tree
+        fetchTree(space, { silent: true }) // Refresh tree without folding it
         if (space === 'stories') {
             refreshGitStatusQuietly()
             const storyId =
@@ -351,7 +357,7 @@ const confirmDelete = async () => {
             await filesManagerService.delFile(space, deletedNode.id)
         }
         showConfirm.value = false
-        fetchTree(space)
+        fetchTree(space, { silent: true })
         if (space === 'stories') {
             refreshGitStatusQuietly()
             notifyDashboard(deletedNode.type === 'D' ? deletedNode.id : deletedNode.parentId)
@@ -382,7 +388,7 @@ const handleLogout = async () => {
  * the stories tab is not the one open.
  */
 const handleStoriesChanged = () => {
-    fetchTree('stories')
+    fetchTree('stories', { silent: true })
 }
 
 onMounted(() => {
