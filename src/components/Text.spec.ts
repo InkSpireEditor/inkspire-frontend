@@ -109,6 +109,10 @@ describe('Text.vue', () => {
       global: { stubs: { teleport: true } }
     })
     expect(wrapper.text()).toContain('No file selected')
+    // Nothing editable is on screen with no file open -- there is nothing to save,
+    // and typing here would otherwise be accepted and silently go nowhere.
+    expect(wrapper.findComponent(MarkdownEditor).exists()).toBe(false)
+    expect(wrapper.find('.no-file-pane').exists()).toBe(true)
   })
 
   it('loads file content when the selection changes', async () => {

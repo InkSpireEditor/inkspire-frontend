@@ -273,7 +273,8 @@ onUnmounted(() => {
     </div>
 
     <div class="editor-container">
-      <MarkdownEditor v-if="!readMode" ref="editor" :prose="prose" @prose-change="handleProseChange" />
+      <div v-if="!currentFile" class="no-file-pane">Select a file to start writing.</div>
+      <MarkdownEditor v-else-if="!readMode" ref="editor" :prose="prose" @prose-change="handleProseChange" />
       <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
       <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
 
@@ -353,6 +354,21 @@ onUnmounted(() => {
   line-height: 1.7;
   overflow-wrap: break-word;
   box-shadow: var(--shadow-card);
+}
+
+/* Same surface as .rendered-prose: a pane, not a writing surface, with nothing to write. */
+.no-file-pane {
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-background-soft);
+  color: var(--color-text);
+  opacity: 0.45;
 }
 
 .rendered-prose :deep(p) {
