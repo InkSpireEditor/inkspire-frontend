@@ -17,7 +17,7 @@ import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
 
 const { selectedFile, clearSelectedFile } = useSharedFiles()
-const { selectedModelName } = useSharedModel()
+const { selectedModelName, selectedModelProtocol, thinkEnabled } = useSharedModel()
 const { refresh: refreshGitStatus } = useSharedGit()
 
 /** How long to wait after the last keystroke before writing it back to the API, in ms. */
@@ -213,6 +213,9 @@ const handleGenerate = async () => {
         editor.value?.appendGenerated(delta)
         isDirty.value = true
       },
+      // Only ollama honours this; anything else is left at the server's default
+      // rather than sending a value that model would simply ignore.
+      selectedModelProtocol.value === 'ollama' ? thinkEnabled.value : undefined,
       generation.signal
     )
   } catch (e) {

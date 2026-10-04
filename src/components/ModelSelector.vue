@@ -4,7 +4,8 @@ import { modelService, type Model } from '../services/model'
 import { useSharedModel } from '../services/sharedModel'
 import { isLoggedIn } from '../services/api'
 
-const { selectedModelName, setSelectedModel } = useSharedModel()
+const { selectedModelName, selectedModelProtocol, thinkEnabled, setSelectedModel, setThinkEnabled } =
+  useSharedModel()
 const models = ref<Model[]>([])
 const error = ref<string | null>(null)
 
@@ -20,12 +21,19 @@ const fetchModels = async () => {
     models.value = data
     const firstModel = models.value[0]
     if (firstModel && !selectedModelName.value) {
-      setSelectedModel(firstModel.name)
+      setSelectedModel(firstModel.name, firstModel.protocol)
     }
   } catch (e: any) {
     error.value = e.message
     console.error('Failed to load models', e)
   }
+}
+
+/** The select box only carries a name, so the matching model's protocol is looked
+ *  up here and the two are set together, the same as the auto-selection above. */
+const onSelect = (name: string) => {
+  const model = models.value.find((candidate) => candidate.name === name)
+  setSelectedModel(name, model?.protocol ?? null)
 }
 
 onMounted(() => {
@@ -37,11 +45,21 @@ onMounted(() => {
   <div class="model-selector">
     <h3>Models</h3>
     <div v-if="error" class="error">{{ error }}</div>
-    <select v-model="selectedModelName">
+    <select :value="selectedModelName" @change="onSelect(($event.target as HTMLSelectElement).value)">
       <option v-for="model in models" :key="model.name" :value="model.name">
         {{ model.name }}
       </option>
     </select>
+    <!-- Only ollama honours `think` -- the chat-completions path ignores it, so a
+         checkbox there would appear to work and silently do nothing. -->
+    <label v-if="selectedModelProtocol === 'ollama'" class="think-toggle">
+      <input
+        type="checkbox"
+        :checked="thinkEnabled"
+        @change="setThinkEnabled(($event.target as HTMLInputElement).checked)"
+      />
+      Think before writing
+    </label>
   </div>
 </template>
 
@@ -86,5 +104,15 @@ select:focus {
   color: var(--color-danger);
   font-size: 0.8rem;
   margin-bottom: 0.5rem;
+}
+
+.think-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  cursor: pointer;
 }
 </style>

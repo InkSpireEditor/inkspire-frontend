@@ -22,18 +22,23 @@ export const llmService = {
      * @param model Name of the model to generate with, as listed by the API.
      * @param prompt The writer's current text, used as the continuation prompt.
      * @param onDelta Receives each chunk of generated text in order.
+     * @param think Overrides the server's default for this request alone. Omit (or
+     *   pass `undefined`) to leave that default in place -- the right choice for a
+     *   model that cannot honour it at all, rather than sending a value that is
+     *   simply ignored.
      * @param signal Aborts the generation when triggered.
      */
     async generate(
         model: string,
         prompt: string,
         onDelta: OnDelta,
+        think?: boolean,
         signal?: AbortSignal,
     ): Promise<void> {
         const response = await apiFetch(`${API_URL}/llm/generate`, {
             method: "POST",
             headers: jsonHeaders(),
-            body: JSON.stringify({ model, prompt }),
+            body: JSON.stringify({ model, prompt, think }),
             signal,
         });
 

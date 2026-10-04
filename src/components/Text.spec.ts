@@ -78,7 +78,10 @@ describe('Text.vue', () => {
     })
     vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
       selectedModelName: ref('llama3'),
-      setSelectedModel: vi.fn()
+      selectedModelProtocol: ref(null),
+      thinkEnabled: ref(false),
+      setSelectedModel: vi.fn(),
+      setThinkEnabled: vi.fn()
     })
     vi.spyOn(sharedGit, 'useSharedGit').mockReturnValue({
       gitStatus: ref(null),
@@ -346,6 +349,9 @@ describe('Text.vue', () => {
       'llama3',
       'Initial content',
       expect.any(Function),
+      // The mocked model has no protocol, so this is left for the server's own
+      // default rather than a value it would ignore.
+      undefined,
       expect.any(AbortSignal)
     )
 
@@ -360,13 +366,54 @@ describe('Text.vue', () => {
     )
   })
 
+  it('sends think when the selected model is ollama and the box is checked', async () => {
+    const wrapper = await mountWithFile()
+    const shared = sharedModel.useSharedModel()
+    shared.selectedModelProtocol.value = 'ollama'
+    shared.thinkEnabled.value = true
+
+    vi.mocked(llmService.generate).mockResolvedValue(undefined)
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+
+    expect(llmService.generate).toHaveBeenCalledWith(
+      'llama3',
+      'Initial content',
+      expect.any(Function),
+      true,
+      expect.any(AbortSignal)
+    )
+  })
+
+  it('omits think for a protocol that cannot honour it, even with the box checked', async () => {
+    // Nothing sets selectedModelProtocol to 'ollama' for this model, so the
+    // checkbox would not even be shown -- thinkEnabled lingering true from an
+    // earlier reasoning model must not leak into a request this one would ignore.
+    const wrapper = await mountWithFile()
+    const shared = sharedModel.useSharedModel()
+    shared.selectedModelProtocol.value = 'openai'
+    shared.thinkEnabled.value = true
+
+    vi.mocked(llmService.generate).mockResolvedValue(undefined)
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+
+    expect(llmService.generate).toHaveBeenCalledWith(
+      'llama3',
+      'Initial content',
+      expect.any(Function),
+      undefined,
+      expect.any(AbortSignal)
+    )
+  })
+
   it('offers Stop while generating and aborts when it is clicked', async () => {
     const wrapper = await mountWithFile()
 
     let captured: AbortSignal | undefined
     let finish: () => void = () => {}
     vi.mocked(llmService.generate).mockImplementation(
-      (_model, _prompt, _onDelta, signal) => {
+      (_model, _prompt, _onDelta, _think, signal) => {
         captured = signal
         return new Promise<void>((resolve) => {
           finish = resolve
@@ -559,7 +606,10 @@ describe('Text.vue across the two spaces', () => {
     })
     vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
       selectedModelName: ref('llama3'),
-      setSelectedModel: vi.fn()
+      selectedModelProtocol: ref(null),
+      thinkEnabled: ref(false),
+      setSelectedModel: vi.fn(),
+      setThinkEnabled: vi.fn()
     })
     vi.spyOn(sharedGit, 'useSharedGit').mockReturnValue({
       gitStatus: ref(null),

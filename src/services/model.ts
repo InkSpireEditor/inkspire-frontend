@@ -1,8 +1,13 @@
 import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
 
+export type ModelProtocol = 'openai' | 'ollama';
+
 export interface Model {
   name: string;
+  /** Only `ollama` can be asked to think or not -- the chat-completions path has no
+   *  equivalent, native or otherwise, and ignores the field when sent. */
+  protocol: ModelProtocol;
 }
 
 export const modelService = {

@@ -131,11 +131,31 @@ describe('llmService', () => {
     expect(received).toEqual(['x'])
   })
 
+  it('sends think when given, and omits it entirely when not', async () => {
+    fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
+    await llmService.generate('m', 'p', () => {}, false)
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_URL}/llm/generate`,
+      // JSON.stringify drops a key whose value is undefined, which is what an
+      // omitted `think` relies on to reach the API as absent rather than null.
+      expect.objectContaining({ body: JSON.stringify({ model: 'm', prompt: 'p', think: false }) }),
+    )
+
+    fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
+    await llmService.generate('m', 'p', () => {})
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_URL}/llm/generate`,
+      expect.objectContaining({ body: JSON.stringify({ model: 'm', prompt: 'p' }) }),
+    )
+  })
+
   it('passes an abort signal through to fetch', async () => {
     fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
     const controller = new AbortController()
 
-    await llmService.generate('m', 'p', () => {}, controller.signal)
+    await llmService.generate('m', 'p', () => {}, undefined, controller.signal)
 
     expect(fetchSpy).toHaveBeenCalledWith(
       `${API_URL}/llm/generate`,
