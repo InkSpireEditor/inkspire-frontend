@@ -584,6 +584,28 @@ describe('Tree.vue', () => {
             })
         })
 
+        it('re-assigns the selection even when the rename leaves the id alone', async () => {
+            // "first chapter" and "First Chapter" are one filename and two names: the
+            // API answers the same id, but the open file's title still changed, so
+            // Text.vue has to be told to re-read it.
+            vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'f1f1f1f1f1f1f1f1' })
+            const wrapper = mountTree()
+            await flushPromises()
+            await openRenameOn(wrapper)
+
+            useSharedFiles().setSelectedFile('notes', 'f1f1f1f1f1f1f1f1')
+            const before = useSharedFiles().selectedFile.value
+            ;(wrapper.vm as any).modalInputName = 'First Chapter'
+            await (wrapper.vm as any).submitModal()
+            await flushPromises()
+
+            expect(useSharedFiles().selectedFile.value).toEqual({
+                space: 'notes',
+                id: 'f1f1f1f1f1f1f1f1',
+            })
+            expect(useSharedFiles().selectedFile.value).not.toBe(before)
+        })
+
         it('leaves a selection on some other file alone', async () => {
             vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new0000000000000' })
             const wrapper = mountTree()
