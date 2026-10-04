@@ -378,6 +378,66 @@ describe('Text.vue', () => {
     })
   })
 
+  describe('warning before an unload', () => {
+    /**
+     * The handler this component registered for 'beforeunload', found through a spy
+     * rather than a real `window.dispatchEvent` -- plenty of other tests in this file
+     * mount `Text` and never unmount it, so the real event bus can carry other
+     * components' listeners long after their own test has finished. Finding this
+     * component's own handler, and calling it directly with a stand-in event, is
+     * what keeps this test about this component alone.
+     */
+    const theRegisteredHandler = (addSpy: ReturnType<typeof vi.spyOn>) => {
+      const call = addSpy.mock.calls.find(([type]: [string, unknown]) => type === 'beforeunload')
+      return call?.[1] as (event: Event) => void
+    }
+
+    const fakeEvent = () => ({ preventDefault: vi.fn(), returnValue: '' }) as unknown as Event
+
+    it('warns when there is unsaved text', async () => {
+      const addSpy = vi.spyOn(window, 'addEventListener')
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('Changed, not yet saved'))
+
+      const event = fakeEvent()
+      theRegisteredHandler(addSpy)(event)
+      expect(event.preventDefault).toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('does not warn with nothing unsaved', async () => {
+      const addSpy = vi.spyOn(window, 'addEventListener')
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const event = fakeEvent()
+      theRegisteredHandler(addSpy)(event)
+      expect(event.preventDefault).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('stops listening once unmounted', async () => {
+      const addSpy = vi.spyOn(window, 'addEventListener')
+      const removeSpy = vi.spyOn(window, 'removeEventListener')
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const handler = theRegisteredHandler(addSpy)
+      wrapper.unmount()
+
+      expect(removeSpy).toHaveBeenCalledWith('beforeunload', handler)
+    })
+  })
+
   /** Mounts the editor with a file open and the generate mock cleared. */
   const mountWithFile = async () => {
     const wrapper = mount(Text, {

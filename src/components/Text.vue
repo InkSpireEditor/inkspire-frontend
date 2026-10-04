@@ -287,13 +287,37 @@ watch(selectedFile, (file) => {
   }
 })
 
+/**
+ * Warns before the browser tears the page down with unsaved text still on screen.
+ *
+ * `onUnmounted` below flushes on every path within the app -- switching files,
+ * closing the pane -- because Vue gets to run its cleanup first. A real unload
+ * (closing the tab, refreshing, navigating to another site) skips unmount hooks
+ * entirely, which is the one case a writer would actually lose work in.
+ *
+ * There is no way to await a save from here and warn only if it fails: a
+ * `beforeunload` handler cannot keep the page alive for an async result, so
+ * whether a best-effort request would have survived can never be known before
+ * the decision to warn has to be made. Warning whenever `isDirty` is set, rather
+ * than attempting a save of its own, is the deliberately chosen tradeoff: it
+ * costs a dialog on some closes that a save would quietly have survived, but
+ * never gives a false sense of safety for one that would not have.
+ */
+const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (!isDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
 onMounted(() => {
   if (selectedFile.value) {
     loadFile(selectedFile.value)
   }
+  window.addEventListener('beforeunload', warnBeforeUnload)
 })
 
 onUnmounted(() => {
+  window.removeEventListener('beforeunload', warnBeforeUnload)
   cancelAutoSave()
   if (currentFile.value) {
     save()
