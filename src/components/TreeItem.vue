@@ -143,9 +143,12 @@ const closeMenu = () => {
       :style="{ paddingLeft: (level * INDENT_PER_LEVEL_PX + BASE_PADDING_PX) + 'px' }"
       @click="select"
     >
-      <span v-if="isFolder" class="toggle-icon" @click.stop="toggle">
-        {{ isOpen ? '▼' : '▶' }}
-      </span>
+      <span
+        v-if="isFolder"
+        class="toggle-icon"
+        :class="{ open: isOpen }"
+        @click.stop="toggle"
+      ></span>
       <span v-else class="spacer"></span>
       
       <span class="icon">{{ icon }}</span>
@@ -208,10 +211,35 @@ li {
 
 .toggle-icon, .spacer {
   width: 24px;
+  height: 24px;
   display: flex;
+  align-items: center;
   justify-content: center;
-  color: var(--color-text);
-  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+/*
+ * Drawn with a border rather than the text characters ▶/▼: a dingbat glyph is placed by
+ * whichever font the browser substitutes, and most UI fonts do not centre it the way they
+ * centre prose -- it sits closer to cap-height, visibly off the row's centre. A shape drawn
+ * here is centred by its own box, not by font metrics, so this cannot drift with the font.
+ * One triangle rotated between the two states, rather than two different glyphs, is also
+ * what keeps the open and closed arrow the same size and the same optical weight -- ▶ and ▼
+ * are not the same shape top-to-bottom, so swapping between them visibly shifted the arrow
+ * even when its box did not move.
+ */
+.toggle-icon::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent var(--color-text);
+  transition: transform 0.15s ease;
+}
+
+.toggle-icon.open::before {
+  transform: rotate(90deg);
 }
 
 .icon {

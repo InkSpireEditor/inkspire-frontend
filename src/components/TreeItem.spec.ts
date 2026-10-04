@@ -65,7 +65,8 @@ describe('TreeItem.vue', () => {
   it('renders a folder node correctly', () => {
     const wrapper = mountTreeItem(folderNode)
     expect(wrapper.text()).toContain('test-folder')
-    expect(wrapper.find('.toggle-icon').text()).toBe('▶')
+    expect(wrapper.find('.toggle-icon').exists()).toBe(true)
+    expect(wrapper.find('.toggle-icon').classes()).not.toContain('open')
   })
 
   it('marks a directory as a story or as a plain folder, by space', () => {
@@ -96,7 +97,7 @@ describe('TreeItem.vue', () => {
     
     // Click to open
     await content.trigger('click')
-    expect(wrapper.find('.toggle-icon').text()).toBe('▼')
+    expect(wrapper.find('.toggle-icon').classes()).toContain('open')
     expect(wrapper.find('.tree-children').exists()).toBe(true)
     expect(wrapper.findComponent(TreeItem).exists()).toBe(true)
     
