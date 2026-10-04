@@ -4,7 +4,8 @@
  *
  * The editor holds one `Kind` per character of the open file. The `.ink` file stores it
  * per paragraph instead, keyed by a hash of that paragraph's text, so editing one
- * paragraph leaves every other paragraph's provenance alone (`ARCHITECTURE.md` §7.3).
+ * paragraph leaves every other paragraph's provenance alone. The API's
+ * `docs/provenance.md` is the shared definition both sides implement.
  * This module is the conversion between those two shapes, and nothing else: no DOM, no
  * fetch, no component. That is deliberate — the renderer cannot be unit-tested in jsdom
  * (§8.3), so every decision that can be made here is made here, the same reason

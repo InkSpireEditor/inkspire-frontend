@@ -4,8 +4,7 @@
  *
  * The API answers topology only -- nodes and links, with each node's most specific
  * class already picked server-side -- and the layout runs here, in force-graph. That
- * is the opposite of the timeline, which arrives fully laid out; both are deliberate
- * (ARCHITECTURE.md §9).
+ * is the opposite of the timeline, which arrives fully laid out; both are deliberate.
  *
  * The graph payload is held outside Vue's reactivity on purpose. force-graph mutates
  * what it is given: a node gains x/y/vx/vy, and a link's source/target are replaced

@@ -26,8 +26,9 @@
  * — which was measured too. So the array is the store and the ranges are only a render
  * target, rebuilt from it after every edit.
  *
- * All of that was settled in `contenteditable-demo/index.html`, demos 4 to 10, by hand in
- * two browsers. `ARCHITECTURE.md` §8.1 records what each one showed.
+ * All of it was measured by hand in two browsers before any of this was written, because none
+ * of it is reproducible by reading: a `Range` looks like the obvious place to keep provenance
+ * right up until a paragraph break destroys one.
  */
 import { onMounted, ref, toRaw, watch } from 'vue'
 import {
@@ -459,9 +460,8 @@ watch(
    else declared here is ignored rather than applied.
 
    A background tint rather than a foreground colour, so the prose keeps full contrast
-   whichever kind it is. The hues are the ones `contenteditable-demo` demo 10 used, at a low
-   enough alpha to sit on either theme's background: green for what a model wrote, amber for
-   what the writer has corrected in it. Literal rather than drawn from the theme's custom
+   whichever kind it is. Low enough alpha to sit on either theme's background: green for what a
+   model wrote, amber for what the writer has corrected in it. Literal rather than drawn from the theme's custom
    properties, because neither of these means "primary" or "danger" -- they are their own
    thing and have to stay distinguishable from both. */
 .surface::highlight(ink-gen) {

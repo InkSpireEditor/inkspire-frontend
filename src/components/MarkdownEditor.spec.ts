@@ -2,9 +2,8 @@
  * The editor body as a `contenteditable`.
  *
  * **Nothing here asserts anything about colour.** jsdom has neither `CSS.highlights` nor
- * `Highlight` (`ARCHITECTURE.md` §8.3), so every test in this file runs the unpainted path
- * and none of them can tell whether the painting is right — that is what the hand test in a
- * real browser is for, and what `contenteditable-demo/index.html` demo 10 was for before it.
+ * `Highlight`, so every test in this file runs the unpainted path and none of them can tell
+ * whether the painting is right. That is what a hand test in a real browser is for.
  *
  * A test here failing with `CSS is not defined` or `Highlight is not defined` means the
  * feature detection is missing or wrong. That is the bug, not the environment.
