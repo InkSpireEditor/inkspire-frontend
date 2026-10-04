@@ -55,6 +55,15 @@ const showError = ref(false)
 const errorMessage = ref('')
 
 let autoSaveTimer: number | null = null
+/** Whether a `putDocument` request is currently in flight, so a second one is never
+ *  sent alongside it -- the API's rule is last-write-wins, so the one that lands
+ *  second would win regardless of which was issued first. */
+const saving = ref(false)
+/** Set when `save` is called while one is already in flight -- the debounce firing
+ *  again, a manual click, the generation `finally`, or unmount's flush. Consumed by
+ *  the in-flight request's own completion, which resends once it settles rather
+ *  than only on the next debounce. */
+let saveAgain = false
 
 /** Stores a change the editor made. */
 const handleProseChange = (next: Prose) => {
@@ -113,11 +122,26 @@ const loadFile = async (file: FileSelection) => {
  * it: sent separately, the stored hashes would stop matching the prose and the next load
  * would discard provenance the writer had just created. No-op when nothing has changed
  * since the last save.
+ *
+ * At most one request is in flight at a time. A call that arrives while one is already
+ * sending does not start a second -- the API's rule is last-write-wins, so whichever
+ * landed second would win regardless of which was issued first -- it instead marks
+ * `saveAgain`, consumed once the in-flight one settles.
  */
 const save = async () => {
   const file = currentFile.value
   if (!isLoggedIn() || !file || !isDirty.value) return
 
+  if (saving.value) {
+    saveAgain = true
+    return
+  }
+
+  saving.value = true
+  // Cleared before sending, not after: an edit landing while this request is in
+  // flight sets it true again on its own (the next keystroke's handleProseChange),
+  // which is exactly the signal the resend below needs.
+  isDirty.value = false
   try {
     await filesManagerService.putDocument(
       file.space,
@@ -125,22 +149,31 @@ const save = async () => {
       text.value,
       metadataFromProse(prose.value)
     )
-    isDirty.value = false
     // A note is never committed, so only a chapter's save is worth a git refresh.
     if (file.space === 'stories') refreshGitStatus().catch(() => {})
   } catch (e) {
     console.error('Error saving file:', e)
+    // The content above was never actually persisted.
+    isDirty.value = true
     if (e instanceof NotFoundError) {
       // Nothing to save into any more. `isDirty` stays true and the text stays on
       // screen, so the writer can still copy it somewhere -- but the debounce has
-      // to stop, or it would raise this same dialog on every further keystroke.
+      // to stop, or it would raise this same dialog on every further keystroke, and
+      // a queued resend would do the same the instant it ran.
       cancelAutoSave()
+      saveAgain = false
       displayError(
         'This file no longer exists. It may have been renamed or deleted elsewhere. ' +
         'Your text is still here — copy it somewhere safe.'
       )
     } else {
       displayError('Failed to save the file')
+    }
+  } finally {
+    saving.value = false
+    if (saveAgain) {
+      saveAgain = false
+      save()
     }
   }
 }

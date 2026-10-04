@@ -316,6 +316,68 @@ describe('Text.vue', () => {
     )
   })
 
+  describe('overlapping saves', () => {
+    /** Replaces the next `putDocument` call with a promise the test resolves by hand,
+     *  so a request can be held "in flight" for as long as the test needs. */
+    const holdNextPut = () => {
+      let resolve: (value: unknown) => void = () => {}
+      const held = new Promise((r) => { resolve = r })
+      vi.mocked(filesManagerService.putDocument).mockReturnValueOnce(held as any)
+      return () => resolve({ ok: true })
+    }
+
+    it('does not start a second request while one is in flight, and resends once it settles', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      const vm = wrapper.vm as any
+
+      const finishFirst = holdNextPut()
+      vm.handleProseChange(typed('First'))
+      vi.advanceTimersByTime(2000)
+      await flushPromises()
+      expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
+
+      // An edit lands, and a manual save is also asked for, while that first
+      // request is still in flight -- neither may start a second one of its own.
+      vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
+      vm.handleProseChange(typed('First and more'))
+      await vm.save()
+      expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
+
+      finishFirst()
+      await flushPromises()
+
+      // Settling resends exactly once, carrying what landed during the flight --
+      // not one extra request per thing that asked for a save.
+      expect(filesManagerService.putDocument).toHaveBeenCalledTimes(2)
+      expect(filesManagerService.putDocument).toHaveBeenLastCalledWith(
+        OPEN.space,
+        OPEN.id,
+        'First and more',
+        handwritten('First and more')
+      )
+    })
+
+    it('does not resend after a plain failure with nothing new to send', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      const vm = wrapper.vm as any
+
+      vi.mocked(filesManagerService.putDocument).mockRejectedValueOnce(new Error('boom'))
+      vm.handleProseChange(typed('Unlucky'))
+      vi.advanceTimersByTime(2000)
+      await flushPromises()
+
+      expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
+      expect(vm.isDirty).toBe(true)
+      expect(vm.errorMessage).toBe('Failed to save the file')
+    })
+  })
+
   /** Mounts the editor with a file open and the generate mock cleared. */
   const mountWithFile = async () => {
     const wrapper = mount(Text, {
