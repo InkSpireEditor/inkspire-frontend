@@ -198,12 +198,13 @@ describe('Text.vue', () => {
     expect(filesManagerService.putDocument).not.toHaveBeenCalled()
   })
 
-  it('does not autosave while generating, but flushes once the stream ends', async () => {
+  it('flushes a pending edit before generating, does not autosave during the stream, and flushes once it ends', async () => {
     const wrapper = await mountWithFile()
+    vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
 
     let resolveGenerate: () => void = () => {}
     vi.mocked(llmService.generate).mockImplementation(
-      (_model, _prompt, onDelta) =>
+      (_space, _id, _model, onDelta) =>
         new Promise<void>((resolve) => {
           resolveGenerate = () => {
             onDelta(' streamed.')
@@ -213,21 +214,31 @@ describe('Text.vue', () => {
     )
 
     // A keystroke just before Generate leaves a pending debounce that generating
-    // should cancel, not let fire mid-stream.
+    // should cancel -- the explicit flush below covers it instead, before the
+    // request is even sent, since the server reads the file fresh from disk.
     const vm = wrapper.vm as any
     vm.handleProseChange(typed('Changed just before generating'))
     await clickButton(wrapper, 'Generate')
     await flushPromises()
 
+    expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.putDocument).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
+      'Changed just before generating',
+      handwritten('Changed just before generating')
+    )
+
     vi.advanceTimersByTime(10000)
     await flushPromises()
-    expect(filesManagerService.putDocument).not.toHaveBeenCalled()
+    // No autosave fires from the deltas arriving while the stream is open.
+    expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
 
     resolveGenerate()
     await flushPromises()
 
-    expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
-    expect(filesManagerService.putDocument).toHaveBeenCalledWith(
+    expect(filesManagerService.putDocument).toHaveBeenCalledTimes(2)
+    expect(filesManagerService.putDocument).toHaveBeenLastCalledWith(
       OPEN.space,
       OPEN.id,
       'Changed just before generating streamed.',
@@ -341,13 +352,16 @@ describe('Text.vue', () => {
 
       // An edit lands, and a manual save is also asked for, while that first
       // request is still in flight -- neither may start a second one of its own.
+      // `save()` now resolves once the whole chain settles, so it is not awaited
+      // yet here -- the first request is still being held.
       vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
       vm.handleProseChange(typed('First and more'))
-      await vm.save()
+      const resent = vm.save()
+      await flushPromises()
       expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
 
       finishFirst()
-      await flushPromises()
+      expect(await resent).toBe(true)
 
       // Settling resends exactly once, carrying what landed during the flight --
       // not one extra request per thing that asked for a save.
@@ -456,10 +470,29 @@ describe('Text.vue', () => {
     return button
   }
 
+  it('refuses to generate when the pre-generate save fails, and never calls the API', async () => {
+    // The server reads the file fresh from disk once asked to generate -- asking
+    // it to continue text that failed to save would ask about a sentence that was
+    // never actually written.
+    const wrapper = await mountWithFile()
+    const vm = wrapper.vm as any
+    vm.handleProseChange(typed('Changed just before generating'))
+    vi.mocked(filesManagerService.putDocument).mockRejectedValueOnce(new Error('boom'))
+
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+
+    expect(llmService.generate).not.toHaveBeenCalled()
+    expect(vm.errorMessage).toContain('save')
+    // The failed edit is still on screen and still marked unsaved.
+    expect(vm.text).toBe('Changed just before generating')
+    expect(vm.isDirty).toBe(true)
+  })
+
   it('appends each delta as it arrives and saves the result', async () => {
     const wrapper = await mountWithFile()
 
-    vi.mocked(llmService.generate).mockImplementation(async (_model, _prompt, onDelta) => {
+    vi.mocked(llmService.generate).mockImplementation(async (_space, _id, _model, onDelta) => {
       onDelta(' and')
       onDelta(' then.')
     })
@@ -468,8 +501,9 @@ describe('Text.vue', () => {
     await flushPromises()
 
     expect(llmService.generate).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
       'llama3',
-      'Initial content',
       expect.any(Function),
       // The mocked model has no protocol, so this is left for the server's own
       // default rather than a value it would ignore.
@@ -499,8 +533,9 @@ describe('Text.vue', () => {
     await flushPromises()
 
     expect(llmService.generate).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
       'llama3',
-      'Initial content',
       expect.any(Function),
       true,
       expect.any(AbortSignal)
@@ -521,8 +556,9 @@ describe('Text.vue', () => {
     await flushPromises()
 
     expect(llmService.generate).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
       'llama3',
-      'Initial content',
       expect.any(Function),
       undefined,
       expect.any(AbortSignal)
@@ -535,7 +571,7 @@ describe('Text.vue', () => {
     let captured: AbortSignal | undefined
     let finish: () => void = () => {}
     vi.mocked(llmService.generate).mockImplementation(
-      (_model, _prompt, _onDelta, _think, signal) => {
+      (_space, _id, _model, _onDelta, _think, signal) => {
         captured = signal
         return new Promise<void>((resolve) => {
           finish = resolve
@@ -561,7 +597,7 @@ describe('Text.vue', () => {
   it('keeps the text that arrived before a failure', async () => {
     const wrapper = await mountWithFile()
 
-    vi.mocked(llmService.generate).mockImplementation(async (_model, _prompt, onDelta) => {
+    vi.mocked(llmService.generate).mockImplementation(async (_space, _id, _model, onDelta) => {
       onDelta(' as far as here')
       throw new Error('provider went away')
     })

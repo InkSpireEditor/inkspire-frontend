@@ -64,6 +64,16 @@ const saving = ref(false)
  *  the in-flight request's own completion, which resends once it settles rather
  *  than only on the next debounce. */
 let saveAgain = false
+/**
+ * The chain of requests `save()` is currently driving: the in-flight `putDocument`
+ * and, if `saveAgain` is set when it settles, however many resends follow before one
+ * settles with nothing queued behind it. Every caller of `save()` while this is set
+ * is handed this same promise rather than a fresh one, so "is the text on screen
+ * right now safely on disk" is answered once the chain actually finishes -- not from
+ * `isDirty`, which a resend already still in flight may have cleared optimistically
+ * before it is known to have succeeded.
+ */
+let inFlight: Promise<boolean> | null = null
 
 /** Stores a change the editor made. */
 const handleProseChange = (next: Prose) => {
@@ -116,31 +126,57 @@ const loadFile = async (file: FileSelection) => {
 }
 
 /**
- * Saves the prose and its provenance together.
+ * Saves the prose and its provenance together, resolving `true` once the text that was
+ * on screen when this was called is confirmed written -- `false` if it was not, whether
+ * because the write failed or because there was nothing to confirm (not logged in, or no
+ * file open).
  *
  * One request for both, because a section derived from the body may not be written without
  * it: sent separately, the stored hashes would stop matching the prose and the next load
- * would discard provenance the writer had just created. No-op when nothing has changed
- * since the last save.
+ * would discard provenance the writer had just created.
  *
  * At most one request is in flight at a time. A call that arrives while one is already
  * sending does not start a second -- the API's rule is last-write-wins, so whichever
  * landed second would win regardless of which was issued first -- it instead marks
- * `saveAgain`, consumed once the in-flight one settles.
+ * `saveAgain` and is handed the same promise the in-flight request (and whatever resend
+ * `saveAgain` triggers) is already driving, via `inFlight`.
  */
-const save = async () => {
+const save = (): Promise<boolean> => {
   const file = currentFile.value
-  if (!isLoggedIn() || !file || !isDirty.value) return
+  if (!isLoggedIn() || !file) return Promise.resolve(false)
 
-  if (saving.value) {
+  if (inFlight) {
     saveAgain = true
-    return
+    return inFlight
   }
+
+  if (!isDirty.value) return Promise.resolve(true)
+
+  inFlight = runSaveChain()
+  return inFlight
+}
+
+/** Sends the current text, and again for each resend `saveAgain` queued before the
+ *  previous one settled, so whoever is awaiting `save()`'s result only sees it once
+ *  nothing is left to resend. */
+const runSaveChain = async (): Promise<boolean> => {
+  let ok = true
+  do {
+    saveAgain = false
+    ok = await putOnce()
+  } while (saveAgain)
+  inFlight = null
+  return ok
+}
+
+/** One `putDocument` request, with the error handling a save has always had. */
+const putOnce = async (): Promise<boolean> => {
+  const file = currentFile.value
+  if (!file) return false
 
   saving.value = true
   // Cleared before sending, not after: an edit landing while this request is in
-  // flight sets it true again on its own (the next keystroke's handleProseChange),
-  // which is exactly the signal the resend below needs.
+  // flight sets it true again on its own (the next keystroke's handleProseChange).
   isDirty.value = false
   try {
     await filesManagerService.putDocument(
@@ -151,6 +187,7 @@ const save = async () => {
     )
     // A note is never committed, so only a chapter's save is worth a git refresh.
     if (file.space === 'stories') refreshGitStatus().catch(() => {})
+    return true
   } catch (e) {
     console.error('Error saving file:', e)
     // The content above was never actually persisted.
@@ -169,12 +206,9 @@ const save = async () => {
     } else {
       displayError('Failed to save the file')
     }
+    return false
   } finally {
     saving.value = false
-    if (saveAgain) {
-      saveAgain = false
-      save()
-    }
   }
 }
 
@@ -207,6 +241,12 @@ let generation: AbortController | null = null
 /**
  * Appends a continuation of the current text, a chunk at a time as the model writes it.
  *
+ * The server reads the file fresh from disk and assembles the prompt itself
+ * (`inkspire-api/docs/prompt.md`), so what it is asked to continue is whatever was last
+ * saved -- not necessarily what is on screen. `save()` is awaited first, and generation
+ * is refused if it resolves `false`, rather than silently asking the model to continue a
+ * sentence that is not the one the writer just typed.
+ *
  * The API saves nothing, so every chunk marks the document dirty; the debounce is
  * suspended for the duration (see `scheduleAutoSave`), and the `finally` below is
  * what writes it back, once, when the stream ends. Text that arrived before a
@@ -231,14 +271,25 @@ const handleGenerate = async () => {
   }
 
   // Any debounce left over from typing just before Generate was clicked would
-  // otherwise fire mid-stream -- the finally below is what flushes now instead.
+  // otherwise fire mid-stream -- the save below covers it, and covers it before the
+  // request is sent rather than after.
   cancelAutoSave()
+  if (!(await save())) {
+    displayError('Could not save your text before generating. Try again once it saves.')
+    return
+  }
+
+  // The save above may have taken a moment; the selection could have changed meanwhile.
+  const file = currentFile.value
+  if (!file) return
+
   isGenerating.value = true
   generation = new AbortController()
   try {
     await llmService.generate(
+      file.space,
+      file.id,
       selectedModelName.value,
-      text.value,
       (delta) => {
         // Handed to the editor rather than appended here, so it goes in through the
         // browser's own insert command -- undoable like anything typed -- and is recorded as

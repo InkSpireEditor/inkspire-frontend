@@ -1,5 +1,6 @@
 import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
+import type { Space } from './spaces';
 
 /** One event from the generation stream. */
 type GenerationEvent = { delta?: string; error?: string }
@@ -10,8 +11,13 @@ export type OnDelta = (delta: string) => void
 /** Text generation against the API's LLM proxy. */
 export const llmService = {
     /**
-     * Continues the given text using the named model, calling `onDelta` with each
+     * Continues a file's own text using the named model, calling `onDelta` with each
      * piece as it arrives. Resolves once generation ends.
+     *
+     * The request carries no text: the server reads `id`'s file fresh from disk and
+     * assembles the prompt itself (`inkspire-api/docs/prompt.md`), so the caller must
+     * have saved first -- generating against an unsaved edit would ask about text
+     * that is not there yet.
      *
      * The response is a stream, so nothing is buffered until the end: text appears
      * while the model is still writing. Pass `signal` to stop a continuation part way
@@ -19,8 +25,9 @@ export const llmService = {
      *
      * Nothing is saved by the API. The caller owns the text and must save it.
      *
+     * @param space Which root `id` belongs to.
+     * @param id The file to continue.
      * @param model Name of the model to generate with, as listed by the API.
-     * @param prompt The writer's current text, used as the continuation prompt.
      * @param onDelta Receives each chunk of generated text in order.
      * @param think Overrides the server's default for this request alone. Omit (or
      *   pass `undefined`) to leave that default in place -- the right choice for a
@@ -29,16 +36,17 @@ export const llmService = {
      * @param signal Aborts the generation when triggered.
      */
     async generate(
+        space: Space,
+        id: string,
         model: string,
-        prompt: string,
         onDelta: OnDelta,
         think?: boolean,
         signal?: AbortSignal,
     ): Promise<void> {
-        const response = await apiFetch(`${API_URL}/llm/generate`, {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}/generate`, {
             method: "POST",
             headers: jsonHeaders(),
-            body: JSON.stringify({ model, prompt, think }),
+            body: JSON.stringify({ model, think }),
             signal,
         });
 

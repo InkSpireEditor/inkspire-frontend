@@ -31,21 +31,32 @@ describe('llmService', () => {
     vi.clearAllMocks()
   })
 
-  it('posts the model and prompt, and no file id', async () => {
+  it('posts the model to the space-and-id path, with no text', async () => {
     fetchSpy.mockResolvedValueOnce(streamed([event({ delta: 'Hi' }), 'data: [DONE]\n\n']))
 
-    await llmService.generate('llama3', 'Hello', () => {})
+    await llmService.generate('stories', 'f1', 'llama3', () => {})
 
-    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/llm/generate`, {
+    expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/f1/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      body: JSON.stringify({ model: 'llama3', prompt: 'Hello' }),
+      body: JSON.stringify({ model: 'llama3', think: undefined }),
       credentials: 'include',
       signal: undefined,
     })
+  })
+
+  it('posts to the notes path when the file is a note', async () => {
+    fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
+
+    await llmService.generate('notes', 'n1', 'm', () => {})
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_URL}/notes/file/n1/generate`,
+      expect.anything(),
+    )
   })
 
   it('reports each delta in order', async () => {
@@ -54,7 +65,7 @@ describe('llmService', () => {
     )
 
     const received: string[] = []
-    await llmService.generate('m', 'p', (delta) => received.push(delta))
+    await llmService.generate('stories', 'f1', 'm', (delta) => received.push(delta))
 
     expect(received).toEqual(['Hel', 'lo'])
   })
@@ -66,7 +77,7 @@ describe('llmService', () => {
     )
 
     const received: string[] = []
-    await llmService.generate('m', 'p', (delta) => received.push(delta))
+    await llmService.generate('stories', 'f1', 'm', (delta) => received.push(delta))
 
     expect(received).toEqual(['Hello'])
   })
@@ -77,7 +88,7 @@ describe('llmService', () => {
     )
 
     const received: string[] = []
-    await llmService.generate('m', 'p', (delta) => received.push(delta))
+    await llmService.generate('stories', 'f1', 'm', (delta) => received.push(delta))
 
     expect(received).toEqual(['a', 'b'])
   })
@@ -89,9 +100,9 @@ describe('llmService', () => {
       json: async () => ({ code: 422, message: 'Unknown provider "absent".' }),
     } as unknown as Response)
 
-    await expect(llmService.generate('absent/m', 'p', () => {})).rejects.toThrow(
-      'Unknown provider "absent".',
-    )
+    await expect(
+      llmService.generate('stories', 'f1', 'absent/m', () => {}),
+    ).rejects.toThrow('Unknown provider "absent".')
   })
 
   it('falls back to the status when a failure has no message', async () => {
@@ -103,7 +114,7 @@ describe('llmService', () => {
       },
     } as unknown as Response)
 
-    await expect(llmService.generate('m', 'p', () => {})).rejects.toThrow('500')
+    await expect(llmService.generate('stories', 'f1', 'm', () => {})).rejects.toThrow('500')
   })
 
   it('throws an error event that arrives mid-stream, keeping earlier text', async () => {
@@ -113,7 +124,7 @@ describe('llmService', () => {
 
     const received: string[] = []
     await expect(
-      llmService.generate('m', 'p', (delta) => received.push(delta)),
+      llmService.generate('stories', 'f1', 'm', (delta) => received.push(delta)),
     ).rejects.toThrow('provider went away')
 
     // Text delivered before the failure is the writer's, and stays.
@@ -126,28 +137,28 @@ describe('llmService', () => {
     )
 
     const received: string[] = []
-    await llmService.generate('m', 'p', (delta) => received.push(delta))
+    await llmService.generate('stories', 'f1', 'm', (delta) => received.push(delta))
 
     expect(received).toEqual(['x'])
   })
 
   it('sends think when given, and omits it entirely when not', async () => {
     fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
-    await llmService.generate('m', 'p', () => {}, false)
+    await llmService.generate('stories', 'f1', 'm', () => {}, false)
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      `${API_URL}/llm/generate`,
+      `${API_URL}/stories/file/f1/generate`,
       // JSON.stringify drops a key whose value is undefined, which is what an
       // omitted `think` relies on to reach the API as absent rather than null.
-      expect.objectContaining({ body: JSON.stringify({ model: 'm', prompt: 'p', think: false }) }),
+      expect.objectContaining({ body: JSON.stringify({ model: 'm', think: false }) }),
     )
 
     fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
-    await llmService.generate('m', 'p', () => {})
+    await llmService.generate('stories', 'f1', 'm', () => {})
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      `${API_URL}/llm/generate`,
-      expect.objectContaining({ body: JSON.stringify({ model: 'm', prompt: 'p' }) }),
+      `${API_URL}/stories/file/f1/generate`,
+      expect.objectContaining({ body: JSON.stringify({ model: 'm', think: undefined }) }),
     )
   })
 
@@ -155,10 +166,10 @@ describe('llmService', () => {
     fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
     const controller = new AbortController()
 
-    await llmService.generate('m', 'p', () => {}, undefined, controller.signal)
+    await llmService.generate('stories', 'f1', 'm', () => {}, undefined, controller.signal)
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      `${API_URL}/llm/generate`,
+      `${API_URL}/stories/file/f1/generate`,
       expect.objectContaining({ signal: controller.signal }),
     )
   })
