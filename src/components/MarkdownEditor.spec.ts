@@ -16,16 +16,56 @@ import { proseFromMetadata, type Kind, type Prose } from '../services/provenance
 /** A file with no provenance recorded, which is what most of these cases open with. */
 const plain = (body: string): Prose => proseFromMetadata(body, null)
 
-/** What the browser does when a writer types: it edits the DOM, then tells us. */
+/**
+ * What the browser does when a writer types: it edits the DOM, then tells us.
+ *
+ * A real edit mutates the existing text node in place, so the caret the browser was
+ * already showing survives it, at the end of what was typed. `textContent = text`
+ * does not: it replaces the node outright, which the DOM's own range-repair rules
+ * then collapse to offset 0 of the element -- nothing like a real edit's caret. The
+ * explicit reposition below is what makes the replacement read as one anyway.
+ */
 const type = (wrapper: ReturnType<typeof mount>, text: string, inputType = 'insertText') => {
   const element = wrapper.find('[contenteditable]').element
   element.textContent = text
+  const textNode = element.firstChild
+  if (textNode) {
+    const range = document.createRange()
+    range.setStart(textNode, text.length)
+    range.collapse(true)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }
   element.dispatchEvent(new InputEvent('input', { inputType }))
 }
 
 /** The prose from the last change the component emitted. */
 const emittedProse = (wrapper: ReturnType<typeof mount>, index = 0): Prose =>
   wrapper.emitted('proseChange')![index]![0] as Prose
+
+/**
+ * Puts the window selection at character `offset` of `wrapper`'s editor, the way a
+ * click or an arrow key would, and fires `selectionchange` the way the browser does.
+ *
+ * Only correct for text that renders as a single text node under the element, which
+ * every case here opens with -- `locate`'s own walk is what `MarkdownEditor` uses to
+ * cope with a split one.
+ */
+const placeCaret = (wrapper: ReturnType<typeof mount>, offset: number) => {
+  const element = wrapper.find('[contenteditable]').element
+  const range = document.createRange()
+  if (element.firstChild) {
+    range.setStart(element.firstChild, offset)
+  } else {
+    range.setStart(element, 0)
+  }
+  range.collapse(true)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+  document.dispatchEvent(new Event('selectionchange'))
+}
 
 describe('MarkdownEditor.vue', () => {
   it('is a contenteditable and not a textarea', () => {
@@ -258,6 +298,74 @@ describe('MarkdownEditor.vue', () => {
     })
   })
 
+  describe('the caret', () => {
+    // Selection only behaves like a browser's in jsdom once the element is actually
+    // in the document -- a mount left detached (the default) answers an empty
+    // selection for everything, so these all mount with `attachTo`.
+
+    it('is null before any selection has ever landed here', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('hello world') },
+        attachTo: document.body,
+      })
+      expect(wrapper.vm.getCaretOffset()).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('tracks a selection change to a character offset', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('hello world') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 5)
+      expect(wrapper.vm.getCaretOffset()).toBe(5)
+      wrapper.unmount()
+    })
+
+    it('survives the selection moving elsewhere, rather than resetting to null', () => {
+      // Clicking the Generate button moves focus out of the editor; the caret
+      // reported for the generation that follows has to be the one from before that.
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('hello world') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 5)
+
+      const outside = document.createElement('input')
+      document.body.appendChild(outside)
+      outside.focus()
+      document.dispatchEvent(new Event('selectionchange'))
+
+      expect(wrapper.vm.getCaretOffset()).toBe(5)
+      outside.remove()
+      wrapper.unmount()
+    })
+
+    it('updates after typing, to just past what was typed', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('Once.') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 5)
+      type(wrapper, 'Once. Twice.')
+      expect(wrapper.vm.getCaretOffset()).toBe('Once. Twice.'.length)
+      wrapper.unmount()
+    })
+
+    it('resets to null when a different file opens', async () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('hello world') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 5)
+      expect(wrapper.vm.getCaretOffset()).toBe(5)
+
+      await wrapper.setProps({ prose: plain('a different file') })
+      expect(wrapper.vm.getCaretOffset()).toBeNull()
+      wrapper.unmount()
+    })
+  })
+
   describe('a generated continuation', () => {
     // `document.execCommand` is absent in jsdom, so these exercise the written-directly
     // fallback. What cannot be checked here is the thing the command exists for -- that the
@@ -313,6 +421,59 @@ describe('MarkdownEditor.vue', () => {
       const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
       wrapper.vm.appendGenerated('')
       expect(wrapper.emitted('proseChange')).toBeUndefined()
+    })
+
+    it('inserts at the caret rather than always at the end', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('One. Three.') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 'One.'.length)
+      wrapper.vm.appendGenerated(' Two.')
+
+      const answered = emittedProse(wrapper)
+      expect(answered.text).toBe('One. Two. Three.')
+      wrapper.unmount()
+    })
+
+    it('marks only the inserted span as generated, wherever it landed', () => {
+      // No character of the insertion shares a position with a character already
+      // adjacent to it, so the diff has only one place it could possibly read this as
+      // an insertion -- unlike " Two." next to "Three.", which also shares a "T".
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('XXXX.ZZZZ.') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 'XXXX.'.length)
+      wrapper.vm.appendGenerated(' YYYY.')
+
+      const answered = emittedProse(wrapper)
+      // "XXXX." is the writer's, " YYYY." is the model's, "ZZZZ." is the writer's.
+      expect(answered.text).toBe('XXXX. YYYY.ZZZZ.')
+      expect(answered.prov.slice(0, 5)).toEqual(new Array(5).fill('user'))
+      expect(answered.prov.slice(5, 11)).toEqual(new Array(6).fill('gen'))
+      expect(answered.prov.slice(11)).toEqual(new Array(5).fill('user'))
+      wrapper.unmount()
+    })
+
+    it('falls back to the end with no selection recorded, as a direct append did', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('Once.') } })
+      wrapper.vm.appendGenerated(' Twice.')
+      expect(emittedProse(wrapper).text).toBe('Once. Twice.')
+    })
+
+    it('continues a later chunk from where the previous one finished', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('One. Three.') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 'One.'.length)
+      wrapper.vm.appendGenerated(' Two')
+      wrapper.vm.appendGenerated('.')
+
+      const answered = emittedProse(wrapper, 1)
+      expect(answered.text).toBe('One. Two. Three.')
+      wrapper.unmount()
     })
   })
 })

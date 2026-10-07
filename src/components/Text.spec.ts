@@ -10,6 +10,7 @@ import { llmService } from '../services/llm'
 import * as sharedFiles from '../services/sharedFiles'
 import * as sharedModel from '../services/sharedModel'
 import * as sharedGit from '../services/sharedGit'
+import * as sharedSettings from '../services/sharedSettings'
 
 // Mock services. NotFoundError is the real class: Text.vue branches on it with
 // instanceof, so a stand-in would not be recognised.
@@ -30,7 +31,8 @@ vi.mock('../services/filesManager', async () => {
 
 vi.mock('../services/llm', () => ({
   llmService: {
-    generate: vi.fn()
+    generate: vi.fn(),
+    getDefaults: vi.fn()
   }
 }))
 
@@ -87,6 +89,19 @@ describe('Text.vue', () => {
       gitStatus: ref(null),
       refresh: vi.fn().mockResolvedValue(undefined),
       setStatus: vi.fn()
+    })
+    vi.spyOn(sharedSettings, 'useSharedSettings').mockReturnValue({
+      temperature: ref(1.0),
+      promptBudget: ref(10000),
+      prefixShare: ref(0.75),
+      numCtx: ref(null),
+      loaded: ref(true),
+      ensureLoaded: vi.fn().mockResolvedValue(undefined),
+      setTemperature: vi.fn(),
+      setPromptBudget: vi.fn(),
+      setPrefixShare: vi.fn(),
+      setNumCtx: vi.fn(),
+      reset: vi.fn()
     })
     
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'test.ink' })
@@ -505,10 +520,19 @@ describe('Text.vue', () => {
       OPEN.id,
       'llama3',
       expect.any(Function),
-      // The mocked model has no protocol, so this is left for the server's own
-      // default rather than a value it would ignore.
-      undefined,
-      expect.any(AbortSignal)
+      {
+        // The mocked model has no protocol, so this is left for the server's own
+        // default rather than a value it would ignore.
+        think: undefined,
+        signal: expect.any(AbortSignal),
+        // No selection has ever landed in this test's editor, so there is no caret
+        // to report -- the server reads that as "continue at the end".
+        cursor: undefined,
+        temperature: 1.0,
+        promptBudget: 10000,
+        prefixShare: 0.75,
+        numCtx: undefined,
+      }
     )
 
     const vm = wrapper.vm as any
@@ -537,8 +561,15 @@ describe('Text.vue', () => {
       OPEN.id,
       'llama3',
       expect.any(Function),
-      true,
-      expect.any(AbortSignal)
+      {
+        think: true,
+        signal: expect.any(AbortSignal),
+        cursor: undefined,
+        temperature: 1.0,
+        promptBudget: 10000,
+        prefixShare: 0.75,
+        numCtx: undefined,
+      }
     )
   })
 
@@ -560,9 +591,61 @@ describe('Text.vue', () => {
       OPEN.id,
       'llama3',
       expect.any(Function),
-      undefined,
-      expect.any(AbortSignal)
+      {
+        think: undefined,
+        signal: expect.any(AbortSignal),
+        cursor: undefined,
+        temperature: 1.0,
+        promptBudget: 10000,
+        prefixShare: 0.75,
+        numCtx: undefined,
+      }
     )
+  })
+
+  it('reports the caret as a paragraph and an offset within it', async () => {
+    // Selection only behaves like a browser's once the element is actually in the
+    // document, which `mountWithFile` does not attach -- this test mounts for itself.
+    const wrapper = mount(Text, {
+      global: { stubs: { teleport: true } },
+      attachTo: document.body
+    })
+    selectedFile.value = OPEN
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+    vi.mocked(filesManagerService.putDocument).mockClear()
+    vi.mocked(llmService.generate).mockResolvedValue(undefined)
+
+    const editorElement = wrapper.find('[contenteditable]').element
+    const range = document.createRange()
+    range.setStart(editorElement.firstChild!, 'Initial'.length)
+    range.collapse(true)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+
+    // "Initial content" is one paragraph, so the caret after "Initial" is simply
+    // that offset within paragraph 0.
+    expect(llmService.generate).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
+      'llama3',
+      expect.any(Function),
+      {
+        think: undefined,
+        signal: expect.any(AbortSignal),
+        cursor: { para: 0, offset: 'Initial'.length },
+        temperature: 1.0,
+        promptBudget: 10000,
+        prefixShare: 0.75,
+        numCtx: undefined,
+      }
+    )
+    wrapper.unmount()
   })
 
   it('offers Stop while generating and aborts when it is clicked', async () => {
@@ -571,11 +654,11 @@ describe('Text.vue', () => {
     let captured: AbortSignal | undefined
     let finish: () => void = () => {}
     vi.mocked(llmService.generate).mockImplementation(
-      (_space, _id, _model, _onDelta, _think, signal) => {
-        captured = signal
+      (_space, _id, _model, _onDelta, options) => {
+        captured = options?.signal
         return new Promise<void>((resolve) => {
           finish = resolve
-          signal?.addEventListener('abort', () => resolve())
+          options?.signal?.addEventListener('abort', () => resolve())
         })
       }
     )
@@ -773,6 +856,19 @@ describe('Text.vue across the two spaces', () => {
       gitStatus: ref(null),
       refresh: vi.fn().mockResolvedValue(undefined),
       setStatus: vi.fn()
+    })
+    vi.spyOn(sharedSettings, 'useSharedSettings').mockReturnValue({
+      temperature: ref(1.0),
+      promptBudget: ref(10000),
+      prefixShare: ref(0.75),
+      numCtx: ref(null),
+      loaded: ref(true),
+      ensureLoaded: vi.fn().mockResolvedValue(undefined),
+      setTemperature: vi.fn(),
+      setPromptBudget: vi.fn(),
+      setPrefixShare: vi.fn(),
+      setNumCtx: vi.fn(),
+      reset: vi.fn()
     })
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'scratch' })
     vi.mocked(filesManagerService.getDocument).mockResolvedValue({

@@ -1,5 +1,6 @@
 import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
+import type { Cursor } from './cursor';
 import type { Space } from './spaces';
 
 /** One event from the generation stream. */
@@ -7,6 +8,36 @@ type GenerationEvent = { delta?: string; error?: string }
 
 /** Called with each piece of text as it arrives. */
 export type OnDelta = (delta: string) => void
+
+/**
+ * Everything about one generation beyond the file and the model, each overriding the
+ * server's own default (`GET /api/llm/defaults`, `sharedSettings.ts`) for this
+ * request alone. Bundled into one object rather than a growing list of positional
+ * parameters -- `GenerateRequest` on the API gained four of these alongside the
+ * caret, and a sixth positional boolean-or-object parameter is where that stops
+ * being readable at the call site.
+ */
+export interface GenerateOptions {
+    /** Overrides the server's default. Omit (or pass `undefined`) to leave that
+     *  default in place -- the right choice for a model that cannot honour it at
+     *  all, rather than sending a value that model would simply ignore. */
+    think?: boolean
+    /** Where the caret is, so the server continues there instead of at the end of
+     *  the file (inkspire-api#14). Omit for the end -- today's only behaviour, and
+     *  what an absent caret still means. */
+    cursor?: Cursor
+    /** Sampling temperature, overriding `INKSPIRE_LLM_TEMPERATURE`. */
+    temperature?: number
+    /** Characters of prose kept in the prompt, overriding `INKSPIRE_LLM_PROMPT_BUDGET`. */
+    promptBudget?: number
+    /** How the budget splits between the prefix and the suffix once there is a
+     *  caret, overriding `INKSPIRE_LLM_PREFIX_SHARE`. Unused for a continuation. */
+    prefixShare?: number
+    /** The context window allocated on the ollama path, overriding `INKSPIRE_LLM_NUM_CTX`. */
+    numCtx?: number
+    /** Aborts the generation when triggered. */
+    signal?: AbortSignal
+}
 
 /** Text generation against the API's LLM proxy. */
 export const llmService = {
@@ -20,8 +51,9 @@ export const llmService = {
      * that is not there yet.
      *
      * The response is a stream, so nothing is buffered until the end: text appears
-     * while the model is still writing. Pass `signal` to stop a continuation part way
-     * through — the API closes its request to the provider when the client goes away.
+     * while the model is still writing. Pass `options.signal` to stop a continuation
+     * part way through — the API closes its request to the provider when the client
+     * goes away.
      *
      * Nothing is saved by the API. The caller owns the text and must save it.
      *
@@ -29,24 +61,29 @@ export const llmService = {
      * @param id The file to continue.
      * @param model Name of the model to generate with, as listed by the API.
      * @param onDelta Receives each chunk of generated text in order.
-     * @param think Overrides the server's default for this request alone. Omit (or
-     *   pass `undefined`) to leave that default in place -- the right choice for a
-     *   model that cannot honour it at all, rather than sending a value that is
-     *   simply ignored.
-     * @param signal Aborts the generation when triggered.
+     * @param options Everything else about this one generation; see `GenerateOptions`.
      */
     async generate(
         space: Space,
         id: string,
         model: string,
         onDelta: OnDelta,
-        think?: boolean,
-        signal?: AbortSignal,
+        options: GenerateOptions = {},
     ): Promise<void> {
+        const { think, cursor, temperature, promptBudget, prefixShare, numCtx, signal } = options
         const response = await apiFetch(`${API_URL}/${space}/file/${id}/generate`, {
             method: "POST",
             headers: jsonHeaders(),
-            body: JSON.stringify({ model, think }),
+            body: JSON.stringify({
+                model,
+                think,
+                cursor_para: cursor?.para,
+                cursor_offset: cursor?.offset,
+                temperature,
+                prompt_budget: promptBudget,
+                prefix_share: prefixShare,
+                num_ctx: numCtx,
+            }),
             signal,
         });
 
@@ -88,7 +125,30 @@ export const llmService = {
             reader.releaseLock();
         }
     },
+
+    /**
+     * The server's own generation settings -- what a request gets when it overrides
+     * none of them, and what a settings panel initialises against and resets to.
+     */
+    async getDefaults(): Promise<GenerationDefaults> {
+        const response = await apiFetch(`${API_URL}/llm/defaults`, {
+            headers: jsonHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error(await errorMessage(response));
+        }
+        return response.json();
+    },
 };
+
+/** `GET /api/llm/defaults`: the server's configuration, in its own field names. */
+export interface GenerationDefaults {
+    temperature: number
+    prompt_budget: number
+    prefix_share: number
+    num_ctx: number | null
+    think: boolean | null
+}
 
 /** The payload of one server-sent event, or null for the terminator and anything unparsable. */
 function parse(event: string): GenerationEvent | null {

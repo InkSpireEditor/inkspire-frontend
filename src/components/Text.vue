@@ -8,17 +8,26 @@ import {
   type ProvenanceMetadata,
 } from '../services/provenance'
 import { llmService } from '../services/llm'
+import { cursorFromOffset, type Cursor } from '../services/cursor'
 import { renderMarkdown } from '../services/markdown'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
 import { useSharedGit } from '../services/sharedGit'
+import { useSharedSettings } from '../services/sharedSettings'
 import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
+import SidePanel from './SidePanel.vue'
+import GenerationSettings from './GenerationSettings.vue'
 
 const { selectedFile, clearSelectedFile } = useSharedFiles()
 const { selectedModelName, selectedModelProtocol, thinkEnabled } = useSharedModel()
 const { refresh: refreshGitStatus } = useSharedGit()
+const { temperature, promptBudget, prefixShare, numCtx } = useSharedSettings()
+
+/** Whether the generation settings panel is slid open. Local to this component --
+ *  it is a view preference, not a setting a generation needs to know about. */
+const settingsOpen = ref(false)
 
 /** How long to wait after the last keystroke before writing it back to the API, in ms. */
 const AUTO_SAVE_DEBOUNCE_MS = 2000
@@ -270,6 +279,14 @@ const handleGenerate = async () => {
     await nextTick()
   }
 
+  // Where the caret is right now, converted to what the API wants -- a paragraph and
+  // an offset within it, not one flat offset into the whole text. No selection ever
+  // having landed in the editor (freshly left Read mode, say) means no caret at all,
+  // which the server reads as "continue at the end", same as before there was one.
+  const caretOffset = editor.value?.getCaretOffset() ?? null
+  const cursor: Cursor | undefined =
+    caretOffset !== null ? cursorFromOffset(text.value, caretOffset) : undefined
+
   // Any debounce left over from typing just before Generate was clicked would
   // otherwise fire mid-stream -- the save below covers it, and covers it before the
   // request is sent rather than after.
@@ -297,10 +314,17 @@ const handleGenerate = async () => {
         editor.value?.appendGenerated(delta)
         isDirty.value = true
       },
-      // Only ollama honours this; anything else is left at the server's default
-      // rather than sending a value that model would simply ignore.
-      selectedModelProtocol.value === 'ollama' ? thinkEnabled.value : undefined,
-      generation.signal
+      {
+        // Only ollama honours this; anything else is left at the server's default
+        // rather than sending a value that model would simply ignore.
+        think: selectedModelProtocol.value === 'ollama' ? thinkEnabled.value : undefined,
+        signal: generation.signal,
+        cursor,
+        temperature: temperature.value,
+        promptBudget: promptBudget.value,
+        prefixShare: prefixShare.value,
+        numCtx: numCtx.value ?? undefined,
+      }
     )
   } catch (e) {
     // Stopping on purpose is not a failure and needs no message.
@@ -383,22 +407,31 @@ onUnmounted(() => {
       <p v-else class="file-title empty">No file selected</p>
     </div>
 
-    <div class="editor-container">
-      <div v-if="!currentFile" class="no-file-pane">Select a file to start writing.</div>
-      <MarkdownEditor v-else-if="!readMode" ref="editor" :prose="prose" @prose-change="handleProseChange" />
-      <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
-      <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
+    <div class="editor-row">
+      <div class="editor-container">
+        <div v-if="!currentFile" class="no-file-pane">Select a file to start writing.</div>
+        <MarkdownEditor v-else-if="!readMode" ref="editor" :prose="prose" @prose-change="handleProseChange" />
+        <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
+        <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
 
-      <div class="actions">
-        <button @click="readMode = !readMode" :disabled="!currentFile">
-          {{ readMode ? 'Edit' : 'Read' }}
-        </button>
-        <button @click="save" :disabled="!currentFile">Save</button>
-        <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
-        <button class="primary" @click="handleGenerate" :disabled="!currentFile || isGenerating" :class="{ generating: isGenerating }">
-          {{ isGenerating ? 'Generating…' : 'Generate' }}
-        </button>
+        <div class="actions">
+          <button @click="readMode = !readMode" :disabled="!currentFile">
+            {{ readMode ? 'Edit' : 'Read' }}
+          </button>
+          <button @click="save" :disabled="!currentFile">Save</button>
+          <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
+          <button class="primary" @click="handleGenerate" :disabled="!currentFile || isGenerating" :class="{ generating: isGenerating }">
+            {{ isGenerating ? 'Generating…' : 'Generate' }}
+          </button>
+          <button @click="settingsOpen = !settingsOpen" :class="{ active: settingsOpen }">
+            Settings
+          </button>
+        </div>
       </div>
+
+      <SidePanel title="Generation" :open="settingsOpen" @close="settingsOpen = false">
+        <GenerationSettings />
+      </SidePanel>
     </div>
 
     <!-- Error Modal (Reusing Unified Modal) -->
@@ -443,6 +476,17 @@ onUnmounted(() => {
   font-weight: var(--font-weight-medium);
   color: var(--color-text);
   opacity: 0.45;
+}
+
+/* Holds the editor and the settings panel side by side. `overflow: hidden` keeps the
+   panel's own slide (a negative margin, see SidePanel.vue) from ever producing a
+   horizontal scrollbar on this row while it is collapsed. */
+.editor-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  gap: 1rem;
 }
 
 .editor-container {
@@ -542,5 +586,10 @@ button:disabled {
 button.generating {
   animation: pulse-border 1.2s ease-in-out infinite;
   cursor: wait;
+}
+
+button.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 </style>
