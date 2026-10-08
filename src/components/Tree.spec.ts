@@ -12,9 +12,10 @@ import { resetSharedGit } from '../services/sharedGit'
 // Tree and TreeItem both reach for the router unconditionally; without this,
 // mounting a real tree crashes the moment a story row is clicked.
 const mockReplace = vi.fn().mockResolvedValue(undefined)
+const mockPush = vi.fn().mockResolvedValue(undefined)
 const mockRoute = { name: 'home', params: {} as Record<string, string> }
 vi.mock('vue-router', () => ({
-    useRouter: () => ({ push: vi.fn().mockResolvedValue(undefined), replace: mockReplace }),
+    useRouter: () => ({ push: mockPush, replace: mockReplace }),
     useRoute: () => mockRoute
 }))
 
@@ -636,6 +637,62 @@ describe('Tree.vue', () => {
                 name: 'write',
                 params: { id: 'story00000000000', fileId: 'new0000000000000' },
             })
+            mockRoute.name = 'home'
+            mockRoute.params = {}
+        })
+    })
+
+    describe('deleting the file open in the editor', () => {
+        /** Mounts a tree with one story holding one chapter, and opens Delete on it. */
+        async function mountWithChapterAndOpenDelete() {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{
+                    id: 'story00000000000', name: 'Example Story', summary: '',
+                    files: [{ id: 'chapter-1', name: 'Chapter One', status: '' }]
+                }],
+                files: []
+            })
+            const wrapper = mountTree()
+            await flushPromises()
+
+            const story = wrapper.findAllComponents(TreeItem)
+                .find(item => item.props('node').name === 'Example Story')
+            await story?.find('.toggle-icon').trigger('click')
+            const chapter = wrapper.findAllComponents(TreeItem)
+                .find(item => item.props('node').name === 'Chapter One')
+            await chapter?.find('.node-actions-trigger').trigger('click')
+            const deleteBtn = chapter?.findAll('.context-menu div').find(d => d.text() === 'Delete')
+            await deleteBtn?.trigger('click')
+            return wrapper
+        }
+
+        it('leaves the write route for the story dashboard when the deleted chapter is open', async () => {
+            mockRoute.name = 'write'
+            mockRoute.params = { id: 'story00000000000', fileId: 'chapter-1' }
+            const wrapper = await mountWithChapterAndOpenDelete()
+
+            const confirmModal = wrapper.findAllComponents(Modal).find(m => m.props('title') === 'Confirm Action')
+            await confirmModal?.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(mockPush).toHaveBeenCalledWith({
+                name: 'dashboard',
+                params: { id: 'story00000000000' },
+            })
+            mockRoute.name = 'home'
+            mockRoute.params = {}
+        })
+
+        it('does not navigate when the deleted chapter is not the one open', async () => {
+            mockRoute.name = 'write'
+            mockRoute.params = { id: 'story00000000000', fileId: 'some-other-chapter' }
+            const wrapper = await mountWithChapterAndOpenDelete()
+
+            const confirmModal = wrapper.findAllComponents(Modal).find(m => m.props('title') === 'Confirm Action')
+            await confirmModal?.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(mockPush).not.toHaveBeenCalled()
             mockRoute.name = 'home'
             mockRoute.params = {}
         })

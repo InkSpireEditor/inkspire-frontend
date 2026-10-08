@@ -354,6 +354,13 @@ const confirmDelete = async () => {
                 clearSelectedFile()
                 selectedNodeId.value = null
             }
+            // A chapter deleted while its own write route is open leaves that route
+            // pointing at an id the API no longer has -- clearing the selection above
+            // does not move the editor off that URL, so this does, the same way
+            // renameFile above follows a rename to its new id instead of away.
+            if (route.name === 'write' && route.params.fileId === deletedNode.id) {
+                router.push({ name: 'dashboard', params: { id: route.params.id } })
+            }
             await filesManagerService.delFile(space, deletedNode.id)
         }
         showConfirm.value = false
