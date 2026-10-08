@@ -8,7 +8,7 @@ import {
   type ProvenanceMetadata,
 } from '../services/provenance'
 import { llmService } from '../services/llm'
-import { cursorFromOffset, type Cursor } from '../services/cursor'
+import { cursorFromOffset, rangeFromOffsets, type Cursor, type CursorRange } from '../services/cursor'
 import { renderMarkdown } from '../services/markdown'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
@@ -23,11 +23,19 @@ import GenerationSettings from './GenerationSettings.vue'
 const { selectedFile, clearSelectedFile } = useSharedFiles()
 const { selectedModelName, selectedModelProtocol, thinkEnabled } = useSharedModel()
 const { refresh: refreshGitStatus } = useSharedGit()
-const { temperature, promptBudget, prefixShare, numCtx } = useSharedSettings()
+const { temperature, promptBudget, prefixShare, numCtx, sendSelection } = useSharedSettings()
 
 /** Whether the generation settings panel is slid open. Local to this component --
  *  it is a view preference, not a setting a generation needs to know about. */
 const settingsOpen = ref(false)
+
+/**
+ * Whether a non-collapsed selection is live in the editor right now, bound from its
+ * `selectionChange` emit. Drives the Generate/Rewrite label (frontend#25): a rewrite
+ * destroys the writer's own prose, so it must not happen because a selection was
+ * left over from something else -- the label is the cheapest honest warning.
+ */
+const hasSelection = ref(false)
 
 /** How long to wait after the last keystroke before writing it back to the API, in ms. */
 const AUTO_SAVE_DEBOUNCE_MS = 2000
@@ -279,13 +287,21 @@ const handleGenerate = async () => {
     await nextTick()
   }
 
-  // Where the caret is right now, converted to what the API wants -- a paragraph and
-  // an offset within it, not one flat offset into the whole text. No selection ever
-  // having landed in the editor (freshly left Read mode, say) means no caret at all,
-  // which the server reads as "continue at the end", same as before there was one.
-  const caretOffset = editor.value?.getCaretOffset() ?? null
-  const cursor: Cursor | undefined =
-    caretOffset !== null ? cursorFromOffset(text.value, caretOffset) : undefined
+  // Where the caret or the selection is right now, converted to what the API wants --
+  // a paragraph and an offset within it (or two, for a real selection), not a flat
+  // offset into the whole text. No selection ever having landed in the editor
+  // (freshly left Read mode, say) means neither at all, which the server reads as
+  // "continue at the end", same as before there was one.
+  const offsets = editor.value?.getSelectionOffsets() ?? null
+  let cursor: Cursor | undefined
+  let selection: CursorRange | undefined
+  if (offsets !== null) {
+    if (offsets.start === offsets.end) {
+      cursor = cursorFromOffset(text.value, offsets.start)
+    } else {
+      selection = rangeFromOffsets(text.value, offsets.start, offsets.end)
+    }
+  }
 
   // Any debounce left over from typing just before Generate was clicked would
   // otherwise fire mid-stream -- the save below covers it, and covers it before the
@@ -320,6 +336,11 @@ const handleGenerate = async () => {
         think: selectedModelProtocol.value === 'ollama' ? thinkEnabled.value : undefined,
         signal: generation.signal,
         cursor,
+        selection,
+        // Sent unconditionally: the API ignores it for a continuation or a
+        // fill-in-the-middle, and deciding not to send it for one here would
+        // duplicate that rule in the client.
+        sendSelection: sendSelection.value,
         temperature: temperature.value,
         promptBudget: promptBudget.value,
         prefixShare: prefixShare.value,
@@ -342,6 +363,19 @@ const handleGenerate = async () => {
 /** Stops a generation in progress, keeping whatever has arrived so far. */
 const handleStopGenerating = () => {
   generation?.abort()
+}
+
+/**
+ * Toggles Read mode, clearing `hasSelection` on the way in.
+ *
+ * The editor unmounts in Read mode (replaced by the rendered-prose div below), so no
+ * `selectionChange` ever fires to say its selection stopped mattering -- without
+ * this, the button would keep reading "Rewrite" over a pane with no selection at
+ * all, from whatever was selected before Read was clicked.
+ */
+const toggleReadMode = () => {
+  if (!readMode.value) hasSelection.value = false
+  readMode.value = !readMode.value
 }
 
 const displayError = (msg: string) => {
@@ -410,18 +444,24 @@ onUnmounted(() => {
     <div class="editor-row">
       <div class="editor-container">
         <div v-if="!currentFile" class="no-file-pane">Select a file to start writing.</div>
-        <MarkdownEditor v-else-if="!readMode" ref="editor" :prose="prose" @prose-change="handleProseChange" />
+        <MarkdownEditor
+          v-else-if="!readMode"
+          ref="editor"
+          :prose="prose"
+          @prose-change="handleProseChange"
+          @selection-change="(live) => (hasSelection = live)"
+        />
         <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
         <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
 
         <div class="actions">
-          <button @click="readMode = !readMode" :disabled="!currentFile">
+          <button @click="toggleReadMode" :disabled="!currentFile">
             {{ readMode ? 'Edit' : 'Read' }}
           </button>
           <button @click="save" :disabled="!currentFile">Save</button>
           <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
           <button class="primary" @click="handleGenerate" :disabled="!currentFile || isGenerating" :class="{ generating: isGenerating }">
-            {{ isGenerating ? 'Generating…' : 'Generate' }}
+            {{ isGenerating ? 'Generating…' : hasSelection ? 'Rewrite' : 'Generate' }}
           </button>
           <button @click="settingsOpen = !settingsOpen" :class="{ active: settingsOpen }">
             Settings

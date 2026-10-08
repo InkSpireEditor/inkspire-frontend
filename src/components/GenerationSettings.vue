@@ -3,25 +3,31 @@
  * The generation settings panel's content: sliders and a number input over the
  * writer's own overrides (`sharedSettings.ts`), hosted in `Text.vue`'s `SidePanel`.
  *
- * `thinkEnabled` is deliberately not here -- it stays in `ModelSelector.vue`, beside
- * the model it depends on (only `ollama` can honour it), rather than moving into a
- * panel that would then need to know the selected model's protocol too.
+ * The thinking checkbox lives here too, from `sharedModel.ts` rather than
+ * `sharedSettings.ts` -- it is a per-generation choice tied to the selected model's
+ * protocol (only `ollama` can honour it), not one of the writer's own overrides, so
+ * `selectedModelProtocol` decides whether it renders at all.
  */
 import { onMounted } from 'vue'
 import { useSharedSettings } from '../services/sharedSettings'
+import { useSharedModel } from '../services/sharedModel'
 
 const {
   temperature,
   promptBudget,
   prefixShare,
   numCtx,
+  sendSelection,
   ensureLoaded,
   setTemperature,
   setPromptBudget,
   setPrefixShare,
   setNumCtx,
+  setSendSelection,
   reset,
 } = useSharedSettings()
+
+const { selectedModelProtocol, thinkEnabled, setThinkEnabled } = useSharedModel()
 
 onMounted(() => {
   ensureLoaded()
@@ -108,6 +114,30 @@ const onNumCtxInput = (raw: string) => {
       </span>
     </label>
 
+    <label class="field field-checkbox">
+      <input
+        type="checkbox"
+        :checked="sendSelection"
+        @change="setSendSelection(($event.target as HTMLInputElement).checked)"
+      />
+      <span class="field-label">Show the model the passage being rewritten</span>
+      <span class="field-hint">
+        Only matters for a rewrite. Off asks the model to replace text it cannot
+        see, which asks for the right length but not the right content.
+      </span>
+    </label>
+
+    <!-- Only ollama honours `think` -- the chat-completions path ignores it, so a
+         checkbox there would appear to work and silently do nothing. -->
+    <label v-if="selectedModelProtocol === 'ollama'" class="think-toggle">
+      <input
+        type="checkbox"
+        :checked="thinkEnabled"
+        @change="setThinkEnabled(($event.target as HTMLInputElement).checked)"
+      />
+      Think before writing
+    </label>
+
     <button type="button" class="reset" @click="reset">Reset to server defaults</button>
   </div>
 </template>
@@ -142,9 +172,34 @@ const onNumCtxInput = (raw: string) => {
   opacity: 0.7;
 }
 
+.field-checkbox {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+}
+
+.field-checkbox input[type='checkbox'] {
+  grid-row: 1;
+  margin-top: 2px;
+}
+
+.field-checkbox .field-hint {
+  grid-column: 2;
+}
+
 .field-warning {
   font-size: 0.75rem;
   color: var(--color-danger);
+}
+
+.think-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  cursor: pointer;
 }
 
 input[type='range'] {

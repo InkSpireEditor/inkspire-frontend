@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import GenerationSettings from './GenerationSettings.vue'
 import { llmService } from '../services/llm'
 import { resetSharedSettings } from '../services/sharedSettings'
+import { useSharedModel, resetSharedModel } from '../services/sharedModel'
 
 vi.mock('../services/llm', () => ({
   llmService: {
@@ -16,6 +17,7 @@ const DEFAULTS = {
   prefix_share: 0.75,
   num_ctx: null,
   think: null,
+  send_selection: true,
 }
 
 describe('GenerationSettings.vue', () => {
@@ -24,11 +26,13 @@ describe('GenerationSettings.vue', () => {
     vi.mocked(llmService.getDefaults).mockResolvedValue({ ...DEFAULTS })
     localStorage.clear()
     resetSharedSettings()
+    resetSharedModel()
   })
 
   afterEach(() => {
     localStorage.clear()
     resetSharedSettings()
+    resetSharedModel()
   })
 
   it('initialises its sliders from the defaults route', async () => {
@@ -95,6 +99,7 @@ describe('GenerationSettings.vue', () => {
       prefix_share: 0.6,
       num_ctx: null,
       think: null,
+      send_selection: true,
     })
     const wrapper = mount(GenerationSettings)
     await flushPromises()
@@ -106,5 +111,74 @@ describe('GenerationSettings.vue', () => {
     await flushPromises()
 
     expect((ranges[0]!.element as HTMLInputElement).value).toBe('0.8')
+  })
+
+  it('the send-selection checkbox reflects the loaded setting', async () => {
+    vi.mocked(llmService.getDefaults).mockResolvedValue({ ...DEFAULTS, send_selection: false })
+    const wrapper = mount(GenerationSettings)
+    await flushPromises()
+
+    const checkbox = wrapper.find('input[type="checkbox"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('checking the send-selection box persists the change', async () => {
+    const wrapper = mount(GenerationSettings)
+    await flushPromises()
+
+    const checkbox = wrapper.find('input[type="checkbox"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    await checkbox.setValue(false)
+
+    const stored = JSON.parse(localStorage.getItem('inkspire.generationSettings')!)
+    expect(stored.sendSelection).toBe(false)
+  })
+
+  it('reset restores the send-selection checkbox too', async () => {
+    const wrapper = mount(GenerationSettings)
+    await flushPromises()
+
+    const checkbox = wrapper.find('input[type="checkbox"]')
+    await checkbox.setValue(false)
+
+    await wrapper.find('button.reset').trigger('click')
+    await flushPromises()
+
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+  })
+
+  describe('the thinking checkbox', () => {
+    it('is shown for an ollama model and hidden for one that cannot honour it', async () => {
+      const { setSelectedModel } = useSharedModel()
+      setSelectedModel('Llama3', 'ollama')
+      const wrapper = mount(GenerationSettings)
+      await flushPromises()
+      expect(wrapper.find('.think-toggle').exists()).toBe(true)
+
+      setSelectedModel('gpt-4', 'openai')
+      await flushPromises()
+      expect(wrapper.find('.think-toggle').exists()).toBe(false)
+    })
+
+    it('is absent with no model selected yet', async () => {
+      const wrapper = mount(GenerationSettings)
+      await flushPromises()
+      expect(wrapper.find('.think-toggle').exists()).toBe(false)
+    })
+
+    it('updates the shared setting when toggled', async () => {
+      const { setSelectedModel } = useSharedModel()
+      setSelectedModel('Llama3', 'ollama')
+      const wrapper = mount(GenerationSettings)
+      await flushPromises()
+
+      const checkbox = wrapper.find('.think-toggle input')
+      expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+
+      await checkbox.setValue(true)
+
+      const vm = wrapper.vm as any
+      expect(vm.thinkEnabled).toBe(true)
+    })
   })
 })

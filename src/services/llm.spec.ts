@@ -26,6 +26,8 @@ const BARE_BODY = (model: string) =>
     think: undefined,
     cursor_para: undefined,
     cursor_offset: undefined,
+    cursor_end_para: undefined,
+    cursor_end_offset: undefined,
     temperature: undefined,
     prompt_budget: undefined,
     prefix_share: undefined,
@@ -169,6 +171,8 @@ describe('llmService', () => {
           think: false,
           cursor_para: undefined,
           cursor_offset: undefined,
+          cursor_end_para: undefined,
+          cursor_end_offset: undefined,
           temperature: undefined,
           prompt_budget: undefined,
           prefix_share: undefined,
@@ -211,6 +215,8 @@ describe('llmService', () => {
           think: undefined,
           cursor_para: 2,
           cursor_offset: 7,
+          cursor_end_para: undefined,
+          cursor_end_offset: undefined,
           temperature: undefined,
           prompt_budget: undefined,
           prefix_share: undefined,
@@ -238,10 +244,92 @@ describe('llmService', () => {
           think: undefined,
           cursor_para: undefined,
           cursor_offset: undefined,
+          cursor_end_para: undefined,
+          cursor_end_offset: undefined,
           temperature: 0.3,
           prompt_budget: 2000,
           prefix_share: 0.5,
           num_ctx: 8192,
+        }),
+      }),
+    )
+  })
+
+  it('sends a selection as cursor_para/offset plus cursor_end_para/offset', async () => {
+    fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
+
+    await llmService.generate('stories', 'f1', 'm', () => {}, {
+      selection: { start: { para: 1, offset: 0 }, end: { para: 1, offset: 5 } },
+    })
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_URL}/stories/file/f1/generate`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: 'm',
+          think: undefined,
+          cursor_para: 1,
+          cursor_offset: 0,
+          cursor_end_para: 1,
+          cursor_end_offset: 5,
+          temperature: undefined,
+          prompt_budget: undefined,
+          prefix_share: undefined,
+          num_ctx: undefined,
+        }),
+      }),
+    )
+  })
+
+  it('a caret alone still sends only the first pair, with no end', async () => {
+    fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
+
+    await llmService.generate('stories', 'f1', 'm', () => {}, {
+      cursor: { para: 2, offset: 7 },
+    })
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_URL}/stories/file/f1/generate`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: 'm',
+          think: undefined,
+          cursor_para: 2,
+          cursor_offset: 7,
+          cursor_end_para: undefined,
+          cursor_end_offset: undefined,
+          temperature: undefined,
+          prompt_budget: undefined,
+          prefix_share: undefined,
+          num_ctx: undefined,
+        }),
+      }),
+    )
+  })
+
+  it('sends send_selection under its own field name, for a rewrite', async () => {
+    fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
+
+    await llmService.generate('stories', 'f1', 'm', () => {}, {
+      selection: { start: { para: 1, offset: 0 }, end: { para: 1, offset: 5 } },
+      sendSelection: false,
+    })
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_URL}/stories/file/f1/generate`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: 'm',
+          think: undefined,
+          cursor_para: 1,
+          cursor_offset: 0,
+          cursor_end_para: 1,
+          cursor_end_offset: 5,
+          send_selection: false,
+          temperature: undefined,
+          prompt_budget: undefined,
+          prefix_share: undefined,
+          num_ctx: undefined,
         }),
       }),
     )
@@ -255,6 +343,7 @@ describe('llmService', () => {
         prefix_share: 0.75,
         num_ctx: null,
         think: null,
+        send_selection: true,
       }
       fetchSpy.mockResolvedValueOnce({
         ok: true,

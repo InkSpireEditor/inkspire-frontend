@@ -67,6 +67,25 @@ const placeCaret = (wrapper: ReturnType<typeof mount>, offset: number) => {
   document.dispatchEvent(new Event('selectionchange'))
 }
 
+/**
+ * The same, but a real (non-collapsed) selection from `start` to `end` -- only
+ * correct for a single text node, the same limitation `placeCaret` documents.
+ */
+const placeSelection = (wrapper: ReturnType<typeof mount>, start: number, end: number) => {
+  const element = wrapper.find('[contenteditable]').element
+  const range = document.createRange()
+  if (element.firstChild) {
+    range.setStart(element.firstChild, start)
+    range.setEnd(element.firstChild, end)
+  } else {
+    range.setStart(element, 0)
+  }
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+  document.dispatchEvent(new Event('selectionchange'))
+}
+
 describe('MarkdownEditor.vue', () => {
   it('is a contenteditable and not a textarea', () => {
     const wrapper = mount(MarkdownEditor, { props: { prose: plain('') } })
@@ -298,7 +317,7 @@ describe('MarkdownEditor.vue', () => {
     })
   })
 
-  describe('the caret', () => {
+  describe('the selection', () => {
     // Selection only behaves like a browser's in jsdom once the element is actually
     // in the document -- a mount left detached (the default) answers an empty
     // selection for everything, so these all mount with `attachTo`.
@@ -308,22 +327,55 @@ describe('MarkdownEditor.vue', () => {
         props: { prose: plain('hello world') },
         attachTo: document.body,
       })
-      expect(wrapper.vm.getCaretOffset()).toBeNull()
+      expect(wrapper.vm.getSelectionOffsets()).toBeNull()
       wrapper.unmount()
     })
 
-    it('tracks a selection change to a character offset', () => {
+    it('tracks a caret to a collapsed start/end pair', () => {
       const wrapper = mount(MarkdownEditor, {
         props: { prose: plain('hello world') },
         attachTo: document.body,
       })
       placeCaret(wrapper, 5)
-      expect(wrapper.vm.getCaretOffset()).toBe(5)
+      expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: 5, end: 5 })
+      wrapper.unmount()
+    })
+
+    it('tracks a real selection to its own start and end', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('hello world') },
+        attachTo: document.body,
+      })
+      placeSelection(wrapper, 2, 8)
+      expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: 2, end: 8 })
+      wrapper.unmount()
+    })
+
+    it('emits selectionChange(true) when a selection becomes live, and (false) when it collapses', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('hello world') },
+        attachTo: document.body,
+      })
+      placeSelection(wrapper, 2, 8)
+      placeCaret(wrapper, 5)
+
+      expect(wrapper.emitted('selectionChange')).toEqual([[true], [false]])
+      wrapper.unmount()
+    })
+
+    it('does not re-emit selectionChange while the selection stays (non-)collapsed', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('hello world') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 3)
+      placeCaret(wrapper, 5) // still collapsed -- a different caret, not a selection
+      expect(wrapper.emitted('selectionChange')).toBeUndefined()
       wrapper.unmount()
     })
 
     it('survives the selection moving elsewhere, rather than resetting to null', () => {
-      // Clicking the Generate button moves focus out of the editor; the caret
+      // Clicking the Generate button moves focus out of the editor; the selection
       // reported for the generation that follows has to be the one from before that.
       const wrapper = mount(MarkdownEditor, {
         props: { prose: plain('hello world') },
@@ -336,7 +388,7 @@ describe('MarkdownEditor.vue', () => {
       outside.focus()
       document.dispatchEvent(new Event('selectionchange'))
 
-      expect(wrapper.vm.getCaretOffset()).toBe(5)
+      expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: 5, end: 5 })
       outside.remove()
       wrapper.unmount()
     })
@@ -348,7 +400,10 @@ describe('MarkdownEditor.vue', () => {
       })
       placeCaret(wrapper, 5)
       type(wrapper, 'Once. Twice.')
-      expect(wrapper.vm.getCaretOffset()).toBe('Once. Twice.'.length)
+      expect(wrapper.vm.getSelectionOffsets()).toEqual({
+        start: 'Once. Twice.'.length,
+        end: 'Once. Twice.'.length,
+      })
       wrapper.unmount()
     })
 
@@ -358,10 +413,22 @@ describe('MarkdownEditor.vue', () => {
         attachTo: document.body,
       })
       placeCaret(wrapper, 5)
-      expect(wrapper.vm.getCaretOffset()).toBe(5)
+      expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: 5, end: 5 })
 
       await wrapper.setProps({ prose: plain('a different file') })
-      expect(wrapper.vm.getCaretOffset()).toBeNull()
+      expect(wrapper.vm.getSelectionOffsets()).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('emits selectionChange(false) when a live selection is closed by opening a different file', async () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('hello world') },
+        attachTo: document.body,
+      })
+      placeSelection(wrapper, 2, 8)
+
+      await wrapper.setProps({ prose: plain('a different file') })
+      expect(wrapper.emitted('selectionChange')).toEqual([[true], [false]])
       wrapper.unmount()
     })
   })
@@ -473,6 +540,54 @@ describe('MarkdownEditor.vue', () => {
 
       const answered = emittedProse(wrapper, 1)
       expect(answered.text).toBe('One. Two. Three.')
+      wrapper.unmount()
+    })
+
+    it('replaces a live selection rather than inserting beside it', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('XXXX.ZZZZ.ZZZZ.') },
+        attachTo: document.body,
+      })
+      // Selects "ZZZZ." (the first one) and rewrites it.
+      placeSelection(wrapper, 'XXXX.'.length, 'XXXX.ZZZZ.'.length)
+      wrapper.vm.appendGenerated(' YYYY.')
+
+      const answered = emittedProse(wrapper)
+      expect(answered.text).toBe('XXXX. YYYY.ZZZZ.')
+      wrapper.unmount()
+    })
+
+    it('marks only the replacement as generated, not what was kept either side', () => {
+      // No character at either boundary of the replaced span is shared with its
+      // replacement, so the diff has only one place it could read this as a
+      // replacement -- the same reasoning the caret-insertion test above gives for
+      // its own choice of letters.
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('AAAABBBBCCCC') },
+        attachTo: document.body,
+      })
+      placeSelection(wrapper, 'AAAA'.length, 'AAAABBBB'.length)
+      wrapper.vm.appendGenerated(' DDDD ')
+
+      const answered = emittedProse(wrapper)
+      expect(answered.text).toBe('AAAA DDDD CCCC')
+      expect(answered.prov.slice(0, 4)).toEqual(new Array(4).fill('user')) // "AAAA"
+      expect(answered.prov.slice(4, 10)).toEqual(new Array(6).fill('gen')) // " DDDD "
+      expect(answered.prov.slice(10)).toEqual(new Array(4).fill('user')) // "CCCC"
+      wrapper.unmount()
+    })
+
+    it('leaves the caret collapsed after replacing a selection, for a later chunk to continue from', () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('XXXX.ZZZZ.') },
+        attachTo: document.body,
+      })
+      placeSelection(wrapper, 'XXXX.'.length, 'XXXX.ZZZZ.'.length)
+      wrapper.vm.appendGenerated(' YYYY')
+      wrapper.vm.appendGenerated('.')
+
+      const answered = emittedProse(wrapper, 1)
+      expect(answered.text).toBe('XXXX. YYYY.')
       wrapper.unmount()
     })
   })

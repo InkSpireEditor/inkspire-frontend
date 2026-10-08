@@ -4,8 +4,7 @@ import { modelService, type Model } from '../services/model'
 import { useSharedModel } from '../services/sharedModel'
 import { isLoggedIn } from '../services/api'
 
-const { selectedModelName, selectedModelProtocol, thinkEnabled, setSelectedModel, setThinkEnabled } =
-  useSharedModel()
+const { selectedModelName, setSelectedModel } = useSharedModel()
 const models = ref<Model[]>([])
 const error = ref<string | null>(null)
 
@@ -50,16 +49,6 @@ onMounted(() => {
         {{ model.name }}
       </option>
     </select>
-    <!-- Only ollama honours `think` -- the chat-completions path ignores it, so a
-         checkbox there would appear to work and silently do nothing. -->
-    <label v-if="selectedModelProtocol === 'ollama'" class="think-toggle">
-      <input
-        type="checkbox"
-        :checked="thinkEnabled"
-        @change="setThinkEnabled(($event.target as HTMLInputElement).checked)"
-      />
-      Think before writing
-    </label>
   </div>
 </template>
 
@@ -104,15 +93,5 @@ select:focus {
   color: var(--color-danger);
   font-size: 0.8rem;
   margin-bottom: 0.5rem;
-}
-
-.think-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
-  font-size: 0.85rem;
-  color: var(--color-text);
-  cursor: pointer;
 }
 </style>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cursorFromOffset } from './cursor'
+import { cursorFromOffset, rangeFromOffsets } from './cursor'
 
 describe('cursorFromOffset', () => {
   const body = 'One.\n\nTwo.\n'
@@ -36,5 +36,40 @@ describe('cursorFromOffset', () => {
 
   it('resolves a negative offset the same as zero', () => {
     expect(cursorFromOffset(body, -5)).toEqual({ para: 0, offset: 0 })
+  })
+})
+
+describe('rangeFromOffsets', () => {
+  const body = 'One.\n\nTwo.\n\nThree.\n'
+
+  it('resolves both ends', () => {
+    expect(rangeFromOffsets(body, 6, 10)).toEqual({
+      start: { para: 1, offset: 0 },
+      end: { para: 1, offset: 4 },
+    })
+  })
+
+  it('normalises a pair dragged from its end back to its start', () => {
+    expect(rangeFromOffsets(body, 10, 6)).toEqual({
+      start: { para: 1, offset: 0 },
+      end: { para: 1, offset: 4 },
+    })
+  })
+
+  it('collapses equal offsets to one cursor used twice', () => {
+    const range = rangeFromOffsets(body, 2, 2)
+    expect(range.start).toEqual(range.end)
+    expect(range.start).toEqual({ para: 0, offset: 2 })
+  })
+
+  it('resolves a span sitting entirely inside a separator, each end on its own', () => {
+    // Offsets 4 and 6 sit either side of the blank line between "One." and "Two.".
+    // Nothing collapses here -- that degeneration (a whitespace-only selection
+    // behaving as a caret) is `inkspire_api/prompt.py`'s `_resolve_sides`, not this
+    // function, which only resolves each end against the paragraph split.
+    expect(rangeFromOffsets(body, 4, 6)).toEqual({
+      start: { para: 0, offset: 4 },
+      end: { para: 1, offset: 0 },
+    })
   })
 })

@@ -23,6 +23,18 @@ export interface Cursor {
 }
 
 /**
+ * A selection's anchor: where it starts and where it ends.
+ *
+ * Named `CursorRange`, not `Selection` -- `Selection` is a DOM global, and shadowing
+ * it in a module imported into components that also touch `window.getSelection()`
+ * is a real footgun, not a stylistic one.
+ */
+export interface CursorRange {
+  start: Cursor
+  end: Cursor
+}
+
+/**
  * `offset`, a flat character position into `body`, as a `Cursor`.
  *
  * A body with no paragraphs at all -- empty, or nothing but blank lines -- has
@@ -56,4 +68,16 @@ export function cursorFromOffset(body: string, offset: number): Cursor {
   // Past the end -- inside the body's own closing separator, or beyond it -- lands
   // at the end of the last paragraph.
   return { para: paras.length - 1, offset: paras[paras.length - 1]!.length }
+}
+
+/**
+ * `start` and `end`, two flat character positions into `body`, as a `CursorRange`.
+ *
+ * Normalises an inverted pair -- a selection the writer dragged from its end back to
+ * its start reports that way in the DOM -- so the API never sees one from this
+ * client; it would otherwise reject it as `InvertedRange`.
+ */
+export function rangeFromOffsets(body: string, start: number, end: number): CursorRange {
+  const [lo, hi] = start <= end ? [start, end] : [end, start]
+  return { start: cursorFromOffset(body, lo), end: cursorFromOffset(body, hi) }
 }

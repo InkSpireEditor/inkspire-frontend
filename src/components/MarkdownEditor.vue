@@ -63,6 +63,12 @@ const props = defineProps<{
  */
 const emit = defineEmits<{
   proseChange: [Prose]
+  /** Whether a non-collapsed selection is now live in this editor. Fired only when
+   *  the answer changes, not on every `selectionchange` -- the one piece of
+   *  selection state a sibling needs (`Text.vue`'s Rewrite-vs-Generate label,
+   *  frontend#25), without handing out the offsets themselves for something this
+   *  cheap. */
+  selectionChange: [boolean]
 }>()
 
 const editor = ref<HTMLDivElement | null>(null)
@@ -101,17 +107,23 @@ let undoStack: Snapshots = []
 let redoStack: Snapshots = []
 
 /**
- * The caret's character offset into `prose.text`, the last time it was inside this
- * editor -- `null` before any selection has ever landed here.
+ * The selection's character offsets into `prose.text`, the last time it was inside
+ * this editor -- `null` before any selection has ever landed here. A caret is the
+ * degenerate case, `start === end`.
  *
  * **Tracked rather than read on demand.** Clicking the Generate button moves focus
  * out of the `contenteditable` before this component hears about it, so reading
  * `window.getSelection()` at that point would answer for whatever has focus by then,
- * not for where the writer last left the caret. Updated on every `input` and on
+ * not for where the writer last left it. Updated on every `input` and on
  * `selectionchange` while the selection is inside this element; left alone the rest
  * of the time, so focus moving elsewhere does not erase it.
  */
-let lastCaret: number | null = null
+let lastSelection: { start: number; end: number } | null = null
+
+/** Whether a non-collapsed selection was live last time `lastSelection` changed --
+ *  what `selectionChange` compares against, so it fires only on an actual change
+ *  rather than on every `selectionchange` event. */
+let selectionWasLive = false
 
 /**
  * The kind to give the next insertion, where it is not the writer's own.
@@ -170,45 +182,68 @@ function locate(target: number): { node: Node; offset: number } | null {
 }
 
 /**
- * The current selection's position as a character offset into the whole text, or
- * `null` where the selection is not inside this editor at all -- the inverse of
- * `locate`.
+ * A node/offset pair from `window.getSelection()`, as a character offset into the
+ * whole text -- `null` if `container` is not inside `root` at all.
  *
- * Reads `window.getSelection()` directly, so this answers for right now; `lastCaret`
- * is what remembers it past the point focus moves away.
+ * Walks the same `TreeWalker` `locate` builds, in the other direction: this is its
+ * inverse, and the two are kept beside each other for that reason.
  */
-function caretOffset(): number | null {
-  const root = editor.value
-  const selection = window.getSelection()
-  if (root === null || selection === null || selection.rangeCount === 0) {
+function offsetOf(root: HTMLElement, container: Node, containerOffset: number): number | null {
+  if (!root.contains(container)) {
     return null
   }
-  const range = selection.getRangeAt(0)
-  if (!root.contains(range.startContainer)) {
-    return null
-  }
-
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   let position = 0
   let node = walker.nextNode()
   while (node !== null) {
-    if (node === range.startContainer) {
-      return position + range.startOffset
+    if (node === container) {
+      return position + containerOffset
     }
     position += node.textContent?.length ?? 0
     node = walker.nextNode()
   }
   // No text node matched -- the selection anchors on the root itself, which happens
   // on an empty editor. The root has no text either way, so the offset is 0.
-  return range.startContainer === root ? 0 : null
+  return container === root ? 0 : null
 }
 
-/** Updates `lastCaret` from the live selection, leaving it alone where the
- * selection is not inside this editor right now. */
-function updateLastCaret(): void {
-  const offset = caretOffset()
-  if (offset !== null) {
-    lastCaret = offset
+/**
+ * The current selection's start and end as character offsets into the whole text,
+ * or `null` where the selection is not inside this editor at all.
+ *
+ * Reads `window.getSelection()` directly, so this answers for right now;
+ * `lastSelection` is what remembers it past the point focus moves away.
+ */
+function selectionOffsets(): { start: number; end: number } | null {
+  const root = editor.value
+  const selection = window.getSelection()
+  if (root === null || selection === null || selection.rangeCount === 0) {
+    return null
+  }
+  const range = selection.getRangeAt(0)
+  const start = offsetOf(root, range.startContainer, range.startOffset)
+  const end = offsetOf(root, range.endContainer, range.endOffset)
+  return start === null || end === null ? null : { start, end }
+}
+
+/** Records `start`/`end` as `lastSelection`, emitting `selectionChange` when
+ *  whether it is collapsed has changed since the last call -- the one place that
+ *  writes `lastSelection`, so the emit can never be forgotten at a call site. */
+function setLastSelection(start: number, end: number): void {
+  lastSelection = { start, end }
+  const live = start !== end
+  if (live !== selectionWasLive) {
+    selectionWasLive = live
+    emit('selectionChange', live)
+  }
+}
+
+/** Updates `lastSelection` from the live selection, leaving it alone where the
+ *  selection is not inside this editor right now. */
+function updateLastSelection(): void {
+  const offsets = selectionOffsets()
+  if (offsets !== null) {
+    setLastSelection(offsets.start, offsets.end)
   }
 }
 
@@ -294,7 +329,7 @@ function handleInput(event: Event): void {
   // After an `execCommand`-driven insertion as much as after a keystroke: the
   // browser has already moved the caret to just past whatever landed, which is
   // exactly where the next streamed chunk should continue from.
-  updateLastCaret()
+  updateLastSelection()
 }
 
 /** One new state: the one before it becomes a snapshot, and the redo branch is gone. */
@@ -314,26 +349,33 @@ function settle(): void {
 }
 
 /**
- * Puts the caret at character `offset` of the prose -- the end of it, with no
- * narrower target, which is also what a caret past the end of the text collapses to.
+ * Selects the span from character `start` to character `end` of the prose -- a
+ * caret, with `start === end`; the end of the element, with no narrower target,
+ * which is also what either offset past the end of the text collapses to.
  *
- * Positioning before a generated insertion lands it where the writer's caret was
- * (api#14's caret-anchored prompt), rather than always at the end the way a direct
- * append did before there was a caret to ask the server about.
+ * Positioning before a generated insertion lands it where the writer's caret or
+ * selection was (api#14's caret-anchored prompt, api#20's rewrite of a selection),
+ * rather than always at the end the way a direct append did before there was
+ * anything to ask the server about.
  */
-function caretAt(element: HTMLElement, offset: number): boolean {
+function selectRange(element: HTMLElement, start: number, end: number): boolean {
   const selection = window.getSelection()
   if (selection === null) {
     return false
   }
-  const target = locate(offset)
   const range = document.createRange()
-  if (target === null) {
+  const from = locate(start)
+  if (from === null) {
     range.selectNodeContents(element)
     range.collapse(false)
   } else {
-    range.setStart(target.node, target.offset)
-    range.collapse(true)
+    range.setStart(from.node, from.offset)
+    const to = start === end ? null : locate(end)
+    if (to === null) {
+      range.collapse(true)
+    } else {
+      range.setEnd(to.node, to.offset)
+    }
   }
   selection.removeAllRanges()
   selection.addRange(range)
@@ -341,13 +383,16 @@ function caretAt(element: HTMLElement, offset: number): boolean {
 }
 
 /**
- * Inserts `delta` at the caret, as text a model wrote.
+ * Inserts `delta` at the caret, or in place of the selection, as text a model wrote.
  *
- * **At the caret, not always at the end**: the first chunk of a generation is positioned
- * with `caretAt`, using `lastCaret` -- no selection recorded yet means the end, which is
- * both the fallback and the common case (api#14, api#21). Every chunk after the first
- * continues from wherever the previous one left the caret, which `execCommand` already
- * does on its own; nothing here repositions between chunks.
+ * **At the caret or over the selection, not always at the end**: the first chunk of
+ * a generation is positioned with `selectRange`, using `lastSelection` -- no
+ * selection recorded yet means the end, which is both the fallback and the common
+ * case (api#14, api#21, api#20, frontend#25). `execCommand('insertText')` replaces a
+ * non-collapsed selection natively, so a rewrite's first chunk overwrites what was
+ * selected the same way typing over a selection would. Every chunk after the first
+ * continues from wherever the previous one left the caret, which `execCommand`
+ * already does on its own; nothing here repositions between chunks.
  *
  * **Inserted through `document.execCommand('insertText')`, not by writing the DOM**, so it
  * lands on the browser's own undo stack and can be undone like anything the writer typed.
@@ -359,9 +404,9 @@ function caretAt(element: HTMLElement, offset: number): boolean {
  * show the writer nothing until it ends, which is the feature.
  *
  * Where `execCommand` is missing — jsdom, and any browser that has dropped it — the text is
- * spliced into `prose.text` at the same offset directly instead. That costs the browser's
- * undo entry for this insertion alone; everything else keeps working, which is the point of
- * not making it a hard requirement.
+ * spliced into `prose.text` between the same two offsets directly instead. That costs the
+ * browser's undo entry for this insertion alone; everything else keeps working, which is the
+ * point of not making it a hard requirement.
  */
 function appendGenerated(delta: string): void {
   const element = editor.value
@@ -369,22 +414,25 @@ function appendGenerated(delta: string): void {
     return
   }
 
-  const at = Math.min(lastCaret ?? prose.text.length, prose.text.length)
+  const length = prose.text.length
+  const target = lastSelection ?? { start: length, end: length }
+  const start = Math.min(target.start, length)
+  const end = Math.min(target.end, length)
   pending = 'gen'
   try {
     const inserted =
       typeof document.execCommand === 'function' &&
-      caretAt(element, at) &&
+      selectRange(element, start, end) &&
       document.execCommand('insertText', false, delta)
     if (inserted) {
       // `execCommand` fired `input` synchronously, so the handler -- and with it
-      // `updateLastCaret` -- has already run.
+      // `updateLastSelection` -- has already run.
       return
     }
-    const next = prose.text.slice(0, at) + delta + prose.text.slice(at)
+    const next = prose.text.slice(0, start) + delta + prose.text.slice(end)
     element.textContent = next
     recordEdit(next, pending)
-    lastCaret = at + delta.length
+    setLastSelection(start + delta.length, start + delta.length)
     settle()
   } finally {
     pending = undefined
@@ -392,16 +440,17 @@ function appendGenerated(delta: string): void {
 }
 
 /**
- * Where the caret last was in this editor, as a character offset into the text, or
- * `null` if a selection has never landed here. For the parent to convert to a
- * paragraph and an in-paragraph offset before generating (frontend#21) -- this
- * component knows nothing about paragraphs, only about DOM positions.
+ * Where the selection last was in this editor, as character offsets into the text,
+ * or `null` if a selection has never landed here. A caret is `start === end`. For
+ * the parent to convert to a paragraph and an in-paragraph offset (or two, for a
+ * real selection) before generating (frontend#21, frontend#25) -- this component
+ * knows nothing about paragraphs, only about DOM positions.
  */
-function getCaretOffset(): number | null {
-  return lastCaret
+function getSelectionOffsets(): { start: number; end: number } | null {
+  return lastSelection
 }
 
-defineExpose({ appendGenerated, getCaretOffset })
+defineExpose({ appendGenerated, getSelectionOffsets })
 
 /**
  * Replaces everything, which is what opening a different file is.
@@ -416,8 +465,12 @@ function reset(next: Prose): void {
   // undo stack does not survive the `textContent` write below either.
   undoStack = []
   redoStack = []
-  // Wherever the caret was in the file just closed is meaningless in this one.
-  lastCaret = null
+  // Wherever the selection was in the file just closed is meaningless in this one.
+  lastSelection = null
+  if (selectionWasLive) {
+    selectionWasLive = false
+    emit('selectionChange', false)
+  }
   empty.value = prose.text.length === 0
   if (editor.value !== null) {
     editor.value.textContent = prose.text
@@ -440,14 +493,15 @@ onMounted(() => {
     }
   }
   reset(props.prose)
-  // The writer can move the caret with the mouse or the arrow keys, neither of
-  // which fires `input` -- this is what catches those. Document-wide because a
-  // selection change is not dispatched on the element that contains it.
-  document.addEventListener('selectionchange', updateLastCaret)
+  // The writer can move the caret or drag out a selection with the mouse or the
+  // keyboard, neither of which fires `input` -- this is what catches those.
+  // Document-wide because a selection change is not dispatched on the element that
+  // contains it.
+  document.addEventListener('selectionchange', updateLastSelection)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('selectionchange', updateLastCaret)
+  document.removeEventListener('selectionchange', updateLastSelection)
 })
 
 watch(

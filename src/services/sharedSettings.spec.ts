@@ -14,6 +14,7 @@ const DEFAULTS = {
   prefix_share: 0.75,
   num_ctx: null,
   think: null,
+  send_selection: true,
 }
 
 describe('useSharedSettings', () => {
@@ -45,8 +46,9 @@ describe('useSharedSettings', () => {
       prefix_share: 0.6,
       num_ctx: 8192,
       think: false,
+      send_selection: false,
     })
-    const { ensureLoaded, loaded, temperature, promptBudget, prefixShare, numCtx } =
+    const { ensureLoaded, loaded, temperature, promptBudget, prefixShare, numCtx, sendSelection } =
       useSharedSettings()
 
     await ensureLoaded()
@@ -56,6 +58,61 @@ describe('useSharedSettings', () => {
     expect(promptBudget.value).toBe(5000)
     expect(prefixShare.value).toBe(0.6)
     expect(numCtx.value).toBe(8192)
+    expect(sendSelection.value).toBe(false)
+  })
+
+  it('a stored value from an earlier session wins over the servers default, for send_selection too', async () => {
+    localStorage.setItem(
+      'inkspire.generationSettings',
+      JSON.stringify({
+        temperature: 0.3,
+        promptBudget: 3000,
+        prefixShare: 0.5,
+        numCtx: 4096,
+        sendSelection: false,
+      }),
+    )
+    const { ensureLoaded, sendSelection } = useSharedSettings()
+
+    await ensureLoaded()
+
+    expect(sendSelection.value).toBe(false)
+  })
+
+  it('a session stored before this setting existed keeps the servers default', async () => {
+    localStorage.setItem(
+      'inkspire.generationSettings',
+      JSON.stringify({ temperature: 0.3, promptBudget: 3000, prefixShare: 0.5, numCtx: 4096 }),
+    )
+    vi.mocked(llmService.getDefaults).mockResolvedValue({ ...DEFAULTS, send_selection: true })
+    const { ensureLoaded, sendSelection } = useSharedSettings()
+
+    await ensureLoaded()
+
+    expect(sendSelection.value).toBe(true)
+  })
+
+  it('persists a change to send_selection', async () => {
+    const { ensureLoaded, setSendSelection } = useSharedSettings()
+    await ensureLoaded()
+
+    setSendSelection(false)
+
+    const stored = JSON.parse(localStorage.getItem('inkspire.generationSettings')!)
+    expect(stored.sendSelection).toBe(false)
+  })
+
+  it('reset restores send_selection to the servers default too', async () => {
+    vi.mocked(llmService.getDefaults).mockResolvedValue({ ...DEFAULTS, send_selection: true })
+    const { ensureLoaded, setSendSelection, reset, sendSelection } = useSharedSettings()
+    await ensureLoaded()
+    setSendSelection(false)
+
+    reset()
+
+    expect(sendSelection.value).toBe(true)
+    const stored = JSON.parse(localStorage.getItem('inkspire.generationSettings')!)
+    expect(stored.sendSelection).toBe(true)
   })
 
   it('fetches the defaults only once across repeated calls', async () => {

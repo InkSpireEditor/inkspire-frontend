@@ -21,6 +21,7 @@ interface StoredSettings {
   promptBudget: number
   prefixShare: number
   numCtx: number | null
+  sendSelection: boolean
 }
 
 const temperature = ref(1.0)
@@ -29,6 +30,10 @@ const prefixShare = ref(0.75)
 /** `null` means "leave it to the model's own default" -- a legitimate choice, not
  *  only the state before anything has loaded. */
 const numCtx = ref<number | null>(null)
+/** Whether a rewrite sends the selected passage's own text, rather than only its
+ *  word count. Mirrors the server's own `INKSPIRE_LLM_SEND_SELECTION` (on by
+ *  default) until the writer changes it. */
+const sendSelection = ref(true)
 /** Whether `ensureLoaded` has already run once. */
 const loaded = ref(false)
 
@@ -55,6 +60,7 @@ function persist(): void {
         promptBudget: promptBudget.value,
         prefixShare: prefixShare.value,
         numCtx: numCtx.value,
+        sendSelection: sendSelection.value,
       } satisfies StoredSettings),
     )
   } catch {
@@ -68,6 +74,7 @@ function applyDefaults(defaults: GenerationDefaults): void {
   promptBudget.value = defaults.prompt_budget
   prefixShare.value = defaults.prefix_share
   numCtx.value = defaults.num_ctx
+  sendSelection.value = defaults.send_selection
 }
 
 /**
@@ -88,6 +95,12 @@ async function ensureLoaded(): Promise<void> {
     promptBudget.value = stored.promptBudget
     prefixShare.value = stored.prefixShare
     numCtx.value = stored.numCtx
+    // A session stored before this setting existed has no `sendSelection` key --
+    // `undefined` falls through to the server's own default already applied above,
+    // rather than becoming `false` for every writer who has used the app before.
+    if (stored.sendSelection !== undefined) {
+      sendSelection.value = stored.sendSelection
+    }
   }
   loaded.value = true
 }
@@ -112,6 +125,11 @@ function setNumCtx(value: number | null): void {
   persist()
 }
 
+function setSendSelection(value: boolean): void {
+  sendSelection.value = value
+  persist()
+}
+
 /** Restores the server's own defaults, discarding whatever was stored or changed. */
 function reset(): void {
   if (serverDefaults) {
@@ -126,6 +144,7 @@ export function resetSharedSettings() {
   promptBudget.value = 10000
   prefixShare.value = 0.75
   numCtx.value = null
+  sendSelection.value = true
   loaded.value = false
   serverDefaults = null
 }
@@ -135,11 +154,13 @@ export const useSharedSettings = () => ({
   promptBudget,
   prefixShare,
   numCtx,
+  sendSelection,
   loaded,
   ensureLoaded,
   setTemperature,
   setPromptBudget,
   setPrefixShare,
   setNumCtx,
+  setSendSelection,
   reset,
 })

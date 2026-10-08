@@ -1,6 +1,6 @@
 import { API_URL, jsonHeaders } from './api';
 import { apiFetch } from './apiFetch';
-import type { Cursor } from './cursor';
+import type { Cursor, CursorRange } from './cursor';
 import type { Space } from './spaces';
 
 /** One event from the generation stream. */
@@ -24,8 +24,17 @@ export interface GenerateOptions {
     think?: boolean
     /** Where the caret is, so the server continues there instead of at the end of
      *  the file (inkspire-api#14). Omit for the end -- today's only behaviour, and
-     *  what an absent caret still means. */
+     *  what an absent caret still means. Mutually exclusive with `selection` --
+     *  a generation is anchored at a point or at a range, never both. */
     cursor?: Cursor
+    /** A passage to rewrite instead of continuing or filling in (inkspire-api#20).
+     *  Mutually exclusive with `cursor`. */
+    selection?: CursorRange
+    /** For a rewrite (`selection` above), whether to send the passage's own text
+     *  along with its word count, rather than the word count alone -- overriding
+     *  `INKSPIRE_LLM_SEND_SELECTION`. Has no effect without `selection`: a
+     *  continuation and a fill-in-the-middle have no passage to send. */
+    sendSelection?: boolean
     /** Sampling temperature, overriding `INKSPIRE_LLM_TEMPERATURE`. */
     temperature?: number
     /** Characters of prose kept in the prompt, overriding `INKSPIRE_LLM_PROMPT_BUDGET`. */
@@ -70,15 +79,31 @@ export const llmService = {
         onDelta: OnDelta,
         options: GenerateOptions = {},
     ): Promise<void> {
-        const { think, cursor, temperature, promptBudget, prefixShare, numCtx, signal } = options
+        const {
+            think,
+            cursor,
+            selection,
+            sendSelection,
+            temperature,
+            promptBudget,
+            prefixShare,
+            numCtx,
+            signal,
+        } = options
+        // A selection's start is the anchor's start; a bare cursor is the anchor's
+        // start with no end, which is a caret -- the two never both carry fields.
+        const anchorStart = selection?.start ?? cursor
         const response = await apiFetch(`${API_URL}/${space}/file/${id}/generate`, {
             method: "POST",
             headers: jsonHeaders(),
             body: JSON.stringify({
                 model,
                 think,
-                cursor_para: cursor?.para,
-                cursor_offset: cursor?.offset,
+                cursor_para: anchorStart?.para,
+                cursor_offset: anchorStart?.offset,
+                cursor_end_para: selection?.end.para,
+                cursor_end_offset: selection?.end.offset,
+                send_selection: sendSelection,
                 temperature,
                 prompt_budget: promptBudget,
                 prefix_share: prefixShare,
@@ -148,6 +173,7 @@ export interface GenerationDefaults {
     prefix_share: number
     num_ctx: number | null
     think: boolean | null
+    send_selection: boolean
 }
 
 /** The payload of one server-sent event, or null for the terminator and anything unparsable. */

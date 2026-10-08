@@ -95,12 +95,14 @@ describe('Text.vue', () => {
       promptBudget: ref(10000),
       prefixShare: ref(0.75),
       numCtx: ref(null),
+      sendSelection: ref(true),
       loaded: ref(true),
       ensureLoaded: vi.fn().mockResolvedValue(undefined),
       setTemperature: vi.fn(),
       setPromptBudget: vi.fn(),
       setPrefixShare: vi.fn(),
       setNumCtx: vi.fn(),
+      setSendSelection: vi.fn(),
       reset: vi.fn()
     })
     
@@ -528,6 +530,7 @@ describe('Text.vue', () => {
         // No selection has ever landed in this test's editor, so there is no caret
         // to report -- the server reads that as "continue at the end".
         cursor: undefined,
+        sendSelection: true,
         temperature: 1.0,
         promptBudget: 10000,
         prefixShare: 0.75,
@@ -565,6 +568,7 @@ describe('Text.vue', () => {
         think: true,
         signal: expect.any(AbortSignal),
         cursor: undefined,
+        sendSelection: true,
         temperature: 1.0,
         promptBudget: 10000,
         prefixShare: 0.75,
@@ -595,6 +599,7 @@ describe('Text.vue', () => {
         think: undefined,
         signal: expect.any(AbortSignal),
         cursor: undefined,
+        sendSelection: true,
         temperature: 1.0,
         promptBudget: 10000,
         prefixShare: 0.75,
@@ -639,6 +644,99 @@ describe('Text.vue', () => {
         think: undefined,
         signal: expect.any(AbortSignal),
         cursor: { para: 0, offset: 'Initial'.length },
+        sendSelection: true,
+        temperature: 1.0,
+        promptBudget: 10000,
+        prefixShare: 0.75,
+        numCtx: undefined,
+      }
+    )
+    wrapper.unmount()
+  })
+
+  it('reports a live selection as a range, with no cursor, and the button reads Rewrite', async () => {
+    const wrapper = mount(Text, {
+      global: { stubs: { teleport: true } },
+      attachTo: document.body
+    })
+    selectedFile.value = OPEN
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+    vi.mocked(filesManagerService.putDocument).mockClear()
+    vi.mocked(llmService.generate).mockResolvedValue(undefined)
+
+    // "Initial content" -- selects "content" (offsets 8 to 15).
+    const editorElement = wrapper.find('[contenteditable]').element
+    const range = document.createRange()
+    range.setStart(editorElement.firstChild!, 'Initial '.length)
+    range.setEnd(editorElement.firstChild!, 'Initial content'.length)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper.findAll('button').find((b) => b.text() === 'Rewrite' || b.text() === 'Generate')!.text()
+    ).toBe('Rewrite')
+
+    await clickButton(wrapper, 'Rewrite')
+    await flushPromises()
+
+    expect(llmService.generate).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
+      'llama3',
+      expect.any(Function),
+      {
+        think: undefined,
+        signal: expect.any(AbortSignal),
+        cursor: undefined,
+        selection: { start: { para: 0, offset: 8 }, end: { para: 0, offset: 15 } },
+        sendSelection: true,
+        temperature: 1.0,
+        promptBudget: 10000,
+        prefixShare: 0.75,
+        numCtx: undefined,
+      }
+    )
+    wrapper.unmount()
+  })
+
+  it('a collapsed selection still sends a cursor, not a selection', async () => {
+    const wrapper = mount(Text, {
+      global: { stubs: { teleport: true } },
+      attachTo: document.body
+    })
+    selectedFile.value = OPEN
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+    vi.mocked(filesManagerService.putDocument).mockClear()
+    vi.mocked(llmService.generate).mockResolvedValue(undefined)
+
+    const editorElement = wrapper.find('[contenteditable]').element
+    const range = document.createRange()
+    range.setStart(editorElement.firstChild!, 'Initial'.length)
+    range.collapse(true)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+
+    expect(llmService.generate).toHaveBeenCalledWith(
+      OPEN.space,
+      OPEN.id,
+      'llama3',
+      expect.any(Function),
+      {
+        think: undefined,
+        signal: expect.any(AbortSignal),
+        cursor: { para: 0, offset: 'Initial'.length },
+        selection: undefined,
+        sendSelection: true,
         temperature: 1.0,
         promptBudget: 10000,
         prefixShare: 0.75,
@@ -862,12 +960,14 @@ describe('Text.vue across the two spaces', () => {
       promptBudget: ref(10000),
       prefixShare: ref(0.75),
       numCtx: ref(null),
+      sendSelection: ref(true),
       loaded: ref(true),
       ensureLoaded: vi.fn().mockResolvedValue(undefined),
       setTemperature: vi.fn(),
       setPromptBudget: vi.fn(),
       setPrefixShare: vi.fn(),
       setNumCtx: vi.fn(),
+      setSendSelection: vi.fn(),
       reset: vi.fn()
     })
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'scratch' })
