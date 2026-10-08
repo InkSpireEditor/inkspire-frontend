@@ -5,8 +5,8 @@ import { llmService, type GenerationDefaults } from './llm'
  * Module-level singleton: the writer's own generation settings, read by `Text.vue`
  * when it generates and written to by `GenerationSettings.vue`'s panel. Shared by
  * importing this module rather than through a store, the way sharedModel is --
- * `thinkEnabled` stays there, beside the model selection it is shown alongside
- * (`ModelSelector.vue`), rather than moving here with the rest.
+ * `thinkEnabled` stays there, shown in `GenerationSettings.vue`'s own panel
+ * alongside the rest of these, rather than moving here with them.
  *
  * `.env` on the server is the default on a machine with nothing stored yet
  * (`GET /api/llm/defaults`); from the first change on, `localStorage` wins, since a

@@ -245,6 +245,25 @@ export function runsOf(prov: Kind[]): Run[] {
 }
 
 /**
+ * The `gen` run `offset` sits inside or at either end of, or `null` if there is none.
+ *
+ * Provenance records who wrote each character, not when, so "the last generation" is
+ * not a question a file can answer on its own -- only a caret can point at one run
+ * among several. Used by `MarkdownEditor.vue`'s `rerollTarget` to find what a reroll
+ * (api#5) replaces: the generated span the caret is in, which is exactly where it sits
+ * right after a generation ends, and still findable after a reload by clicking back
+ * into it. A `fix` the writer typed inside a generation splits it into `gen`/`fix`/`gen`
+ * (`runsOf`'s own doc comment); matching on `kind === 'gen'` alone means a reroll never
+ * replaces the writer's own correction, without asking.
+ */
+export function genRunAt(prov: Kind[], offset: number): Run | null {
+  const run = runsOf(prov).find(
+    ([start, end, kind]) => kind === 'gen' && start <= offset && offset <= end,
+  )
+  return run ?? null
+}
+
+/**
  * `prose` as the `metadata` field of `PUT /file/{id}/document`.
  *
  * **Every paragraph gets an entry, including one with no model-written text**, whose

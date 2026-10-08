@@ -591,4 +591,150 @@ describe('MarkdownEditor.vue', () => {
       wrapper.unmount()
     })
   })
+
+  describe('reroll (api#5)', () => {
+    /** A gen run in the middle, surrounded by the writer's own text either side. */
+    const withGenRun = (): Prose => ({
+      text: 'AAAABBBBCCCC',
+      prov: [
+        ...new Array<Kind>(4).fill('user'),
+        ...new Array<Kind>(4).fill('gen'),
+        ...new Array<Kind>(4).fill('user'),
+      ],
+    })
+
+    describe('rerollTarget', () => {
+      it('finds the gen run the caret sits inside', () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        placeCaret(wrapper, 6)
+        expect(wrapper.vm.rerollTarget()).toEqual({ start: 4, end: 8 })
+        wrapper.unmount()
+      })
+
+      it('finds it from either boundary too, not only strictly inside', () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        placeCaret(wrapper, 4)
+        expect(wrapper.vm.rerollTarget()).toEqual({ start: 4, end: 8 })
+        placeCaret(wrapper, 8)
+        expect(wrapper.vm.rerollTarget()).toEqual({ start: 4, end: 8 })
+        wrapper.unmount()
+      })
+
+      it('answers null for a live selection, even one entirely inside the run', () => {
+        // A real selection already means Rewrite, which the primary button offers --
+        // offering both at once would be two buttons for one intent.
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        placeSelection(wrapper, 5, 7)
+        expect(wrapper.vm.rerollTarget()).toBeNull()
+        wrapper.unmount()
+      })
+
+      it('answers null in text the writer typed', () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        placeCaret(wrapper, 2)
+        expect(wrapper.vm.rerollTarget()).toBeNull()
+        wrapper.unmount()
+      })
+
+      it('answers null before any selection has ever landed here', () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        expect(wrapper.vm.rerollTarget()).toBeNull()
+        wrapper.unmount()
+      })
+    })
+
+    describe('rerollableChange', () => {
+      it('fires true when the caret lands in a gen run, false when it leaves', () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        placeCaret(wrapper, 6)
+        placeCaret(wrapper, 2)
+        expect(wrapper.emitted('rerollableChange')).toEqual([[true], [false]])
+        wrapper.unmount()
+      })
+
+      it('does not re-emit while the caret stays inside the same run', () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        placeCaret(wrapper, 5)
+        placeCaret(wrapper, 7)
+        expect(wrapper.emitted('rerollableChange')).toEqual([[true]])
+        wrapper.unmount()
+      })
+
+      it('does not fire for a live selection landing inside the run', () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        placeSelection(wrapper, 5, 7)
+        expect(wrapper.emitted('rerollableChange')).toBeUndefined()
+        wrapper.unmount()
+      })
+
+      it('resets to false when a different file opens', async () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        placeCaret(wrapper, 6)
+        await wrapper.setProps({ prose: plain('a different file') })
+        expect(wrapper.emitted('rerollableChange')).toEqual([[true], [false]])
+        wrapper.unmount()
+      })
+    })
+
+    describe('removeRange', () => {
+      // Same environment gap as appendGenerated's: no execCommand in jsdom, so these
+      // exercise the written-directly fallback. Whether the deletion lands on the
+      // browser's own undo stack is the hand test.
+      it('is absent from this environment too, which is why there is a fallback', () => {
+        expect(typeof document.execCommand).not.toBe('function')
+      })
+
+      it('deletes the span and leaves the surrounding provenance intact', () => {
+        const wrapper = mount(MarkdownEditor, { props: { prose: withGenRun() } })
+        wrapper.vm.removeRange(4, 8)
+
+        const answered = emittedProse(wrapper)
+        expect(answered.text).toBe('AAAACCCC')
+        expect(answered.prov).toEqual(new Array(8).fill('user'))
+      })
+
+      it('leaves the caret collapsed at the start of the deleted span', () => {
+        const wrapper = mount(MarkdownEditor, {
+          props: { prose: withGenRun() },
+          attachTo: document.body,
+        })
+        wrapper.vm.removeRange(4, 8)
+        expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: 4, end: 4 })
+        wrapper.unmount()
+      })
+
+      it('does nothing for a collapsed range', () => {
+        const wrapper = mount(MarkdownEditor, { props: { prose: withGenRun() } })
+        wrapper.vm.removeRange(4, 4)
+        expect(wrapper.emitted('proseChange')).toBeUndefined()
+      })
+    })
+  })
 })

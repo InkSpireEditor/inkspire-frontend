@@ -37,6 +37,12 @@ const settingsOpen = ref(false)
  */
 const hasSelection = ref(false)
 
+/**
+ * Whether the editor's own `rerollTarget()` would answer a span right now, bound
+ * from its `rerollableChange` emit (api#5). What Reroll's disabled state reads.
+ */
+const canReroll = ref(false)
+
 /** How long to wait after the last keystroke before writing it back to the API, in ms. */
 const AUTO_SAVE_DEBOUNCE_MS = 2000
 
@@ -256,63 +262,38 @@ const isGenerating = ref(false)
 let generation: AbortController | null = null
 
 /**
- * Appends a continuation of the current text, a chunk at a time as the model writes it.
+ * Saves, then streams one generation into the editor and saves again once it ends
+ * -- the part `handleGenerate` and `handleReroll` share. `cursor`/`selection` are
+ * each caller's own anchor; `saveFailedMessage` is shown in place of the default
+ * when the save beforehand fails, since what is recoverable differs between the
+ * two callers (frontend#25, api#5).
  *
  * The server reads the file fresh from disk and assembles the prompt itself
- * (`inkspire-api/docs/prompt.md`), so what it is asked to continue is whatever was last
- * saved -- not necessarily what is on screen. `save()` is awaited first, and generation
- * is refused if it resolves `false`, rather than silently asking the model to continue a
- * sentence that is not the one the writer just typed.
+ * (`inkspire-api/docs/prompt.md`), so what it is asked to continue or rewrite is
+ * whatever was last saved -- not necessarily what is on screen. `save()` is
+ * awaited first, and generation is refused if it resolves `false`.
  *
  * The API saves nothing, so every chunk marks the document dirty; the debounce is
  * suspended for the duration (see `scheduleAutoSave`), and the `finally` below is
  * what writes it back, once, when the stream ends. Text that arrived before a
  * failure is kept: it is as much the writer's to keep or undo as anything they typed.
  */
-const handleGenerate = async () => {
-  if (isGenerating.value) return
-  if (!text.value) return
-  if (!selectedModelName.value) {
-    displayError('No model selected')
-    return
-  }
-
-  if (!isLoggedIn() || !currentFile.value) return
-
-  // The editor has to be mounted to receive the continuation, and in Read mode it is not.
-  // Leaving Read mode is better than refusing to generate from it: the writer is about to
-  // have new prose, which is the state they wanted anyway.
-  if (readMode.value) {
-    readMode.value = false
-    await nextTick()
-  }
-
-  // Where the caret or the selection is right now, converted to what the API wants --
-  // a paragraph and an offset within it (or two, for a real selection), not a flat
-  // offset into the whole text. No selection ever having landed in the editor
-  // (freshly left Read mode, say) means neither at all, which the server reads as
-  // "continue at the end", same as before there was one.
-  const offsets = editor.value?.getSelectionOffsets() ?? null
-  let cursor: Cursor | undefined
-  let selection: CursorRange | undefined
-  if (offsets !== null) {
-    if (offsets.start === offsets.end) {
-      cursor = cursorFromOffset(text.value, offsets.start)
-    } else {
-      selection = rangeFromOffsets(text.value, offsets.start, offsets.end)
-    }
-  }
-
-  // Any debounce left over from typing just before Generate was clicked would
-  // otherwise fire mid-stream -- the save below covers it, and covers it before the
+const runGeneration = async (
+  model: string,
+  cursor: Cursor | undefined,
+  selection: CursorRange | undefined,
+  saveFailedMessage = 'Could not save your text before generating. Try again once it saves.',
+) => {
+  // Any debounce left over from typing just before this was triggered would
+  // otherwise fire mid-stream -- this covers it, and covers it before the
   // request is sent rather than after.
   cancelAutoSave()
   if (!(await save())) {
-    displayError('Could not save your text before generating. Try again once it saves.')
+    displayError(saveFailedMessage)
     return
   }
 
-  // The save above may have taken a moment; the selection could have changed meanwhile.
+  // The save above may have taken a moment; the file could have changed meanwhile.
   const file = currentFile.value
   if (!file) return
 
@@ -322,7 +303,7 @@ const handleGenerate = async () => {
     await llmService.generate(
       file.space,
       file.id,
-      selectedModelName.value,
+      model,
       (delta) => {
         // Handed to the editor rather than appended here, so it goes in through the
         // browser's own insert command -- undoable like anything typed -- and is recorded as
@@ -360,21 +341,98 @@ const handleGenerate = async () => {
   }
 }
 
+/** Appends a continuation of the current text, or rewrites a live selection. */
+const handleGenerate = async () => {
+  if (isGenerating.value) return
+  if (!text.value) return
+  if (!selectedModelName.value) {
+    displayError('No model selected')
+    return
+  }
+
+  if (!isLoggedIn() || !currentFile.value) return
+
+  // The editor has to be mounted to receive the continuation, and in Read mode it is not.
+  // Leaving Read mode is better than refusing to generate from it: the writer is about to
+  // have new prose, which is the state they wanted anyway.
+  if (readMode.value) {
+    readMode.value = false
+    await nextTick()
+  }
+
+  // Where the caret or the selection is right now, converted to what the API wants --
+  // a paragraph and an offset within it (or two, for a real selection), not a flat
+  // offset into the whole text. No selection ever having landed in the editor
+  // (freshly left Read mode, say) means neither at all, which the server reads as
+  // "continue at the end", same as before there was one.
+  const offsets = editor.value?.getSelectionOffsets() ?? null
+  let cursor: Cursor | undefined
+  let selection: CursorRange | undefined
+  if (offsets !== null) {
+    if (offsets.start === offsets.end) {
+      cursor = cursorFromOffset(text.value, offsets.start)
+    } else {
+      selection = rangeFromOffsets(text.value, offsets.start, offsets.end)
+    }
+  }
+
+  await runGeneration(selectedModelName.value, cursor, selection)
+}
+
+/**
+ * Resamples the generated run at the caret (api#5): deletes it, undoably, saves,
+ * then generates again with a caret where it started -- a second sample of the
+ * same request that produced it, not a rewrite of the deleted span
+ * (`inkspire-api/docs/prompt.md`'s "Why the server assembles" section says why).
+ *
+ * Unavailable in Read mode -- the editor unmounts there, which is also why this
+ * does not leave Read mode and continue the way `handleGenerate` does: remounting
+ * runs the editor's own `reset()`, which nulls the caret this needs.
+ */
+const handleReroll = async () => {
+  if (isGenerating.value) return
+  if (!selectedModelName.value) {
+    displayError('No model selected')
+    return
+  }
+  if (!isLoggedIn() || !currentFile.value || !canReroll.value) return
+
+  const target = editor.value?.rerollTarget() ?? null
+  if (target === null) return
+  editor.value?.removeRange(target.start, target.end)
+
+  // From the post-deletion text, before anything is awaited: the deletion has to
+  // be saved before the request (the server reads from disk), and an await can
+  // let the editor's state move on from under this if it is read any later --
+  // the same discipline `handleGenerate`'s own offsets read keeps.
+  const cursor = cursorFromOffset(text.value, target.start)
+
+  await runGeneration(
+    selectedModelName.value,
+    cursor,
+    undefined,
+    'Could not save before generating. The deleted text is still recoverable with ' +
+      'Ctrl+Z -- try again once it saves.',
+  )
+}
+
 /** Stops a generation in progress, keeping whatever has arrived so far. */
 const handleStopGenerating = () => {
   generation?.abort()
 }
 
 /**
- * Toggles Read mode, clearing `hasSelection` on the way in.
+ * Toggles Read mode, clearing `hasSelection` and `canReroll` on the way in.
  *
- * The editor unmounts in Read mode (replaced by the rendered-prose div below), so no
- * `selectionChange` ever fires to say its selection stopped mattering -- without
- * this, the button would keep reading "Rewrite" over a pane with no selection at
- * all, from whatever was selected before Read was clicked.
+ * The editor unmounts in Read mode (replaced by the rendered-prose div below), so
+ * neither emit ever fires to say its answer stopped mattering -- without this, the
+ * buttons would keep reading whatever they were before Read was clicked.
  */
 const toggleReadMode = () => {
-  if (!readMode.value) hasSelection.value = false
+  if (!readMode.value) {
+    hasSelection.value = false
+    canReroll.value = false
+  }
   readMode.value = !readMode.value
 }
 
@@ -450,6 +508,7 @@ onUnmounted(() => {
           :prose="prose"
           @prose-change="handleProseChange"
           @selection-change="(live) => (hasSelection = live)"
+          @rerollable-change="(possible) => (canReroll = possible)"
         />
         <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
         <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
@@ -460,6 +519,13 @@ onUnmounted(() => {
           </button>
           <button @click="save" :disabled="!currentFile">Save</button>
           <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
+          <button
+            @click="handleReroll"
+            :disabled="!currentFile || isGenerating || !canReroll"
+            title="Put the caret in text a model wrote"
+          >
+            Reroll
+          </button>
           <button class="primary" @click="handleGenerate" :disabled="!currentFile || isGenerating" :class="{ generating: isGenerating }">
             {{ isGenerating ? 'Generating…' : hasSelection ? 'Rewrite' : 'Generate' }}
           </button>

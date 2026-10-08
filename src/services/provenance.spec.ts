@@ -19,6 +19,7 @@ import {
   pushSnapshot,
   classify,
   diffText,
+  genRunAt,
   joinParagraphs,
   metadataFromProse,
   proseFromMetadata,
@@ -237,6 +238,46 @@ describe('runsOf', () => {
       [0, 2, 'gen'],
       [2, 4, 'fix'],
     ])
+  })
+})
+
+describe('genRunAt', () => {
+  it('finds the gen run the caret is inside', () => {
+    const prov: Kind[] = ['user', 'user', 'gen', 'gen', 'gen', 'user']
+    expect(genRunAt(prov, 3)).toEqual([2, 5, 'gen'])
+  })
+
+  it('finds it from either boundary too, not only strictly inside', () => {
+    const prov: Kind[] = ['user', 'gen', 'gen', 'user']
+    expect(genRunAt(prov, 1)).toEqual([1, 3, 'gen'])
+    expect(genRunAt(prov, 3)).toEqual([1, 3, 'gen'])
+  })
+
+  it('answers null inside a user run', () => {
+    const prov: Kind[] = ['gen', 'gen', 'user', 'user']
+    expect(genRunAt(prov, 3)).toBeNull()
+  })
+
+  it('answers null strictly inside a fix run, even though fix is model-written too', () => {
+    // A fix is the writer's own correction of a generation -- rerolling it would
+    // throw that correction away, so the caret has to land on gen specifically.
+    const prov: Kind[] = ['gen', 'fix', 'fix', 'fix', 'gen']
+    expect(genRunAt(prov, 2)).toBeNull()
+    expect(genRunAt(prov, 3)).toBeNull()
+  })
+
+  it('at a gen/fix boundary, finds the gen run -- the ambiguous caret resolves there', () => {
+    const prov: Kind[] = ['gen', 'gen', 'fix', 'fix']
+    expect(genRunAt(prov, 2)).toEqual([0, 2, 'gen'])
+  })
+
+  it('answers null for empty provenance', () => {
+    expect(genRunAt([], 0)).toBeNull()
+  })
+
+  it('answers null past the end', () => {
+    const prov: Kind[] = ['gen', 'gen']
+    expect(genRunAt(prov, 5)).toBeNull()
   })
 })
 

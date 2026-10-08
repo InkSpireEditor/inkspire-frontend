@@ -798,6 +798,101 @@ describe('Text.vue', () => {
     )
   })
 
+  describe('reroll (api#5)', () => {
+    const rerollButton = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('button').find((b) => b.text() === 'Reroll')!
+
+    /** Generates once via the Generate button, leaving a `gen` run at the end of
+     *  the text and the caret collapsed right after it -- the state a reroll acts
+     *  on. */
+    const generateOnce = async (wrapper: ReturnType<typeof mount>, delta: string) => {
+      vi.mocked(llmService.generate).mockImplementationOnce(
+        async (_space, _id, _model, onDelta) => {
+          onDelta(delta)
+        }
+      )
+      await clickButton(wrapper, 'Generate')
+      await flushPromises()
+      vi.mocked(llmService.generate).mockClear()
+      vi.mocked(filesManagerService.putDocument).mockClear()
+    }
+
+    it('is disabled with no generated run, and enabled once there is one', async () => {
+      const wrapper = await mountWithFile()
+      expect(rerollButton(wrapper).attributes('disabled')).toBeDefined()
+
+      await generateOnce(wrapper, ' and then.')
+      expect(rerollButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it('deletes the generated run, saves, and resamples with a caret where it started -- no selection', async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+      expect((wrapper.vm as any).text).toBe('Initial content and then.')
+
+      vi.mocked(llmService.generate).mockImplementationOnce(
+        async (_space, _id, _model, onDelta) => {
+          onDelta(' instead.')
+        }
+      )
+      await rerollButton(wrapper).trigger('click')
+      await flushPromises()
+
+      // The generated run (" and then.") is gone, saved without it, then a fresh
+      // sample lands at the same caret -- not a rewrite of what was deleted, so
+      // no `selection` is ever sent.
+      expect(filesManagerService.putDocument).toHaveBeenCalledWith(
+        OPEN.space,
+        OPEN.id,
+        'Initial content',
+        handwritten('Initial content')
+      )
+      expect(llmService.generate).toHaveBeenCalledWith(
+        OPEN.space,
+        OPEN.id,
+        'llama3',
+        expect.any(Function),
+        {
+          think: undefined,
+          signal: expect.any(AbortSignal),
+          cursor: { para: 0, offset: 'Initial content'.length },
+          sendSelection: true,
+          temperature: 1.0,
+          promptBudget: 10000,
+          prefixShare: 0.75,
+          numCtx: undefined,
+        }
+      )
+      expect((wrapper.vm as any).text).toBe('Initial content instead.')
+    })
+
+    it('refuses to generate when the post-deletion save fails, naming Ctrl+Z', async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+      vi.mocked(filesManagerService.putDocument).mockRejectedValueOnce(new Error('boom'))
+
+      await rerollButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(llmService.generate).not.toHaveBeenCalled()
+      const vm = wrapper.vm as any
+      expect(vm.errorMessage).toContain('Ctrl+Z')
+      // The deletion itself still happened -- Ctrl+Z is what the message points at.
+      expect(vm.text).toBe('Initial content')
+    })
+
+    it('is disabled in Read mode, since the editor it needs is unmounted there', async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+      expect(rerollButton(wrapper).attributes('disabled')).toBeUndefined()
+
+      const readToggle = wrapper.findAll('button').find((b) => b.text() === 'Read')!
+      await readToggle.trigger('click')
+
+      expect(rerollButton(wrapper).attributes('disabled')).toBeDefined()
+    })
+  })
+
   describe('the Read toggle', () => {
     const readToggle = (wrapper: ReturnType<typeof mount>) =>
       wrapper.findAll('button').find((b) => b.text() === 'Read' || b.text() === 'Edit')!

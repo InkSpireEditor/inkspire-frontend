@@ -2,14 +2,14 @@
  * Where the caret is, as the API wants it: a paragraph index and an offset within it,
  * rather than one flat offset into the whole text.
  *
- * `MarkdownEditor.getCaretOffset()` answers a flat character offset, counted across
- * the whole rendered text -- separators between paragraphs included, since there is
- * nothing in the DOM to tell those apart from the paragraphs either side of them. The
- * API resolves a caret against its own paragraph split (`inkspire_api/prompt.py`'s
- * `cursor_from_offset`, used by its CLI for the same conversion), so this mirrors that
- * resolution rather than inventing a second one: a flat offset landing inside a
- * separator belongs to the end of the paragraph before it, and one before the first
- * paragraph belongs to the very start of the body.
+ * `MarkdownEditor.getSelectionOffsets()` answers a flat character offset, counted
+ * across the whole rendered text -- separators between paragraphs included, since
+ * there is nothing in the DOM to tell those apart from the paragraphs either side of
+ * them. The API resolves a caret against its own paragraph split
+ * (`inkspire_api/prompt.py`'s `cursor_from_offset`, used by its CLI for the same
+ * conversion), so this mirrors that resolution rather than inventing a second one: a
+ * flat offset landing inside a separator belongs to the end of the paragraph before
+ * it, and one before the first paragraph belongs to the very start of the body.
  *
  * Kept here rather than inline in `Text.vue` for the reason `loreGraph.ts` is its own
  * file: this has no DOM in it, so it is unit-testable on its own.

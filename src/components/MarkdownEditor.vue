@@ -35,6 +35,7 @@ import {
   applyEdit,
   dropFrom,
   findSnapshot,
+  genRunAt,
   pushSnapshot,
   runsOf,
   type Kind,
@@ -69,6 +70,11 @@ const emit = defineEmits<{
    *  frontend#25), without handing out the offsets themselves for something this
    *  cheap. */
   selectionChange: [boolean]
+  /** Whether `rerollTarget()` would answer a span right now. Fired only when the
+   *  answer changes, mirroring `selectionChange`'s own contract -- the one piece of
+   *  state `Text.vue`'s Reroll button needs (api#5), without exposing the run
+   *  itself for something this cheap. */
+  rerollableChange: [boolean]
 }>()
 
 const editor = ref<HTMLDivElement | null>(null)
@@ -124,6 +130,11 @@ let lastSelection: { start: number; end: number } | null = null
  *  what `selectionChange` compares against, so it fires only on an actual change
  *  rather than on every `selectionchange` event. */
 let selectionWasLive = false
+
+/** Whether `rerollTarget()` answered non-null last time it was checked -- what
+ *  `rerollableChange` compares against, for the same reason `selectionWasLive`
+ *  exists. */
+let rerollWasPossible = false
 
 /**
  * The kind to give the next insertion, where it is not the writer's own.
@@ -236,6 +247,7 @@ function setLastSelection(start: number, end: number): void {
     selectionWasLive = live
     emit('selectionChange', live)
   }
+  updateRerollability()
 }
 
 /** Updates `lastSelection` from the live selection, leaving it alone where the
@@ -346,6 +358,11 @@ function settle(): void {
   empty.value = prose.text.length === 0
   paint()
   emit('proseChange', prose)
+  // Belt and suspenders alongside `setLastSelection`'s own call: an edit can change
+  // which run the caret sits in (typing inside a `gen` run turns part of it `fix`)
+  // even on the rare path where `handleInput`'s own `updateLastSelection` finds the
+  // selection outside this element and so never calls it.
+  updateRerollability()
 }
 
 /**
@@ -450,7 +467,74 @@ function getSelectionOffsets(): { start: number; end: number } | null {
   return lastSelection
 }
 
-defineExpose({ appendGenerated, getSelectionOffsets })
+/**
+ * The `gen` run a reroll (api#5) would replace -- the one the caret sits in or at
+ * either end of -- or `null` where there is none to reroll.
+ *
+ * Only a caret, never a live selection: a real selection already means Rewrite,
+ * which the primary button offers, and offering both at once would be two buttons
+ * for one intent. The caret is the only locator available at all -- provenance
+ * records who wrote each character, not when, so "the last generation" is not a
+ * question `prose` can answer without one (`genRunAt`'s own doc comment).
+ */
+function rerollTarget(): { start: number; end: number } | null {
+  if (lastSelection === null || lastSelection.start !== lastSelection.end) {
+    return null
+  }
+  const run = genRunAt(prose.prov, lastSelection.start)
+  if (run === null) {
+    return null
+  }
+  const [start, end] = run
+  return { start, end }
+}
+
+/** Recomputes whether `rerollTarget()` would answer a span, emitting
+ *  `rerollableChange` only when that answer has changed since the last call --
+ *  the same contract `setLastSelection` keeps for `selectionChange`. */
+function updateRerollability(): void {
+  const possible = rerollTarget() !== null
+  if (possible !== rerollWasPossible) {
+    rerollWasPossible = possible
+    emit('rerollableChange', possible)
+  }
+}
+
+/**
+ * Deletes the span from character `start` to character `end`, as one undo step --
+ * the undoable half of a reroll (api#5). `Text.vue` calls this with `rerollTarget()`'s
+ * own answer, then generates again with a caret where `start` now sits; the existing
+ * `appendGenerated` needs no change to insert there, since this leaves the caret
+ * collapsed at exactly that position.
+ *
+ * Mirrors `appendGenerated`'s own structure: `document.execCommand('delete')` where
+ * it exists, so the deletion lands on the browser's own undo stack, and the same
+ * `textContent`-splice fallback where it does not. No `pending` kind is set around
+ * either path -- `applyEdit` fills zero characters for an empty insertion, so
+ * `classify`'s answer here is never read.
+ */
+function removeRange(start: number, end: number): void {
+  const element = editor.value
+  if (element === null || start === end) {
+    return
+  }
+  const deleted =
+    typeof document.execCommand === 'function' &&
+    selectRange(element, start, end) &&
+    document.execCommand('delete')
+  if (deleted) {
+    // `execCommand` fired `input` synchronously, so the handler -- and with it
+    // `updateLastSelection` -- has already run.
+    return
+  }
+  const next = prose.text.slice(0, start) + prose.text.slice(end)
+  element.textContent = next
+  recordEdit(next)
+  setLastSelection(start, start)
+  settle()
+}
+
+defineExpose({ appendGenerated, getSelectionOffsets, rerollTarget, removeRange })
 
 /**
  * Replaces everything, which is what opening a different file is.
@@ -471,6 +555,7 @@ function reset(next: Prose): void {
     selectionWasLive = false
     emit('selectionChange', false)
   }
+  updateRerollability()
   empty.value = prose.text.length === 0
   if (editor.value !== null) {
     editor.value.textContent = prose.text
