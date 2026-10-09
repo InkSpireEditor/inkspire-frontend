@@ -367,9 +367,19 @@ const submitModal = async () => {
         // itself (frontend#30) -- see `openModal`'s own docstring.
         const space = modalSpace.value
         if (modalType.value === 'create-file') {
-            await filesManagerService.addFile(space, name, targetNodeId.value)
+            const created = await filesManagerService.addFile(space, name, targetNodeId.value)
+            // A chapter (a non-null `dir`, in the stories space) is opened by
+            // routing to it, the same way TreeItem's own row does -- EditorRoute
+            // then sets the shared selection itself from the route params. A
+            // one-shot or a note (frontend#31) takes the other, note-style path.
+            if (space === 'stories' && created.dir !== null) {
+                router.push({ name: 'write', params: { id: created.dir, fileId: created.id } })
+            } else {
+                setSelectedFile(space, created.id)
+            }
         } else if (modalType.value === 'create-one-shot') {
-            await filesManagerService.addFile(space, name, null)
+            const created = await filesManagerService.addFile(space, name, null)
+            setSelectedFile(space, created.id) // dir is always null for a one-shot
         } else if (modalType.value === 'create-dir') {
             await filesManagerService.addDir(space, name, modalInputContext.value)
         } else if (modalType.value === 'edit' && nodeToEdit.value) {

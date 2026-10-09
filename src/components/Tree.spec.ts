@@ -144,7 +144,9 @@ describe('Tree.vue', () => {
 
     it('should create a file and update tree', async () => {
         vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] });
-        vi.mocked(filesManagerService.addFile).mockResolvedValue({});
+        vi.mocked(filesManagerService.addFile).mockResolvedValue({
+            id: 'note-1', name: 'new-file.txt', dir: null,
+        });
 
         const wrapper = mountTree()
         await flushPromises()
@@ -165,6 +167,91 @@ describe('Tree.vue', () => {
 
         expect(filesManagerService.addFile).toHaveBeenCalledWith('notes', 'new-file.txt', null)
         expect(filesManagerService.getTree).toHaveBeenCalledWith('notes')
+    })
+
+    describe('opening what was just created (frontend#31)', () => {
+        it('routes straight to a newly created chapter', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{ id: 'story-1', name: 'Example Story', summary: '', files: [] }],
+                files: [],
+            })
+            vi.mocked(filesManagerService.addFile).mockResolvedValue({
+                id: 'chapter-1', name: 'Chapter One', dir: 'story-1',
+            })
+            const wrapper = mountTree()
+            await flushPromises()
+
+            const story = wrapper.findAllComponents(TreeItem)
+                .find(item => item.props('node').name === 'Example Story')
+            await story?.find('.node-actions-trigger').trigger('click')
+            const newFileBtn = story?.findAll('.context-menu div').find(d => d.text() === 'New File')
+            await newFileBtn?.trigger('click')
+
+            const modal = wrapper.findComponent(Modal)
+            await modal.find('input').setValue('Chapter One')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(mockPush).toHaveBeenCalledWith({
+                name: 'write',
+                params: { id: 'story-1', fileId: 'chapter-1' },
+            })
+        })
+
+        it('selects a newly created one-shot directly, since it has no route', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
+            vi.mocked(filesManagerService.addFile).mockResolvedValue({
+                id: 'one-shot-1', name: 'a-solo-piece', dir: null,
+            })
+            const wrapper = mountTree()
+            await flushPromises()
+
+            const newOneShotBtn = rootMenuItem(wrapper, 'New One-Shot')
+            await newOneShotBtn?.trigger('click')
+            const modal = wrapper.findComponent(Modal)
+            await modal.find('input').setValue('a-solo-piece')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(mockPush).not.toHaveBeenCalled()
+            expect(useSharedFiles().selectedFileId.value).toBe('one-shot-1')
+        })
+
+        it('selects a newly created note directly, since it has no route', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
+            vi.mocked(filesManagerService.addFile).mockResolvedValue({
+                id: 'note-1', name: 'a-note.txt', dir: null,
+            })
+            const wrapper = mountTree()
+            await flushPromises()
+            await openTab(wrapper, 'Notes')
+
+            const newFileBtn = rootMenuItem(wrapper, 'New File')
+            await newFileBtn?.trigger('click')
+            const modal = wrapper.findComponent(Modal)
+            await modal.find('input').setValue('a-note.txt')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(mockPush).not.toHaveBeenCalled()
+            expect(useSharedFiles().selectedFileId.value).toBe('note-1')
+        })
+
+        it('does not touch the selection or the route when creating a directory', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
+            const wrapper = mountTree()
+            await flushPromises()
+
+            const newDirBtn = rootMenuItem(wrapper, 'New Story')
+            await newDirBtn?.trigger('click')
+            const modal = wrapper.findComponent(Modal)
+            await modal.find('input').setValue('A New Story')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(mockPush).not.toHaveBeenCalled()
+            expect(filesManagerService.addDir).toHaveBeenCalled()
+        })
     })
 
     it('should open edit modal for file, titled for a stories file', async () => {
@@ -476,7 +563,9 @@ describe('Tree.vue', () => {
                 dirs: [{ id: 'story-1', name: 'Example Story', summary: '', files: [] }],
                 files: []
             })
-            vi.mocked(filesManagerService.addFile).mockResolvedValue({})
+            vi.mocked(filesManagerService.addFile).mockResolvedValue({
+                id: 'chapter-1', name: 'Chapter One', dir: 'story-1',
+            })
             const wrapper = mountTree()
             await flushPromises()
             const listener = listenForStoriesChanged()
