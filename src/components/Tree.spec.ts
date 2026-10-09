@@ -4,8 +4,10 @@ import Tree from './Tree.vue'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import { filesManagerService, type FileSystemNode, type TreeApiResponse } from '../services/filesManager'
+import { llmService } from '../services/llm'
 import { modelService } from '../services/model'
 import { gitService } from '../services/git'
+import { useSharedFeatures, resetSharedFeatures } from '../services/sharedFeatures'
 import { useSharedFiles } from '../services/sharedFiles'
 import { resetSharedGit } from '../services/sharedGit'
 
@@ -53,9 +55,12 @@ describe('Tree.vue', () => {
         localStorage.clear()
         useSharedFiles().clearSelectedFile()
         resetSharedGit()
+        // Off by default -- the instruction+Generate tests below turn it on.
+        resetSharedFeatures()
 
         // Spy on all service methods
         vi.spyOn(modelService, 'getModels').mockResolvedValue([])
+        vi.spyOn(llmService, 'suggestTitle').mockResolvedValue('A Title')
         vi.spyOn(gitService, 'status').mockResolvedValue({
             branch: 'main', upstream: 'origin/main', ahead: 0, behind: 0,
             fetched: false, clean: true, changes: [],
@@ -162,7 +167,9 @@ describe('Tree.vue', () => {
         expect(filesManagerService.getTree).toHaveBeenCalledWith('notes')
     })
 
-    it('should open edit modal for file', async () => {
+    it('should open edit modal for file, titled for a stories file', async () => {
+        // The default active tab is Stories, so this edits a chapter -- "Edit
+        // Title" rather than "Edit File", which only a note still gets (frontend#30).
         vi.mocked(filesManagerService.getTree).mockResolvedValue({
             dirs: [],
             files: [{ id: "10", name: "edit-me.txt", status: "" }],
@@ -180,8 +187,27 @@ describe('Tree.vue', () => {
 
         const modal = wrapper.findComponent(Modal)
         expect(modal.props('show')).toBe(true)
-        expect(modal.props('title')).toBe('Edit File')
+        expect(modal.props('title')).toBe('Edit Title')
         expect((wrapper.vm as any).modalInputName).toBe('edit-me.txt')
+    })
+
+    it('titles the edit modal "Edit File" for a note', async () => {
+        vi.mocked(filesManagerService.getTree).mockResolvedValue({
+            dirs: [],
+            files: [{ id: "10", name: "edit-me.txt", status: "" }],
+        });
+
+        const wrapper = mountTree()
+        await flushPromises()
+        await openTab(wrapper, 'Notes')
+
+        const fileItem = wrapper.findComponent(TreeItem)
+        await fileItem.find('.node-actions-trigger').trigger('click')
+        const editBtn = fileItem.findAll('.context-menu div').find(d => d.text() === 'Edit')
+        await editBtn?.trigger('click')
+        await flushPromises()
+
+        expect(wrapper.findComponent(Modal).props('title')).toBe('Edit File')
     })
 
     // ------------------------------------
@@ -695,6 +721,139 @@ describe('Tree.vue', () => {
             expect(mockPush).not.toHaveBeenCalled()
             mockRoute.name = 'home'
             mockRoute.params = {}
+        })
+    })
+
+    describe('the title-edit modal, reached from Text.vue (frontend#30)', () => {
+        /** Dispatches the request `Text.vue`'s title click sends, then flushes. */
+        const requestEdit = async (detail: Record<string, unknown>) => {
+            window.dispatchEvent(new CustomEvent('text:edit-title', { detail }))
+            await flushPromises()
+        }
+
+        it('opens the edit modal pre-filled with the dispatched name', async () => {
+            const wrapper = mountTree()
+            await flushPromises()
+
+            await requestEdit({ space: 'stories', id: 'chapter-1', name: 'Chapter One' })
+
+            const modal = wrapper.findComponent(Modal)
+            expect(modal.props('show')).toBe(true)
+            expect(modal.props('title')).toBe('Edit Title')
+            expect((wrapper.vm as any).modalInputName).toBe('Chapter One')
+        })
+
+        it("uses the request's own space, not the sidebar's active tab, when renaming", async () => {
+            vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
+            const wrapper = mountTree()
+            await flushPromises()
+            await openTab(wrapper, 'Notes') // the sidebar sits on Notes...
+
+            await requestEdit({ space: 'stories', id: 'chapter-1', name: 'Chapter One' }) // ...but this is a chapter
+
+            const modal = wrapper.findComponent(Modal)
+            const input = modal.find('input')
+            await input.setValue('New Chapter Name')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(filesManagerService.editFile).toHaveBeenCalledWith(
+                'stories',
+                'chapter-1',
+                'New Chapter Name',
+            )
+        })
+
+        it('offers the instruction and Generate once the small-model feature is on', async () => {
+            useSharedFeatures().title.value = true
+            const wrapper = mountTree()
+            await flushPromises()
+
+            await requestEdit({ space: 'stories', id: 'chapter-1', name: 'Chapter One' })
+
+            expect(wrapper.text()).toContain('Instruction (optional)')
+            expect(wrapper.find('.generate-btn').exists()).toBe(true)
+        })
+
+        it('offers nothing extra with the small-model feature off', async () => {
+            const wrapper = mountTree()
+            await flushPromises()
+
+            await requestEdit({ space: 'stories', id: 'chapter-1', name: 'Chapter One' })
+
+            expect(wrapper.find('.generate-btn').exists()).toBe(false)
+        })
+
+        it('offers nothing extra for a note, even with the feature on', async () => {
+            useSharedFeatures().title.value = true
+            const wrapper = mountTree()
+            await flushPromises()
+
+            await requestEdit({ space: 'notes', id: 'note-1', name: 'Some Note' })
+
+            expect(wrapper.find('.generate-btn').exists()).toBe(false)
+            expect(wrapper.findComponent(Modal).props('title')).toBe('Edit File')
+        })
+
+        it('offers nothing extra for a directory, even with the feature on', async () => {
+            useSharedFeatures().title.value = true
+            const wrapper = mountTree()
+            await flushPromises()
+
+            const dirNode: FileSystemNode = { id: 'dir-1', name: 'A Story', type: 'D', summary: '' }
+            ;(wrapper.vm as any).openModal('edit', dirNode.id, dirNode, 'stories')
+            await flushPromises()
+
+            expect(wrapper.find('.generate-btn').exists()).toBe(false)
+        })
+
+        it('Generate fills the name field and leaves the modal open', async () => {
+            useSharedFeatures().title.value = true
+            vi.mocked(llmService.suggestTitle).mockResolvedValue('The Wax Still Held')
+            const wrapper = mountTree()
+            await flushPromises()
+            await requestEdit({ space: 'stories', id: 'chapter-1', name: 'Chapter One' })
+
+            await wrapper.find('.generate-btn').trigger('click')
+            await flushPromises()
+
+            expect(llmService.suggestTitle).toHaveBeenCalledWith('chapter-1', undefined)
+            expect((wrapper.vm as any).modalInputName).toBe('The Wax Still Held')
+            expect(wrapper.findComponent(Modal).props('show')).toBe(true)
+            expect(filesManagerService.editFile).not.toHaveBeenCalled()
+        })
+
+        it('sends the typed instruction to suggestTitle', async () => {
+            useSharedFeatures().title.value = true
+            const wrapper = mountTree()
+            await flushPromises()
+            await requestEdit({ space: 'stories', id: 'chapter-1', name: 'Chapter One' })
+
+            const textarea = wrapper.findAll('textarea').find((t) =>
+                t.attributes('placeholder')?.includes('ominous'),
+            )!
+            await textarea.setValue('make it ominous')
+            await wrapper.find('.generate-btn').trigger('click')
+            await flushPromises()
+
+            expect(llmService.suggestTitle).toHaveBeenCalledWith('chapter-1', 'make it ominous')
+        })
+
+        it('shows the real failure message and leaves the name field untouched', async () => {
+            useSharedFeatures().title.value = true
+            vi.mocked(llmService.suggestTitle).mockRejectedValue(
+                new Error('No small model is configured.'),
+            )
+            const wrapper = mountTree()
+            await flushPromises()
+            await requestEdit({ space: 'stories', id: 'chapter-1', name: 'Chapter One' })
+
+            await wrapper.find('.generate-btn').trigger('click')
+            await flushPromises()
+
+            expect((wrapper.vm as any).modalInputName).toBe('Chapter One')
+            expect((wrapper.vm as any).errorMessage).toBe('No small model is configured.')
+            expect((wrapper.vm as any).showError).toBe(true)
         })
     })
 })

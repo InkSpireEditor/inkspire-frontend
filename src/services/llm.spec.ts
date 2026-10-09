@@ -369,4 +369,72 @@ describe('llmService', () => {
       await expect(llmService.getDefaults()).rejects.toThrow('Not authenticated')
     })
   })
+
+  describe('getFeatures', () => {
+    it('fetches which optional features are on', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ title: true }),
+      } as unknown as Response)
+
+      await expect(llmService.getFeatures()).resolves.toEqual({ title: true })
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${API_URL}/llm/features`,
+        expect.objectContaining({
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        }),
+      )
+    })
+
+    it('throws the API message on failure', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ code: 401, message: 'Not authenticated' }),
+      } as unknown as Response)
+
+      await expect(llmService.getFeatures()).rejects.toThrow('Not authenticated')
+    })
+  })
+
+  describe('suggestTitle', () => {
+    it('posts to the stories file path, with no instruction', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ title: 'The Wax Still Held' }),
+      } as unknown as Response)
+
+      await expect(llmService.suggestTitle('f1')).resolves.toBe('The Wax Still Held')
+      expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/f1/title`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ instruction: undefined }),
+        credentials: 'include',
+      })
+    })
+
+    it('sends an instruction when given one', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ title: 'The Dark Letter' }),
+      } as unknown as Response)
+
+      await llmService.suggestTitle('f1', 'make it ominous')
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${API_URL}/stories/file/f1/title`,
+        expect.objectContaining({ body: JSON.stringify({ instruction: 'make it ominous' }) }),
+      )
+    })
+
+    it('throws the API message on failure', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ code: 409, message: 'No small model is configured.' }),
+      } as unknown as Response)
+
+      await expect(llmService.suggestTitle('f1')).rejects.toThrow('No small model is configured.')
+    })
+  })
 })

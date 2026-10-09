@@ -164,6 +164,49 @@ export const llmService = {
         }
         return response.json();
     },
+
+    /**
+     * Which optional, small-model-backed features this installation offers --
+     * today, only `title` (frontend#30): whether `INKSPIRE_LLM_SMALL_MODEL` is
+     * configured, and so whether the dice button has anything to call.
+     */
+    async getFeatures(): Promise<Features> {
+        const response = await apiFetch(`${API_URL}/llm/features`, {
+            headers: jsonHeaders(),
+        });
+        if (!response.ok) {
+            throw new Error(await errorMessage(response));
+        }
+        return response.json();
+    },
+
+    /**
+     * A proposed title for chapter `id`, from the server's configured small model
+     * -- a single short answer, not a stream, since a title arrives essentially
+     * all at once.
+     *
+     * No `space`: the route is stories-only, since a chapter is what was asked
+     * for (frontend#30) -- a one-shot or a note asking for one is not ruled out,
+     * just not built here. Like `generate`, takes no text: the server reads the
+     * chapter fresh from disk.
+     *
+     * `instruction` is the writer's own steering -- "something ominous," "shorter"
+     * -- typed into the title-edit modal, not the dice button, which calls this
+     * with none. Omitted entirely rather than sent empty, so the dice's own call
+     * site needs no change at all.
+     */
+    async suggestTitle(id: string, instruction?: string): Promise<string> {
+        const response = await apiFetch(`${API_URL}/stories/file/${id}/title`, {
+            method: "POST",
+            headers: jsonHeaders(),
+            body: JSON.stringify({ instruction }),
+        });
+        if (!response.ok) {
+            throw new Error(await errorMessage(response));
+        }
+        const body: { title: string } = await response.json();
+        return body.title;
+    },
 };
 
 /** `GET /api/llm/defaults`: the server's configuration, in its own field names. */
@@ -174,6 +217,11 @@ export interface GenerationDefaults {
     num_ctx: number | null
     think: boolean | null
     send_selection: boolean
+}
+
+/** `GET /api/llm/features`: which optional, small-model-backed features are on. */
+export interface Features {
+    title: boolean
 }
 
 /** The payload of one server-sent event, or null for the terminator and anything unparsable. */

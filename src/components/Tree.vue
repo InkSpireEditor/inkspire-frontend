@@ -5,15 +5,22 @@ import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
 import { filesManagerService, type FileSystemNode } from '../services/filesManager'
+import { llmService } from '../services/llm'
 import { useTheme } from '../services/theme'
+import { useSharedFeatures } from '../services/sharedFeatures'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
+import { useRename } from '../services/rename'
 import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../services/spaces'
 import { isLoggedIn, logout } from '../services/api'
 
 const { toggleTheme, isDarkMode } = useTheme()
 const { selectedFileId, setSelectedFile, clearSelectedFile } = useSharedFiles()
 const { refresh: refreshGitStatus } = useSharedGit()
+// The same flag the dice button reads, kept fresh by Text.vue's own
+// ensureFeaturesLoaded() -- this component only ever reads it, for the
+// title-edit modal's own instruction+Generate section (frontend#30).
+const { title: titleFeatureEnabled } = useSharedFeatures()
 const route = useRoute()
 const router = useRouter()
 
@@ -43,6 +50,8 @@ const ACTIVE_SPACE_KEY = 'activeSpace'
 // with a readable message; the backend rejects over-long input regardless.
 const MAX_NAME_LENGTH = 255
 const MAX_SUMMARY_LENGTH = 2000
+// Matches inkspire_api/titles.py's own ceiling on the writer's steering.
+const MAX_INSTRUCTION_LENGTH = 300
 
 // Reactive state variables. Vue's 'ref' makes these variables reactive,
 // meaning the UI will automatically update when their values change.
@@ -66,6 +75,22 @@ const modalInputContext = ref('')
 const modalContextVisible = ref(false)
 const targetNodeId = ref<string | null>(null)
 const nodeToEdit = ref<FileSystemNode | null>(null)
+/**
+ * Which space the open modal's operation actually targets -- not necessarily
+ * `activeSpace`, the tab the sidebar happens to be showing. Every in-tree
+ * trigger (a tab's own root menu, a node's own context menu) only ever fires
+ * from inside the tab matching its node's space, so `activeSpace` was a correct
+ * stand-in for that until frontend#30: `Text.vue`'s title click can ask this
+ * component to open the edit modal for a file while the sidebar sits on a
+ * different tab entirely, and `submitModal` reading `activeSpace` there would
+ * send the rename to the wrong root.
+ */
+const modalSpace = ref<Space>(activeSpace.value)
+/** The writer's own steering for a title suggestion (frontend#30) -- local to
+ *  the open modal, cleared whenever it opens; never persisted. */
+const modalInstruction = ref('')
+/** Whether a title suggestion is in flight for the open modal's Generate button. */
+const generatingTitle = ref(false)
 
 // Confirmation Dialog State Management
 const showConfirm = ref(false)
@@ -214,13 +239,23 @@ const handleNodeAction = (action: string, node: FileSystemNode | null, parentId:
  * @param type The type of operation (create-file, create-dir, edit).
  * @param targetId The ID of the target directory (for creation) or node (for edit).
  * @param node The node object if editing.
+ * @param space Which root this operation targets. Defaults to the active tab,
+ *   correct for every in-tree trigger; `handleEditTitleRequest` below passes the
+ *   file's own space explicitly, since the sidebar's active tab may disagree.
  */
-const openModal = (type: 'create-file' | 'create-dir' | 'create-one-shot' | 'edit', targetId: string | null, node: FileSystemNode | null = null) => {
+const openModal = (
+    type: 'create-file' | 'create-dir' | 'create-one-shot' | 'edit',
+    targetId: string | null,
+    node: FileSystemNode | null = null,
+    space: Space = activeSpace.value,
+) => {
     modalType.value = type
     targetNodeId.value = targetId
     nodeToEdit.value = node
+    modalSpace.value = space
     modalInputName.value = node ? node.name : ''
     modalInputContext.value = ''
+    modalInstruction.value = ''
 
     if (type === 'create-file') {
         modalTitle.value = 'Create New File'
@@ -234,45 +269,72 @@ const openModal = (type: 'create-file' | 'create-dir' | 'create-one-shot' | 'edi
         modalTitle.value = 'Create New Directory'
         modalContextVisible.value = true
     } else if (type === 'edit') {
-        modalTitle.value = node?.type === 'D' ? 'Edit Directory' : 'Edit File'
+        modalTitle.value =
+            node?.type === 'D' ? 'Edit Directory' : space === 'stories' ? 'Edit Title' : 'Edit File'
         modalContextVisible.value = node?.type === 'D'
         // The tree already carries a directory's summary, so editing one fetches nothing.
         modalInputContext.value = node?.type === 'D' ? node.summary || '' : ''
     }
-    
+
     showModal.value = true
 }
 
 /**
- * Renames a file, and follows it to its new id.
- *
- * A file's id is derived from its path, so renaming one *usually* changes it. Anything
- * still naming the old id is then pointing at something the API no longer has: the shared
- * selection, whose next save would fail, and the editor's own URL. Both are moved across
- * here. A directory keeps its id through a rename, so this is files only.
- *
- * A rename that only changes case or spacing leaves the filename, and so the id, alone --
- * "first chapter" and "First Chapter" are one filename and two names. `setSelectedFile` is
- * still called in that case: it is the open file's title that changed, not its identity,
- * and `Text.vue`'s watch on the selection is what makes it re-read that title. Assigning a
- * fresh `{space, id}` even when both fields already hold those values is what triggers it,
- * since the watch is on the ref's reference, not a deep comparison of its contents.
+ * Whether the open modal should offer the instruction+Generate section
+ * (frontend#30): editing a stories-space file -- a chapter or a one-shot, never
+ * a directory -- with the server's small model configured. The same
+ * `titleFeatureEnabled` flag the dice button reads.
  */
-const renameFile = async (space: Space, node: FileSystemNode, name: string) => {
-    const renamed = await filesManagerService.editFile(space, node.id, name)
-    if (!renamed?.id) return
+const showTitleAssist = computed(
+    () =>
+        modalType.value === 'edit' &&
+        modalSpace.value === 'stories' &&
+        nodeToEdit.value?.type !== 'D' &&
+        titleFeatureEnabled.value,
+)
 
-    if (selectedFileId.value === node.id) {
-        setSelectedFile(space, renamed.id)
+/**
+ * Asks the configured small model for a title and fills the modal's own name
+ * field with it, for review -- never applies anything itself, unlike the dice
+ * button's own immediate-apply path. A failure shows its real message, the same
+ * way `Text.vue`'s own dice-button handler does, rather than this modal's
+ * generic "Operation failed".
+ */
+const generateTitle = async () => {
+    if (!nodeToEdit.value || generatingTitle.value) return
+    generatingTitle.value = true
+    try {
+        modalInputName.value = await llmService.suggestTitle(
+            nodeToEdit.value.id,
+            modalInstruction.value || undefined,
+        )
+    } catch (e) {
+        errorMessage.value = e instanceof Error ? e.message : 'Could not generate a title'
+        showError.value = true
+    } finally {
+        generatingTitle.value = false
     }
-    if (renamed.id !== node.id && route.name === 'write' && route.params.fileId === node.id) {
-        // The story id comes from the route being replaced rather than from the node:
-        // it is the one place it is certainly present, and it cannot disagree.
-        router.replace({
-            name: 'write',
-            params: { id: route.params.id, fileId: renamed.id },
-        })
-    }
+}
+
+/**
+ * `Text.vue`'s title click (frontend#30): opens this component's own edit modal
+ * for the file it names, rather than a second modal living there. The synthetic
+ * node carries only what the edit-file path actually reads -- no tree search
+ * needed to find a "real" one.
+ */
+const handleEditTitleRequest = (event: Event) => {
+    const { space, id, name, parentId } = (event as CustomEvent).detail
+    openModal('edit', id, { id, name, type: 'F', parentId }, space)
+}
+
+/**
+ * Renames a file, and follows it to its new id -- `useRename` (`services/rename.ts`)
+ * has the rule and why it exists; `Text.vue`'s title-proposal button (frontend#30)
+ * shares the same implementation rather than a second copy of it.
+ */
+const rename = useRename()
+const renameFile = async (space: Space, node: FileSystemNode, name: string) => {
+    await rename(space, node.id, name)
 }
 
 /**
@@ -299,7 +361,11 @@ const submitModal = async () => {
     if (!isLoggedIn()) return
 
     try {
-        const space = activeSpace.value
+        // Not `activeSpace`: the modal's own operation targets whichever space it
+        // was opened for, which can differ from the sidebar's active tab when the
+        // open happened from `Text.vue`'s title click rather than from the tree
+        // itself (frontend#30) -- see `openModal`'s own docstring.
+        const space = modalSpace.value
         if (modalType.value === 'create-file') {
             await filesManagerService.addFile(space, name, targetNodeId.value)
         } else if (modalType.value === 'create-one-shot') {
@@ -402,11 +468,13 @@ onMounted(() => {
     fetchTree(activeSpace.value)
     document.addEventListener('click', closeRootMenu)
     window.addEventListener('stories:changed', handleStoriesChanged)
+    window.addEventListener('text:edit-title', handleEditTitleRequest)
 })
 
 onUnmounted(() => {
     document.removeEventListener('click', closeRootMenu)
     window.removeEventListener('stories:changed', handleStoriesChanged)
+    window.removeEventListener('text:edit-title', handleEditTitleRequest)
 })
 </script>
 
@@ -462,9 +530,10 @@ onUnmounted(() => {
     </ul>
 
     <!-- Unified Modal for Forms -->
-    <Modal 
+    <Modal
       :show="showModal"
       :title="modalTitle"
+      :confirm-disabled="generatingTitle"
       @close="showModal = false"
       @confirm="submitModal"
     >
@@ -475,6 +544,25 @@ onUnmounted(() => {
       <div v-if="modalContextVisible" class="form-group">
         <label>Context/Summary:</label>
         <textarea v-model="modalInputContext" placeholder="Enter context" rows="3"></textarea>
+      </div>
+      <!-- Instruction + Generate (frontend#30): only while editing a stories-space
+           file, and only once the server has a small model configured. -->
+      <div v-if="showTitleAssist" class="form-group">
+        <label>Instruction (optional):</label>
+        <textarea
+          v-model="modalInstruction"
+          placeholder="e.g. make it more ominous"
+          rows="2"
+          :maxlength="MAX_INSTRUCTION_LENGTH"
+        ></textarea>
+        <button
+          type="button"
+          class="generate-btn"
+          :disabled="generatingTitle"
+          @click="generateTitle"
+        >
+          {{ generatingTitle ? 'Asking…' : '🎲 Generate' }}
+        </button>
       </div>
     </Modal>
 
@@ -634,5 +722,30 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 0;
   margin: 0;
+}
+
+/* The title-edit modal's Generate button (frontend#30) -- small and
+   right-aligned under its own textarea, not styled like the modal's own
+   Cancel/Rename pair below it. */
+.generate-btn {
+  align-self: flex-end;
+  margin-top: var(--space-1);
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+.generate-btn:hover:not(:disabled) {
+  border-color: var(--color-border-hover);
+}
+
+.generate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

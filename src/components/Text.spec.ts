@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { applyEdit, metadataFromProse, proseFromMetadata, type Prose } from '../services/provenance'
 import { mount, flushPromises } from '@vue/test-utils'
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import Text from './Text.vue'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
@@ -11,6 +11,7 @@ import * as sharedFiles from '../services/sharedFiles'
 import * as sharedModel from '../services/sharedModel'
 import * as sharedGit from '../services/sharedGit'
 import * as sharedSettings from '../services/sharedSettings'
+import * as sharedFeatures from '../services/sharedFeatures'
 
 // Mock services. NotFoundError is the real class: Text.vue branches on it with
 // instanceof, so a stand-in would not be recognised.
@@ -24,7 +25,8 @@ vi.mock('../services/filesManager', async () => {
       getFileInfo: vi.fn(),
       getDocument: vi.fn(),
       putDocument: vi.fn(),
-      getDirContent: vi.fn()
+      getDirContent: vi.fn(),
+      editFile: vi.fn()
     }
   }
 })
@@ -32,8 +34,20 @@ vi.mock('../services/filesManager', async () => {
 vi.mock('../services/llm', () => ({
   llmService: {
     generate: vi.fn(),
-    getDefaults: vi.fn()
+    getDefaults: vi.fn(),
+    getFeatures: vi.fn(),
+    suggestTitle: vi.fn()
   }
+}))
+
+// Text.vue reaches for the route (for the title-proposal event's storyId) and,
+// through `useRename`, the router -- without this, mounting it with no router
+// plugin installed would leave both injected as undefined.
+const mockReplace = vi.fn().mockResolvedValue(undefined)
+const mockRoute = { name: 'home', params: {} as Record<string, string> }
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ replace: mockReplace }),
+  useRoute: () => mockRoute
 }))
 
 /**
@@ -58,6 +72,8 @@ const continued = (before: string, added: string) =>
 
 describe('Text.vue', () => {
   let selectedFile: any
+  /** Whether the dice button has anything to call -- `sharedFeatures`'s `title`. */
+  let titleFeature: Ref<boolean>
 
   /** The file the sidebar has open, named by its space as well as its id. */
   const OPEN = { space: 'stories' as const, id: 'a1b2c3d4e5f60718' }
@@ -105,7 +121,16 @@ describe('Text.vue', () => {
       setSendSelection: vi.fn(),
       reset: vi.fn()
     })
-    
+    // Off by default -- a test in the title-proposal block (frontend#30) flips it.
+    titleFeature = ref(false)
+    vi.spyOn(sharedFeatures, 'useSharedFeatures').mockReturnValue({
+      title: titleFeature,
+      loaded: ref(true),
+      ensureLoaded: vi.fn().mockResolvedValue(undefined)
+    })
+    mockRoute.name = 'home'
+    mockRoute.params = {}
+
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'test.ink' })
     vi.mocked(filesManagerService.getDocument).mockResolvedValue({
       body: 'Initial content',
@@ -890,6 +915,145 @@ describe('Text.vue', () => {
       await readToggle.trigger('click')
 
       expect(rerollButton(wrapper).attributes('disabled')).toBeDefined()
+    })
+  })
+
+  describe('title proposal (frontend#30)', () => {
+    const diceButton = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.find('[aria-label="Propose a title"]')
+
+    it('is absent when the feature is off', async () => {
+      const wrapper = await mountWithFile()
+      expect(diceButton(wrapper).exists()).toBe(false)
+    })
+
+    it('is absent for a note, even with the feature on', async () => {
+      titleFeature.value = true
+      const wrapper = await mountWithFile()
+      selectedFile.value = { space: 'notes', id: 'n1' }
+      await flushPromises()
+
+      expect(diceButton(wrapper).exists()).toBe(false)
+    })
+
+    it('is present for a stories file once the feature is on', async () => {
+      titleFeature.value = true
+      const wrapper = await mountWithFile()
+      expect(diceButton(wrapper).exists()).toBe(true)
+      expect(diceButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it('asks for a title, then renames the file to it', async () => {
+      titleFeature.value = true
+      const wrapper = await mountWithFile()
+      vi.mocked(llmService.suggestTitle).mockResolvedValue('The Wax Still Held')
+      vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
+
+      await diceButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(llmService.suggestTitle).toHaveBeenCalledWith(OPEN.id)
+      expect(filesManagerService.editFile).toHaveBeenCalledWith(
+        OPEN.space,
+        OPEN.id,
+        'The Wax Still Held'
+      )
+    })
+
+    it('dispatches stories:changed, carrying the write route\'s story id', async () => {
+      mockRoute.name = 'write'
+      mockRoute.params = { id: 'story-1', fileId: OPEN.id }
+      titleFeature.value = true
+      const wrapper = await mountWithFile()
+      vi.mocked(llmService.suggestTitle).mockResolvedValue('A Title')
+      vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
+      const listener = vi.fn()
+      window.addEventListener('stories:changed', listener)
+
+      await diceButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(listener).toHaveBeenCalledTimes(1)
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: { storyId: 'story-1' } })
+      )
+      window.removeEventListener('stories:changed', listener)
+    })
+
+    it('shows an error and renames nothing when the suggestion request fails', async () => {
+      titleFeature.value = true
+      const wrapper = await mountWithFile()
+      vi.mocked(llmService.suggestTitle).mockRejectedValue(new Error('No small model is configured.'))
+
+      await diceButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(filesManagerService.editFile).not.toHaveBeenCalled()
+      const vm = wrapper.vm as any
+      expect(vm.errorMessage).toBe('No small model is configured.')
+    })
+
+    it('is not hidden in Read mode -- it never touches the editor', async () => {
+      titleFeature.value = true
+      const wrapper = await mountWithFile()
+      const readToggle = wrapper.findAll('button').find((b) => b.text() === 'Read')!
+      await readToggle.trigger('click')
+
+      expect(diceButton(wrapper).exists()).toBe(true)
+      expect(diceButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
+  })
+
+  describe('clicking the title (frontend#30 follow-on)', () => {
+    const titleButton = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.find('button.file-title')
+
+    const listenOnce = () => {
+      const listener = vi.fn()
+      window.addEventListener('text:edit-title', listener, { once: true })
+      return listener
+    }
+
+    it('dispatches text:edit-title with the space, id and current name', async () => {
+      const wrapper = await mountWithFile()
+      const listener = listenOnce()
+
+      await titleButton(wrapper).trigger('click')
+
+      expect(listener).toHaveBeenCalledTimes(1)
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detail: { space: OPEN.space, id: OPEN.id, name: 'test.ink', parentId: undefined },
+        }),
+      )
+    })
+
+    it('carries the story id as parentId on the write route', async () => {
+      mockRoute.name = 'write'
+      mockRoute.params = { id: 'story-1', fileId: OPEN.id }
+      const wrapper = await mountWithFile()
+      const listener = listenOnce()
+
+      await titleButton(wrapper).trigger('click')
+
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: expect.objectContaining({ parentId: 'story-1' }) }),
+      )
+    })
+
+    it('opens no second modal of its own -- there is no title-edit Modal in this component', async () => {
+      const wrapper = await mountWithFile()
+      await titleButton(wrapper).trigger('click')
+      await flushPromises()
+
+      // The only Modal this component ever shows is the error one; clicking the
+      // title must not reveal any other.
+      expect(wrapper.findAllComponents(Modal)).toHaveLength(1)
+    })
+
+    it('does nothing with no file open', () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      expect(wrapper.find('button.file-title').exists()).toBe(false)
     })
   })
 

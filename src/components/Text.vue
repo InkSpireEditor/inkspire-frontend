@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
 import {
   metadataFromProse,
@@ -10,6 +11,8 @@ import {
 import { llmService } from '../services/llm'
 import { cursorFromOffset, rangeFromOffsets, type Cursor, type CursorRange } from '../services/cursor'
 import { renderMarkdown } from '../services/markdown'
+import { useRename } from '../services/rename'
+import { useSharedFeatures } from '../services/sharedFeatures'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
 import { useSharedGit } from '../services/sharedGit'
@@ -24,6 +27,9 @@ const { selectedFile, clearSelectedFile } = useSharedFiles()
 const { selectedModelName, selectedModelProtocol, thinkEnabled } = useSharedModel()
 const { refresh: refreshGitStatus } = useSharedGit()
 const { temperature, promptBudget, prefixShare, numCtx, sendSelection } = useSharedSettings()
+const { title: titleFeatureEnabled, ensureLoaded: ensureFeaturesLoaded } = useSharedFeatures()
+const route = useRoute()
+const rename = useRename()
 
 /** Whether the generation settings panel is slid open. Local to this component --
  *  it is a view preference, not a setting a generation needs to know about. */
@@ -416,6 +422,88 @@ const handleReroll = async () => {
   )
 }
 
+/** Whether a title suggestion is currently in flight. */
+const isSuggestingTitle = ref(false)
+
+/**
+ * Whether the dice button (frontend#30) belongs on screen at all: a stories-space
+ * file (a chapter or a one-shot -- the API's route makes no distinction, see
+ * inkspire-api#25) that is open and non-empty, with the server's small model
+ * configured. Unlike Reroll and Generate, this needs no editor -- a title never
+ * touches the prose -- so it is not hidden in Read mode.
+ */
+const showSuggestTitle = computed(
+  () =>
+    currentFile.value?.space === 'stories' &&
+    titleFeatureEnabled.value &&
+    text.value.trim() !== '',
+)
+
+/** Whether clicking the dice button right now would do anything -- `showSuggestTitle`,
+ *  minus a request already in flight. What the button's `disabled` reads. */
+const canSuggestTitle = computed(() => showSuggestTitle.value && !isSuggestingTitle.value)
+
+/**
+ * Asks the configured small model for a title (inkspire-api#25) and applies it
+ * immediately through the same rename `Tree.vue`'s own "Edit" action uses
+ * (`useRename`, `services/rename.ts`) -- no confirmation dialog, per the design
+ * settled for this feature: rolling again just replaces it, and there is nothing
+ * to undo a rename with since it never touches the editor's own undo stack.
+ */
+const handleSuggestTitle = async () => {
+  if (!canSuggestTitle.value) return
+  const file = currentFile.value
+  if (!file) return
+
+  isSuggestingTitle.value = true
+  try {
+    const suggested = await llmService.suggestTitle(file.id)
+    await rename(file.space, file.id, suggested)
+    // Tells the sidebar (and, for a chapter, that story's dashboard if open) that
+    // this file's name just changed -- the same event `Tree.vue`'s own edits
+    // dispatch (`notifyDashboard`). `route.params.id` is the story id on the write
+    // route and `undefined` for a one-shot opened at `/`; `Tree.vue`'s listener
+    // refreshes the stories tree regardless of whether a story id came with it.
+    window.dispatchEvent(
+      new CustomEvent('stories:changed', { detail: { storyId: route.params.id } }),
+    )
+    refreshGitStatus().catch(() => {})
+  } catch (e) {
+    console.error('Error suggesting a title:', e)
+    displayError(e instanceof Error ? e.message : 'Error suggesting a title')
+  } finally {
+    isSuggestingTitle.value = false
+  }
+}
+
+/**
+ * Clicking the title asks `Tree.vue` to open its own "Edit" modal for this file,
+ * rather than opening a second one here -- there is exactly one rename modal in
+ * this app, built on `Modal.vue` and `useRename()`, and it is `Tree.vue`'s. That
+ * modal grows the instruction field and the Generate button (frontend#30); the
+ * dice button here stays the plain, no-instruction, immediate-apply path.
+ *
+ * `parentId` carries the story id on the write route (`undefined` off it, for a
+ * one-shot or a note), so `Tree.vue`'s own post-edit dashboard refresh -- which
+ * already keys off a chapter node's `parentId` -- keeps working for an edit that
+ * arrived this way instead of from the tree itself.
+ */
+const requestEditTitle = () => {
+  const file = currentFile.value
+  if (!file) return
+  window.dispatchEvent(
+    new CustomEvent('text:edit-title', {
+      detail: {
+        space: file.space,
+        id: file.id,
+        name: fileName.value,
+        parentId:
+          file.space === 'stories' && route.name === 'write' ? route.params.id : undefined,
+      },
+    }),
+  )
+}
+
 /** Stops a generation in progress, keeping whatever has arrived so far. */
 const handleStopGenerating = () => {
   generation?.abort()
@@ -481,6 +569,9 @@ onMounted(() => {
     loadFile(selectedFile.value)
   }
   window.addEventListener('beforeunload', warnBeforeUnload)
+  // Best-effort: a failed fetch just leaves the dice button looking unconfigured
+  // rather than crashing the mount over an optional feature.
+  ensureFeaturesLoaded().catch(() => {})
 })
 
 onUnmounted(() => {
@@ -495,8 +586,23 @@ onUnmounted(() => {
 <template>
   <div class="text-page">
     <div class="header">
-      <p v-if="fileName" class="file-title">{{ fileName }}</p>
+      <button
+        v-if="fileName"
+        class="file-title"
+        @click="requestEditTitle"
+        title="Edit title"
+      >{{ fileName }}</button>
       <p v-else class="file-title empty">No file selected</p>
+      <button
+        v-if="showSuggestTitle"
+        class="icon-btn"
+        @click="handleSuggestTitle"
+        :disabled="!canSuggestTitle"
+        title="Propose a title"
+        aria-label="Propose a title"
+      >
+        🎲
+      </button>
     </div>
 
     <div class="editor-row">
@@ -563,7 +669,10 @@ onUnmounted(() => {
 }
 
 .header {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   color: var(--color-heading);
 }
 
@@ -576,6 +685,22 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Without this, the flex row above gives this item its content's own width as
+     a floor and the ellipsis above never gets the chance to fire. */
+  min-width: 0;
+  /* A <button> now (it opens the title-edit modal, frontend#30), reset to read
+     exactly as the plain text it was -- overriding this file's own blanket
+     `button{}` rule the same way `.icon-btn` already does. */
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.file-title:hover {
+  color: var(--color-primary);
 }
 
 .file-title.empty {
@@ -697,5 +822,34 @@ button.generating {
 button.active {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+/* The dice button (frontend#30): a glyph, not a label, so it does not take this
+   file's own `button` rule's pill padding/border -- the same compact idiom
+   `Tree.vue`'s `.icon-btn` already uses, `padding: 0` added since that file has
+   no competing blanket `button` rule to override. */
+.icon-btn {
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  color: var(--color-text);
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background-color: var(--color-background-mute);
+  color: var(--color-primary);
+  /* Overrides the blanket button:hover's lift -- a glyph sliding up reads as
+     broken in a way a bigger button's shadow does not. */
+  transform: none;
 }
 </style>
