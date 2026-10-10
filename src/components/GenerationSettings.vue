@@ -18,12 +18,14 @@ const {
   prefixShare,
   numCtx,
   sendSelection,
+  autoComplete,
   ensureLoaded,
   setTemperature,
   setPromptBudget,
   setPrefixShare,
   setNumCtx,
   setSendSelection,
+  setAutoComplete,
   reset,
 } = useSharedSettings()
 
@@ -124,6 +126,19 @@ const onNumCtxInput = (raw: string) => {
       <span class="field-hint">
         Only matters for a rewrite. Off asks the model to replace text it cannot
         see, which asks for the right length but not the right content.
+      </span>
+    </label>
+
+    <label class="field field-checkbox">
+      <input
+        type="checkbox"
+        :checked="autoComplete"
+        @change="setAutoComplete(($event.target as HTMLInputElement).checked)"
+      />
+      <span class="field-label">Propose a completion while idle</span>
+      <span class="field-hint">
+        After a few seconds of not typing, with the caret at the end of the file:
+        shows one short sentence in grey. Tab accepts it; any other key dismisses it.
       </span>
     </label>
 

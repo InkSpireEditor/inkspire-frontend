@@ -437,4 +437,65 @@ describe('llmService', () => {
       await expect(llmService.suggestTitle('f1')).rejects.toThrow('No small model is configured.')
     })
   })
+
+  describe('complete', () => {
+    it('posts to the file path for the given space, with just the model', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ completion: ' The wax still held.' }),
+      } as unknown as Response)
+
+      await expect(llmService.complete('stories', 'f1', 'p/model')).resolves.toBe(
+        ' The wax still held.',
+      )
+      expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/stories/file/f1/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ model: 'p/model' }),
+        signal: undefined,
+        credentials: 'include',
+      })
+    })
+
+    it('serves the notes root too', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ completion: ' more.' }),
+      } as unknown as Response)
+
+      await llmService.complete('notes', 'n1', 'p/model')
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${API_URL}/notes/file/n1/complete`,
+        expect.objectContaining({ body: JSON.stringify({ model: 'p/model' }) }),
+      )
+    })
+
+    it('passes an abort signal through', async () => {
+      const controller = new AbortController()
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ completion: ' more.' }),
+      } as unknown as Response)
+
+      await llmService.complete('stories', 'f1', 'p/model', controller.signal)
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ signal: controller.signal }),
+      )
+    })
+
+    it('throws the API message on failure', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        json: async () => ({ code: 429, message: 'Too many requests' }),
+      } as unknown as Response)
+
+      await expect(llmService.complete('stories', 'f1', 'p/model')).rejects.toThrow(
+        'Too many requests',
+      )
+    })
+  })
 })

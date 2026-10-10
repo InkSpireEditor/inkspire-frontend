@@ -22,6 +22,7 @@ interface StoredSettings {
   prefixShare: number
   numCtx: number | null
   sendSelection: boolean
+  autoComplete: boolean
 }
 
 const temperature = ref(1.0)
@@ -34,6 +35,12 @@ const numCtx = ref<number | null>(null)
  *  word count. Mirrors the server's own `INKSPIRE_LLM_SEND_SELECTION` (on by
  *  default) until the writer changes it. */
 const sendSelection = ref(true)
+/** Whether the editor proposes a completion on idle, shown in grey and accepted
+ *  with Tab (frontend#9). Off by default -- unlike the settings above, there is
+ *  no server default to start from: it is purely a writer's own choice, so it is
+ *  not in `applyDefaults`/`reset` the way `thinkEnabled` (`sharedModel.ts`) is not
+ *  either. */
+const autoComplete = ref(false)
 /** Whether `ensureLoaded` has already run once. */
 const loaded = ref(false)
 
@@ -61,6 +68,7 @@ function persist(): void {
         prefixShare: prefixShare.value,
         numCtx: numCtx.value,
         sendSelection: sendSelection.value,
+        autoComplete: autoComplete.value,
       } satisfies StoredSettings),
     )
   } catch {
@@ -101,6 +109,13 @@ async function ensureLoaded(): Promise<void> {
     if (stored.sendSelection !== undefined) {
       sendSelection.value = stored.sendSelection
     }
+    // Same guard, for the same reason: a session stored before this setting
+    // existed must keep the off default, not read its absence as `false` --
+    // which happens to be the default anyway here, but the guard is what makes
+    // that a decision rather than a coincidence.
+    if (stored.autoComplete !== undefined) {
+      autoComplete.value = stored.autoComplete
+    }
   }
   loaded.value = true
 }
@@ -130,6 +145,11 @@ function setSendSelection(value: boolean): void {
   persist()
 }
 
+function setAutoComplete(value: boolean): void {
+  autoComplete.value = value
+  persist()
+}
+
 /** Restores the server's own defaults, discarding whatever was stored or changed. */
 function reset(): void {
   if (serverDefaults) {
@@ -145,6 +165,7 @@ export function resetSharedSettings() {
   prefixShare.value = 0.75
   numCtx.value = null
   sendSelection.value = true
+  autoComplete.value = false
   loaded.value = false
   serverDefaults = null
 }
@@ -155,6 +176,7 @@ export const useSharedSettings = () => ({
   prefixShare,
   numCtx,
   sendSelection,
+  autoComplete,
   loaded,
   ensureLoaded,
   setTemperature,
@@ -162,5 +184,6 @@ export const useSharedSettings = () => ({
   setPrefixShare,
   setNumCtx,
   setSendSelection,
+  setAutoComplete,
   reset,
 })

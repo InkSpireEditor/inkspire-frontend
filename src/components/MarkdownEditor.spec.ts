@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import MarkdownEditor from './MarkdownEditor.vue'
 import { proseFromMetadata, type Kind, type Prose } from '../services/provenance'
 
@@ -338,6 +339,30 @@ describe('MarkdownEditor.vue', () => {
       })
       placeCaret(wrapper, 5)
       expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: 5, end: 5 })
+      wrapper.unmount()
+    })
+
+    it('tracks a caret on a trailing blank line, not just one inside a text node', () => {
+      // A trailing blank line has nothing to put a caret "inside", so the browser
+      // represents it with a <br> and anchors the caret on the editor root itself,
+      // at a child offset past it -- previously misread as "the editor is empty"
+      // and reported as offset 0 regardless of how much text came before it (the
+      // bug a completion proposal, frontend#9, never firing there turned out to be).
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('Hello.') },
+        attachTo: document.body,
+      })
+      const element = wrapper.find('[contenteditable]').element
+      element.appendChild(document.createElement('br'))
+      const range = document.createRange()
+      range.setStart(element, element.childNodes.length)
+      range.collapse(true)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      document.dispatchEvent(new Event('selectionchange'))
+
+      expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: 6, end: 6 })
       wrapper.unmount()
     })
 
@@ -735,6 +760,264 @@ describe('MarkdownEditor.vue', () => {
         wrapper.vm.removeRange(4, 4)
         expect(wrapper.emitted('proseChange')).toBeUndefined()
       })
+    })
+  })
+
+  describe('a completion proposal (frontend#9)', () => {
+    /**
+     * As the file's own header note says of colour: jsdom has no layout, so
+     * nothing here can tell whether the overlay is positioned *at the caret* --
+     * only that the right text reaches the right node, emits the right events,
+     * and that the two keys that resolve it do. Where it actually lands is a
+     * hand test in a real browser.
+     */
+
+    it('does nothing for an empty proposal', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal('')
+      await nextTick()
+      expect(wrapper.find('.ghost').exists()).toBe(false)
+      expect(wrapper.emitted('proposalChange')).toBeUndefined()
+    })
+
+    it('renders the proposal in a node outside the contenteditable', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+
+      const ghost = wrapper.find('.ghost')
+      expect(ghost.exists()).toBe(true)
+      expect(wrapper.find('[contenteditable]').element).not.toBe(ghost.element)
+      expect(wrapper.find('.ghost-proposal').text()).toBe('open.')
+      expect(wrapper.emitted('proposalChange')).toEqual([[true]])
+    })
+
+    it('positions the proposal from the caret\'s own measured rectangle, not by mirroring the text', async () => {
+      // jsdom has no layout, so the measured numbers are meaningless here (see
+      // this file's own header note) -- what this can assert is that nothing
+      // here still depends on a mirrored copy of the document: there is no
+      // `.ghost-mirror` any more, and the position comes from inline styles
+      // rather than from flow.
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('The door creaked.') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 'The door creaked.'.length)
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+
+      expect(wrapper.find('.ghost-mirror').exists()).toBe(false)
+      const style = wrapper.find('.ghost-proposal').attributes('style') ?? ''
+      expect(style).toContain('top')
+      // left/width/text-indent, not a single left tied to the caret's own
+      // column -- a wrapped second line has to return to the paragraph's own
+      // margin (`left`), not continue under the caret, which is what
+      // `text-indent` alone (pushing only the first line over) is for.
+      expect(style).toContain('left')
+      expect(style).toContain('width')
+      expect(style).toContain('text-indent')
+      wrapper.unmount()
+    })
+
+    it('leaves the real text and the DOM structure untouched by measuring the caret', () => {
+      // `showProposal` briefly inserts a marker at the caret to measure it
+      // (`measureCaretRect`) -- this is what proves the round trip removes it
+      // again and leaves nothing behind, in a document long enough that the
+      // insertion does not land at the very end of the only text node.
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('One.\n\nTwo.') },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, 'One.\n\nTwo.'.length)
+      const element = wrapper.find('[contenteditable]').element
+      const childCountBefore = element.childNodes.length
+
+      wrapper.vm.showProposal(' Three.')
+
+      expect(element.textContent).toBe('One.\n\nTwo.')
+      expect(element.childNodes.length).toBe(childCountBefore)
+      wrapper.unmount()
+    })
+
+    it('leaves the live selection at the same offset measuring the caret moved it from', () => {
+      // `measureCaretRect`'s marker is inserted exactly where the live
+      // selection already is -- a real browser is free to shift or collapse
+      // a live range as a side effect of inserting or removing a node right
+      // there, silently, with nothing to throw. Left unchecked, that is what
+      // made every completion after the first stop firing at all: the caret
+      // `isCaretAtEndOfText()` (`Text.vue`) looks for was no longer where
+      // this feature's own logic expected it, and this feature's own
+      // failures are silent by design -- indistinguishable from "nothing is
+      // happening".
+      const body = 'One.\n\nTwo.'
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain(body) },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, body.length)
+      expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: body.length, end: body.length })
+
+      wrapper.vm.showProposal(' Three.')
+
+      expect(wrapper.vm.getSelectionOffsets()).toEqual({ start: body.length, end: body.length })
+      wrapper.unmount()
+    })
+
+    it('does not re-emit proposalChange while a proposal keeps showing', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+      wrapper.vm.showProposal(' ajar.')
+      await nextTick()
+      expect(wrapper.emitted('proposalChange')).toEqual([[true]])
+    })
+
+    it('Tab accepts the proposal, prevents default, and inserts it as generated text', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+      expect(wrapper.find('.ghost').exists()).toBe(true)
+
+      const event = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true })
+      wrapper.find('[contenteditable]').element.dispatchEvent(event)
+      await nextTick()
+
+      expect(event.defaultPrevented).toBe(true)
+      expect(wrapper.find('.ghost').exists()).toBe(false)
+      expect(wrapper.emitted('proposalChange')).toEqual([[true], [false]])
+
+      const answered = emittedProse(wrapper)
+      expect(answered.text).toBe('The door creaked. open.')
+      expect(answered.prov.slice(-6)).toEqual(new Array(6).fill('gen'))
+    })
+
+    it('acceptProposal does the same as Tab, without a real keyboard event', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+      wrapper.vm.acceptProposal()
+      await nextTick()
+
+      expect(wrapper.find('.ghost').exists()).toBe(false)
+      expect(emittedProse(wrapper).text).toBe('The door creaked. open.')
+    })
+
+    it('Escape dismisses the proposal and prevents default, inserting nothing', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+
+      const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+      wrapper.find('[contenteditable]').element.dispatchEvent(event)
+      await nextTick()
+
+      expect(event.defaultPrevented).toBe(true)
+      expect(wrapper.find('.ghost').exists()).toBe(false)
+      expect(wrapper.emitted('proposalChange')).toEqual([[true], [false]])
+      expect(wrapper.emitted('proseChange')).toBeUndefined()
+    })
+
+    it('any other key dismisses the proposal without preventing default', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+
+      const event = new KeyboardEvent('keydown', { key: 'a', cancelable: true })
+      wrapper.find('[contenteditable]').element.dispatchEvent(event)
+      await nextTick()
+
+      expect(event.defaultPrevented).toBe(false)
+      expect(wrapper.find('.ghost').exists()).toBe(false)
+      expect(wrapper.emitted('proseChange')).toBeUndefined()
+    })
+
+    it('leaves no keydown listener once the proposal is gone', async () => {
+      // The editor intercepts no key otherwise (see "does not intercept any key"
+      // above) -- the listener this feature adds must not outlive the proposal.
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+      wrapper.vm.clearProposal()
+      await nextTick()
+
+      const event = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true })
+      wrapper.find('[contenteditable]').element.dispatchEvent(event)
+
+      expect(event.defaultPrevented).toBe(false)
+    })
+
+    it('clearProposal is a no-op with nothing showing', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.clearProposal()
+      expect(wrapper.emitted('proposalChange')).toBeUndefined()
+    })
+
+    it('acceptProposal is a no-op with nothing showing', () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.acceptProposal()
+      expect(wrapper.emitted('proseChange')).toBeUndefined()
+    })
+
+    it('is dismissed when a different file opens', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+
+      await wrapper.setProps({ prose: plain('A different file.') })
+
+      expect(wrapper.find('.ghost').exists()).toBe(false)
+      expect(wrapper.emitted('proposalChange')).toEqual([[true], [false]])
+    })
+
+    it('is dismissed on blur', async () => {
+      const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+
+      wrapper.find('[contenteditable]').element.dispatchEvent(new Event('blur'))
+      await nextTick()
+
+      expect(wrapper.find('.ghost').exists()).toBe(false)
+      expect(wrapper.emitted('proposalChange')).toEqual([[true], [false]])
+    })
+
+    it('is dismissed when the caret moves off the end of the text', async () => {
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain('The door creaked.') },
+        attachTo: document.body,
+      })
+      wrapper.vm.showProposal(' open.')
+      await nextTick()
+
+      placeCaret(wrapper, 3)
+      await nextTick()
+
+      expect(wrapper.find('.ghost').exists()).toBe(false)
+      expect(wrapper.emitted('proposalChange')).toEqual([[true], [false]])
+      wrapper.unmount()
+    })
+
+    it('is not dismissed with the caret right before a single trailing newline', async () => {
+      // A single trailing newline is not its own reachable caret position in
+      // most browsers -- the caret at the visual end of a file ending in one
+      // lands one offset short of the text's own length, not at it. Nearly
+      // every real chapter ends in exactly one `\n`, which is what made a
+      // proposal dismiss itself the instant it was shown on one.
+      const body = 'The door creaked.\n'
+      const wrapper = mount(MarkdownEditor, {
+        props: { prose: plain(body) },
+        attachTo: document.body,
+      })
+      placeCaret(wrapper, body.length - 1)
+      wrapper.vm.showProposal(' Open.')
+      await nextTick()
+
+      placeCaret(wrapper, body.length - 1)
+      await nextTick()
+
+      expect(wrapper.find('.ghost').exists()).toBe(true)
+      expect(wrapper.emitted('proposalChange')).toEqual([[true]])
+      wrapper.unmount()
     })
   })
 })

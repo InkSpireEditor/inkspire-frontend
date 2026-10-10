@@ -147,6 +147,40 @@ describe('GenerationSettings.vue', () => {
     expect((checkbox.element as HTMLInputElement).checked).toBe(true)
   })
 
+  describe('the auto-complete checkbox (frontend#9)', () => {
+    it('starts unchecked, with no server default to load', async () => {
+      const wrapper = mount(GenerationSettings)
+      await flushPromises()
+
+      const checkboxes = wrapper.findAll('input[type="checkbox"]')
+      expect((checkboxes[1]!.element as HTMLInputElement).checked).toBe(false)
+    })
+
+    it('checking it persists the change', async () => {
+      const wrapper = mount(GenerationSettings)
+      await flushPromises()
+
+      const checkbox = wrapper.findAll('input[type="checkbox"]')[1]!
+      await checkbox.setValue(true)
+
+      const stored = JSON.parse(localStorage.getItem('inkspire.generationSettings')!)
+      expect(stored.autoComplete).toBe(true)
+    })
+
+    it('reset does not touch it', async () => {
+      const wrapper = mount(GenerationSettings)
+      await flushPromises()
+
+      const checkbox = wrapper.findAll('input[type="checkbox"]')[1]!
+      await checkbox.setValue(true)
+
+      await wrapper.find('button.reset').trigger('click')
+      await flushPromises()
+
+      expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    })
+  })
+
   describe('the thinking checkbox', () => {
     it('is shown for an ollama model and hidden for one that cannot honour it', async () => {
       const { setSelectedModel } = useSharedModel()

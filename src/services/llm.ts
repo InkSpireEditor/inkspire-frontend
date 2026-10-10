@@ -207,6 +207,38 @@ export const llmService = {
         const body: { title: string } = await response.json();
         return body.title;
     },
+
+    /**
+     * Proposes one short sentence continuing file `id`, from the named model --
+     * a single short answer, not a stream, since one sentence arrives
+     * essentially all at once (frontend#9).
+     *
+     * Unlike `suggestTitle`, takes `space`: both roots serve this route. Unlike
+     * `generate`, takes `model` directly rather than through `GenerateOptions`
+     * -- a completion has no caret, no selection and none of the settings-panel
+     * overrides, so there is nothing to bundle. Like both, takes no text: the
+     * server reads the file fresh from disk, so the caller must have saved first.
+     *
+     * `signal` aborts the request if the writer types again before it answers.
+     */
+    async complete(
+        space: Space,
+        id: string,
+        model: string,
+        signal?: AbortSignal,
+    ): Promise<string> {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}/complete`, {
+            method: "POST",
+            headers: jsonHeaders(),
+            body: JSON.stringify({ model }),
+            signal,
+        });
+        if (!response.ok) {
+            throw new Error(await errorMessage(response));
+        }
+        const body: { completion: string } = await response.json();
+        return body.completion;
+    },
 };
 
 /** `GET /api/llm/defaults`: the server's configuration, in its own field names. */

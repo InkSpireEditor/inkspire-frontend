@@ -36,7 +36,8 @@ vi.mock('../services/llm', () => ({
     generate: vi.fn(),
     getDefaults: vi.fn(),
     getFeatures: vi.fn(),
-    suggestTitle: vi.fn()
+    suggestTitle: vi.fn(),
+    complete: vi.fn()
   }
 }))
 
@@ -74,6 +75,10 @@ describe('Text.vue', () => {
   let selectedFile: any
   /** Whether the dice button has anything to call -- `sharedFeatures`'s `title`. */
   let titleFeature: Ref<boolean>
+  /** Whether the editor proposes a completion on idle (frontend#9) --
+   *  `sharedSettings`'s `autoComplete`. Off by default; a test in that block
+   *  flips it. */
+  let autoComplete: Ref<boolean>
 
   /** The file the sidebar has open, named by its space as well as its id. */
   const OPEN = { space: 'stories' as const, id: 'a1b2c3d4e5f60718' }
@@ -106,12 +111,15 @@ describe('Text.vue', () => {
       refresh: vi.fn().mockResolvedValue(undefined),
       setStatus: vi.fn()
     })
+    // Off by default -- a test in the auto-complete block (frontend#9) flips it.
+    autoComplete = ref(false)
     vi.spyOn(sharedSettings, 'useSharedSettings').mockReturnValue({
       temperature: ref(1.0),
       promptBudget: ref(10000),
       prefixShare: ref(0.75),
       numCtx: ref(null),
       sendSelection: ref(true),
+      autoComplete,
       loaded: ref(true),
       ensureLoaded: vi.fn().mockResolvedValue(undefined),
       setTemperature: vi.fn(),
@@ -119,6 +127,7 @@ describe('Text.vue', () => {
       setPrefixShare: vi.fn(),
       setNumCtx: vi.fn(),
       setSendSelection: vi.fn(),
+      setAutoComplete: vi.fn(),
       reset: vi.fn()
     })
     // Off by default -- a test in the title-proposal block (frontend#30) flips it.
@@ -176,7 +185,7 @@ describe('Text.vue', () => {
     expect(vm.text).toBe('Initial content')
   })
 
-  it('auto-save fires 2s after the last keystroke, not before', async () => {
+  it('auto-save fires 1s after the last keystroke, not before', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }
     })
@@ -187,7 +196,7 @@ describe('Text.vue', () => {
     const vm = wrapper.vm as any
     vm.handleProseChange(typed('Changed content'))
 
-    vi.advanceTimersByTime(1999)
+    vi.advanceTimersByTime(999)
     await flushPromises()
     expect(filesManagerService.putDocument).not.toHaveBeenCalled()
 
@@ -205,17 +214,17 @@ describe('Text.vue', () => {
     await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as any
-    // Each keystroke restarts the 2s wait, so as long as they arrive closer
+    // Each keystroke restarts the 1s wait, so as long as they arrive closer
     // together than that, nothing saves until the run stops.
     vm.handleProseChange(typed('C'))
-    vi.advanceTimersByTime(1000)
+    vi.advanceTimersByTime(400)
     vm.handleProseChange(typed('Ch'))
-    vi.advanceTimersByTime(1000)
+    vi.advanceTimersByTime(400)
     vm.handleProseChange(typed('Cha'))
     await flushPromises()
     expect(filesManagerService.putDocument).not.toHaveBeenCalled()
 
-    vi.advanceTimersByTime(2000)
+    vi.advanceTimersByTime(1000)
     await flushPromises()
     expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
     expect(filesManagerService.putDocument).toHaveBeenCalledWith(
@@ -1186,6 +1195,251 @@ describe('Text.vue', () => {
       expect(given.prov.slice(18, 45)).toEqual(new Array(27).fill('gen'))
     })
   })
+
+  describe('an idle completion proposal (frontend#9)', () => {
+    /**
+     * A stand-in for the real editor: what these tests exercise is `Text.vue`'s
+     * own orchestration -- the idle timer, its guards, the save-then-fetch
+     * sequence, and what it hands the editor -- not the real editor's DOM
+     * behaviour, which `MarkdownEditor.spec.ts` already covers on its own.
+     * `offsets` is mutable so a test can move the caret between calls.
+     */
+    const stubEditor = (offsets: { start: number; end: number } | null) => {
+      // The stub's own `methods` go through Vue's public-instance wrapping, which
+      // `toHaveBeenCalledWith` cannot see through -- these are the real spies,
+      // called by the thin methods below, and what a test asserts against.
+      const mocks = {
+        showProposal: vi.fn(),
+        clearProposal: vi.fn(),
+        acceptProposal: vi.fn(),
+        appendGenerated: vi.fn(),
+        removeRange: vi.fn()
+      }
+      const component = {
+        offsets,
+        name: 'MarkdownEditor',
+        props: ['prose'],
+        emits: ['proseChange', 'selectionChange', 'rerollableChange', 'proposalChange'],
+        template: '<div></div>',
+        methods: {
+          getSelectionOffsets(this: { offsets: typeof offsets }) {
+            return this.offsets
+          },
+          showProposal: (text: string) => mocks.showProposal(text),
+          clearProposal: () => mocks.clearProposal(),
+          acceptProposal: () => mocks.acceptProposal(),
+          appendGenerated: (delta: string) => mocks.appendGenerated(delta),
+          rerollTarget: () => null,
+          removeRange: (start: number, end: number) => mocks.removeRange(start, end)
+        }
+      }
+      return { component, mocks }
+    }
+
+    /** Mounts with a file open and the caret collapsed at the end of its text,
+     *  auto-complete on -- the state every positive case in this block starts
+     *  from. */
+    const mountIdle = async (body = 'The door creaked.') => {
+      vi.mocked(filesManagerService.getDocument).mockResolvedValue({
+        body,
+        metadata: null,
+        reconciled: null
+      })
+      autoComplete.value = true
+      const { component, mocks } = stubEditor({ start: body.length, end: body.length })
+      const wrapper = mount(Text, {
+        global: { stubs: { teleport: true, MarkdownEditor: component } }
+      })
+      selectedFile.value = OPEN
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      vi.mocked(filesManagerService.putDocument).mockClear()
+      const editorStub = wrapper.findComponent({ name: 'MarkdownEditor' })
+      return { wrapper, editorStub, editorMocks: mocks, body }
+    }
+
+    it('does nothing before 2s of idling', async () => {
+      const { wrapper } = await mountIdle()
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(1999)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+
+    it('saves, asks for a completion, and shows what comes back', async () => {
+      const { wrapper, editorStub, editorMocks } = await mountIdle()
+      vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
+      vi.mocked(llmService.complete).mockResolvedValue(' open.')
+      const body = 'The door creaked open.'
+      editorStub.vm.offsets = { start: body.length, end: body.length }
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed(body))
+
+      // In two steps, with a flush between them, so the autosave's own request
+      // (the 1s debounce) actually settles before the idle timer (the 2s one)
+      // fires -- otherwise this would race the same way a real save finishing
+      // in well under 1s never does.
+      vi.advanceTimersByTime(1000)
+      await flushPromises()
+      vi.advanceTimersByTime(1000)
+      await flushPromises()
+
+      expect(filesManagerService.putDocument).toHaveBeenCalledTimes(1)
+      expect(llmService.complete).toHaveBeenCalledWith(
+        OPEN.space,
+        OPEN.id,
+        'llama3',
+        expect.anything()
+      )
+      expect(editorMocks.showProposal).toHaveBeenCalledWith(' open.')
+    })
+
+    it('still fires with the caret right before a single trailing newline', async () => {
+      // A single trailing newline is not its own reachable caret position in
+      // most browsers -- the caret at the visual end of a file ending in one
+      // lands one offset short of the text's own length, not at it. Nearly
+      // every real chapter ends in exactly one `\n`, which is what made this
+      // never fire on a real file while every test here used a body with no
+      // trailing newline at all.
+      const body = 'The door creaked open.\n'
+      const { wrapper, editorStub, editorMocks } = await mountIdle(body)
+      vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
+      vi.mocked(llmService.complete).mockResolvedValue(' open.')
+      // The caret a real browser reports for "the very end" of this body:
+      // right before the trailing `\n`, one short of body.length -- not at it.
+      editorStub.vm.offsets = { start: body.length - 1, end: body.length - 1 }
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed(body))
+
+      vi.advanceTimersByTime(1000)
+      await flushPromises()
+      vi.advanceTimersByTime(1000)
+      await flushPromises()
+
+      expect(llmService.complete).toHaveBeenCalled()
+      expect(editorMocks.showProposal).toHaveBeenCalledWith(' open.')
+    })
+
+    it('does nothing with the setting off', async () => {
+      const { wrapper } = await mountIdle()
+      autoComplete.value = false
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(10000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+
+    it('does nothing with no model selected', async () => {
+      const { wrapper } = await mountIdle()
+      vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
+      vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
+        selectedModelName: ref(null),
+        selectedModelProtocol: ref(null),
+        thinkEnabled: ref(false),
+        setSelectedModel: vi.fn(),
+        setThinkEnabled: vi.fn()
+      })
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(10000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+
+    it('does nothing with the caret away from the end of the text', async () => {
+      const { wrapper, editorStub } = await mountIdle()
+      editorStub.vm.offsets = { start: 3, end: 3 }
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(10000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+
+    it('does nothing with a live selection', async () => {
+      const { wrapper, editorStub } = await mountIdle()
+      editorStub.vm.offsets = { start: 3, end: 7 }
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(10000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+
+    it('does nothing while a real generation is in flight', async () => {
+      const { wrapper } = await mountIdle()
+      const vm = wrapper.vm as any
+      vm.isGenerating = true
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(10000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+
+    it('does nothing in Read mode', async () => {
+      const { wrapper } = await mountIdle()
+      const vm = wrapper.vm as any
+      vm.readMode = true
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(10000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+
+    it('asks nothing when the pre-fetch save fails, and shows no modal', async () => {
+      const { wrapper } = await mountIdle()
+      vi.mocked(filesManagerService.putDocument).mockRejectedValue(new Error('offline'))
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(2000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+      expect(wrapper.find('.text-page').html()).not.toContain('offline')
+    })
+
+    it('shows no modal when the completion request itself fails', async () => {
+      const { wrapper } = await mountIdle()
+      vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
+      vi.mocked(llmService.complete).mockRejectedValue(new Error('Too many requests'))
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(2000)
+      await flushPromises()
+
+      expect(vm.showError).toBe(false)
+    })
+
+    it('restarts the 2s wait on every keystroke', async () => {
+      const { wrapper } = await mountIdle()
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('The door creaked o'))
+      vi.advanceTimersByTime(900)
+      vm.handleProseChange(typed('The door creaked op'))
+      vi.advanceTimersByTime(900)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+  })
 })
 
 describe('Text.vue across the two spaces', () => {
@@ -1220,6 +1474,7 @@ describe('Text.vue across the two spaces', () => {
       prefixShare: ref(0.75),
       numCtx: ref(null),
       sendSelection: ref(true),
+      autoComplete: ref(false),
       loaded: ref(true),
       ensureLoaded: vi.fn().mockResolvedValue(undefined),
       setTemperature: vi.fn(),
@@ -1227,6 +1482,7 @@ describe('Text.vue across the two spaces', () => {
       setPrefixShare: vi.fn(),
       setNumCtx: vi.fn(),
       setSendSelection: vi.fn(),
+      setAutoComplete: vi.fn(),
       reset: vi.fn()
     })
     vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'scratch' })

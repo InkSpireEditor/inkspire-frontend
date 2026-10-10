@@ -75,6 +75,9 @@ const emit = defineEmits<{
    *  state `Text.vue`'s Reroll button needs (api#5), without exposing the run
    *  itself for something this cheap. */
   rerollableChange: [boolean]
+  /** Whether a completion proposal is showing right now (frontend#9). Fired only
+   *  when the answer changes, mirroring the two contracts above. */
+  proposalChange: [boolean]
 }>()
 
 const editor = ref<HTMLDivElement | null>(null)
@@ -136,6 +139,47 @@ let selectionWasLive = false
  *  exists. */
 let rerollWasPossible = false
 
+/** Whether a completion proposal was showing last time it changed -- what
+ *  `proposalChange` compares against, mirroring `selectionWasLive`/
+ *  `rerollWasPossible`'s own contract (frontend#9). */
+let proposalWasShown = false
+
+/**
+ * The completion proposal showing right now, or `''` for none (frontend#9).
+ *
+ * A `ref`, unlike `prose` -- it changes only when a proposal appears or is
+ * resolved, never on a keystroke, so making it reactive costs nothing of what
+ * keeping `prose` plain protects.
+ */
+const proposal = ref('')
+
+/**
+ * Where the proposal's own span is drawn, in pixels relative to `.surface`'s
+ * own box -- `positionGhost()` is the only writer. Measured directly from the
+ * caret's real on-screen position (`measureCaretRect`) rather than mirroring
+ * the whole document in flow to push the span into place: a mirror can only
+ * ever reproduce what `prose.text` says, and the real surface can differ from
+ * that in ways with no textual representation at all -- a blank line's own
+ * `<br>` is one (§8.4's `offsetOf` fix), and deleting a character or a line
+ * can create or remove one of these without the mirror ever finding out,
+ * which is what put the ghost above or left of the caret rather than on it.
+ */
+const ghostTop = ref(0)
+/**
+ * The proposal's own box spans the full width between `.surface`'s own left
+ * and right padding -- the same width a real paragraph wraps within -- rather
+ * than starting at the caret's own column. `ghostLeft`/`ghostWidth` place
+ * that box; `ghostIndent`, a `text-indent`, is what actually pushes the
+ * *first* line over to the caret. `text-indent` only ever indents a block's
+ * first line, wrapped or not, so a second line this produces returns to the
+ * paragraph's own margin on its own -- exactly what a caret mid-line needs,
+ * and what positioning the whole span at the caret's column could not give:
+ * that put every wrapped line under the caret's own column instead.
+ */
+const ghostLeft = ref(0)
+const ghostWidth = ref(0)
+const ghostIndent = ref(0)
+
 /**
  * The kind to give the next insertion, where it is not the writer's own.
  *
@@ -196,26 +240,32 @@ function locate(target: number): { node: Node; offset: number } | null {
  * A node/offset pair from `window.getSelection()`, as a character offset into the
  * whole text -- `null` if `container` is not inside `root` at all.
  *
- * Walks the same `TreeWalker` `locate` builds, in the other direction: this is its
- * inverse, and the two are kept beside each other for that reason.
+ * **Not a `TreeWalker` over `SHOW_TEXT`, unlike `locate` (its nominal inverse).**
+ * A text node is where the caret sits most of the time, but not always: a trailing
+ * blank line has nothing to put a caret "inside", so the browser gives it a `<br>`
+ * instead -- even in `plaintext-only` mode, which governs what typing and pasting
+ * produce, not how an otherwise-empty line is made clickable. The caret then
+ * anchors on `root` itself, at a child offset pointing past that `<br>`, which a
+ * `SHOW_TEXT`-only walk never matches -- it was previously read as "the editor is
+ * empty" (the one case a root-anchored caret was built for) and answered `0`
+ * regardless of how much text came before it, which silently read a caret on a
+ * trailing blank line as being at the very start of the file (found investigating
+ * why a completion proposal, frontend#9, would never fire there).
+ *
+ * `Range.toString()` answers both cases correctly and every ordinary one in
+ * between, because it serialises exactly what lies between two boundary points --
+ * a `<br>` contributes nothing to it, the same way it contributes nothing to
+ * `textContent` -- without this function needing to know anything about how the
+ * node structure got that way.
  */
 function offsetOf(root: HTMLElement, container: Node, containerOffset: number): number | null {
   if (!root.contains(container)) {
     return null
   }
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  let position = 0
-  let node = walker.nextNode()
-  while (node !== null) {
-    if (node === container) {
-      return position + containerOffset
-    }
-    position += node.textContent?.length ?? 0
-    node = walker.nextNode()
-  }
-  // No text node matched -- the selection anchors on the root itself, which happens
-  // on an empty editor. The root has no text either way, so the offset is 0.
-  return container === root ? 0 : null
+  const range = document.createRange()
+  range.setStart(root, 0)
+  range.setEnd(container, containerOffset)
+  return range.toString().length
 }
 
 /**
@@ -251,12 +301,37 @@ function setLastSelection(start: number, end: number): void {
 }
 
 /** Updates `lastSelection` from the live selection, leaving it alone where the
- *  selection is not inside this editor right now. */
+ *  selection is not inside this editor right now. Also dismisses a showing
+ *  proposal once the caret no longer sits at the very end of the text (frontend#9)
+ *  -- a proposal only ever applies there, so moving away from it makes the ghost
+ *  stale rather than merely unaccepted. */
 function updateLastSelection(): void {
   const offsets = selectionOffsets()
   if (offsets !== null) {
     setLastSelection(offsets.start, offsets.end)
   }
+  if (proposal.value !== '' && !isCaretAtEnd()) {
+    clearProposal()
+  }
+}
+
+/**
+ * Whether `lastSelection` is a caret collapsed at the very end of the text --
+ * the one position a completion proposal (frontend#9) may be shown at.
+ *
+ * Not a strict `=== prose.text.length`: a single trailing newline is not its
+ * own reachable caret position in most browsers, so the caret at the visual
+ * end of a file ending in one lands right *before* it, one short of the
+ * text's own length, not after it. Nothing meaningful follows either
+ * position, so both count -- found from a real chapter ending in exactly one
+ * `\n`, where the strict check rejected the caret every single time.
+ */
+function isCaretAtEnd(): boolean {
+  return (
+    lastSelection !== null &&
+    lastSelection.start === lastSelection.end &&
+    /^\n*$/.test(prose.text.slice(lastSelection.end))
+  )
 }
 
 /**
@@ -534,7 +609,189 @@ function removeRange(start: number, end: number): void {
   settle()
 }
 
-defineExpose({ appendGenerated, getSelectionOffsets, rerollTarget, removeRange })
+/**
+ * The caret's own on-screen rectangle, or `null` where it cannot be measured
+ * right now (no live selection inside this element).
+ *
+ * Not the collapsed selection Range's own `getBoundingClientRect()` -- that
+ * answers all-zero in exactly the case this feature cares about most: a caret
+ * on a blank line, with no text on either side of it to measure against. A
+ * zero-width marker briefly inserted at the caret always has *something* to
+ * report a box for, wherever the caret actually is.
+ *
+ * Non-destructive to the DOM structure: the caret sits at the very end of the
+ * whole text whenever this is called (the one place a proposal may be shown),
+ * so the marker always lands at the end of a text node -- or directly on the
+ * root element, if the browser gave a trailing blank line its own `<br>` --
+ * rather than splitting one in the middle. `Text.splitText` at a text node's
+ * own length leaves that node's data untouched and only adds an empty
+ * sibling, so any existing `CSS.highlights` Range still describes exactly
+ * what it did before; removing the marker and normalising removes that empty
+ * sibling again, leaving the node the marker was inserted beside exactly as
+ * it was.
+ *
+ * **Not non-destructive to the live selection, which is why this restores it
+ * explicitly.** `insertNode` mutates the one shared DOM tree, and the
+ * selection's own range is live over exactly the spot the marker lands on --
+ * a browser is free to shift or collapse it as a side effect of that
+ * insertion (and of the removal and `normalize()` after), silently, with
+ * nothing to throw. Left alone, that showed up as every completion after the
+ * first never firing again: a caret nudged somewhere `isCaretAtEndOfText()`
+ * no longer recognised fails silently by this feature's own design, which is
+ * exactly what made it look like nothing was happening at all. `selectRange`
+ * puts the caret back by character offset -- `text.length`, since that is
+ * where it always is here -- rather than trusting whatever node reference
+ * the selection was left holding.
+ */
+function measureCaretRect(): DOMRect | null {
+  const root = editor.value
+  const selection = window.getSelection()
+  if (root === null || selection === null || selection.rangeCount === 0) {
+    return null
+  }
+  const live = selection.getRangeAt(0)
+  if (!root.contains(live.startContainer)) {
+    return null
+  }
+  const range = live.cloneRange()
+  range.collapse(true)
+  const marker = document.createElement('span')
+  // A zero-width space, not an empty span: an empty element's own box can
+  // measure as degenerate in some browsers, where one with real (if
+  // invisible) text content reliably reports its actual position.
+  marker.textContent = '\u200b'
+  range.insertNode(marker)
+  const rect = marker.getBoundingClientRect()
+  const parent = marker.parentNode
+  marker.remove()
+  parent?.normalize()
+  // The marker's own insertion and removal may have shifted or collapsed the
+  // live selection -- put the caret back by offset rather than trust whatever
+  // node reference it was left holding (this function's own doc comment).
+  selectRange(root, prose.text.length, prose.text.length)
+  return rect
+}
+
+/**
+ * Measures the caret and moves the proposal's own span to sit exactly on it,
+ * leaving the previous position alone if the caret cannot be measured right
+ * now (a stale position is better than one that jumps to the origin).
+ *
+ * Called once when a proposal first appears, and again on the surface's own
+ * `scroll` event -- scrolling moves the caret's on-screen position without
+ * moving the caret itself, so this is a full re-measurement each time rather
+ * than a cheaper scrollTop copy, which is what the previous approach did and
+ * which only this component's own scrolling could ever invalidate.
+ */
+function positionGhost(): void {
+  const root = editor.value
+  if (root === null) {
+    return
+  }
+  const caret = measureCaretRect()
+  if (caret === null) {
+    return
+  }
+  const surface = root.getBoundingClientRect()
+  const style = getComputedStyle(root)
+  const leftPadding = Number.parseFloat(style.paddingLeft) || 0
+  const rightPadding = Number.parseFloat(style.paddingRight) || 0
+  const contentLeft = surface.left + leftPadding
+
+  ghostTop.value = caret.top - surface.top
+  ghostLeft.value = leftPadding
+  ghostWidth.value = Math.max(0, surface.width - leftPadding - rightPadding)
+  ghostIndent.value = Math.max(0, caret.left - contentLeft)
+}
+
+/** Repositions a showing proposal when the surface scrolls -- a no-op with
+ *  none showing, so this costs nothing on every ordinary scroll. */
+function syncGhostScroll(): void {
+  if (proposal.value !== '') {
+    positionGhost()
+  }
+}
+
+/** Resolves a showing proposal, Tab accepting it and Escape or anything else
+ *  dismissing it. Added to the editor element only while a proposal is
+ *  showing (`showProposal`/`clearProposal`), never left standing -- the editor
+ *  intercepts no key otherwise, which a keydown handler sitting here always
+ *  would. */
+function handleProposalKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Tab') {
+    event.preventDefault()
+    acceptProposal()
+    return
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    clearProposal()
+    return
+  }
+  // Any other key dismisses the proposal without preventing anything, so the
+  // keystroke lands exactly as it would with no proposal showing.
+  clearProposal()
+}
+
+/** Shows `text` in grey immediately after the current end of the prose
+ *  (frontend#9). `Text.vue` decides *when* to ask and fetches the text; this
+ *  only draws what it is given, and only once there is something to draw. */
+function showProposal(text: string): void {
+  if (editor.value === null || text === '') {
+    return
+  }
+  // Measured before `proposal.value` is set, not after: positioning only
+  // reads the live selection and `.surface`'s own box, neither of which
+  // depends on the overlay's own (not yet painted) DOM existing, so there is
+  // nothing to defer to a tick here the way the scroll-position approach
+  // this replaced had to.
+  positionGhost()
+  proposal.value = text
+  editor.value.addEventListener('keydown', handleProposalKeydown)
+  if (!proposalWasShown) {
+    proposalWasShown = true
+    emit('proposalChange', true)
+  }
+}
+
+/** Dismisses a showing proposal without inserting it. Idempotent, so every
+ *  caller -- a keystroke, a blur, the caret moving off the end, a different
+ *  file loading -- can call it unconditionally. */
+function clearProposal(): void {
+  if (proposal.value === '') {
+    return
+  }
+  proposal.value = ''
+  editor.value?.removeEventListener('keydown', handleProposalKeydown)
+  if (proposalWasShown) {
+    proposalWasShown = false
+    emit('proposalChange', false)
+  }
+}
+
+/** Accepts a showing proposal: resolves it the same way a keystroke would,
+ *  then inserts its text exactly as a streamed generation chunk would
+ *  (`appendGenerated`) -- so it is marked `gen`, lands on the browser's own
+ *  undo stack, and Ctrl+Z removes it like any other insertion. A no-op with no
+ *  proposal showing. */
+function acceptProposal(): void {
+  if (proposal.value === '') {
+    return
+  }
+  const text = proposal.value
+  clearProposal()
+  appendGenerated(text)
+}
+
+defineExpose({
+  appendGenerated,
+  getSelectionOffsets,
+  rerollTarget,
+  removeRange,
+  showProposal,
+  clearProposal,
+  acceptProposal,
+})
 
 /**
  * Replaces everything, which is what opening a different file is.
@@ -549,6 +806,8 @@ function reset(next: Prose): void {
   // undo stack does not survive the `textContent` write below either.
   undoStack = []
   redoStack = []
+  // A proposal for the file just closed describes text that is no longer here.
+  clearProposal()
   // Wherever the selection was in the file just closed is meaningless in this one.
   lastSelection = null
   if (selectionWasLive) {
@@ -587,7 +846,15 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('selectionchange', updateLastSelection)
+  editor.value?.removeEventListener('keydown', handleProposalKeydown)
 })
+
+/** Dismisses a showing proposal on blur -- the writer's attention has left the
+ *  editor, so a stale ghost waiting for a Tab that may never come is worse
+ *  than none. */
+function handleBlur(): void {
+  clearProposal()
+}
 
 watch(
   () => props.prose,
@@ -619,9 +886,26 @@ watch(
       aria-multiline="true"
       aria-label="Chapter text"
       @input="handleInput"
+      @blur="handleBlur"
+      @scroll="syncGhostScroll"
     ></div>
     <!-- A sibling, never a child: anything inside the editable element is prose. -->
     <div v-if="empty" class="placeholder" aria-hidden="true">Start writing...</div>
+    <!-- The completion proposal (frontend#9): a clipping box matching `.surface`'s
+         own, with the proposal's span placed inside it at the caret's measured
+         position (`positionGhost`) rather than pushed there by mirroring the
+         document in flow. -->
+    <div v-if="proposal" class="ghost" aria-hidden="true">
+      <span
+        class="ghost-proposal"
+        :style="{
+          top: `${ghostTop}px`,
+          left: `${ghostLeft}px`,
+          width: `${ghostWidth}px`,
+          textIndent: `${ghostIndent}px`,
+        }"
+      >{{ proposal }}</span>
+    </div>
   </div>
 </template>
 
@@ -706,5 +990,41 @@ watch(
 
 .surface::highlight(ink-fix) {
   background-color: rgba(255, 180, 84, 0.26);
+}
+
+/* The completion proposal's overlay (frontend#9): a clipping box matching
+   `.surface`'s own outer bounds exactly, so content positioned past its edge is
+   cropped the same way the surface's own `overflow-y: auto` would crop it, and
+   none of this needs to duplicate `.surface`'s padding or border -- `positionGhost`
+   measures against the surface's own box directly, so that is already folded
+   into `ghostTop`/`ghostLeft`. */
+.ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The proposal itself. Its own box spans the paragraph's full width (`left`/
+   `width`, measured in `positionGhost` to match `.surface`'s own padding) so a
+   wrapped second line returns to the paragraph's own margin, the way real text
+   wraps; `text-indent` alone is what pushes the *first* line over to the
+   caret's actual column, since indenting the whole box's `left` instead carried
+   every later line along with it under the caret -- see `ghostLeft`'s own doc
+   comment for why. */
+.ghost-proposal {
+  position: absolute;
+  font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
+    Menlo, Consolas, monospace;
+  font-size: 1rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--color-text);
+  opacity: 0.45;
 }
 </style>

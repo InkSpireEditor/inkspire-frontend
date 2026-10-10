@@ -163,6 +163,61 @@ describe('useSharedSettings', () => {
     expect(stored.numCtx).toBeNull()
   })
 
+  it('starts out off, with no server default to overlay', () => {
+    const { autoComplete } = useSharedSettings()
+    expect(autoComplete.value).toBe(false)
+  })
+
+  it('a stored value from an earlier session wins over the off default', async () => {
+    localStorage.setItem(
+      'inkspire.generationSettings',
+      JSON.stringify({
+        temperature: 0.3,
+        promptBudget: 3000,
+        prefixShare: 0.5,
+        numCtx: 4096,
+        autoComplete: true,
+      }),
+    )
+    const { ensureLoaded, autoComplete } = useSharedSettings()
+
+    await ensureLoaded()
+
+    expect(autoComplete.value).toBe(true)
+  })
+
+  it('a session stored before auto-complete existed keeps it off', async () => {
+    localStorage.setItem(
+      'inkspire.generationSettings',
+      JSON.stringify({ temperature: 0.3, promptBudget: 3000, prefixShare: 0.5, numCtx: 4096 }),
+    )
+    const { ensureLoaded, autoComplete } = useSharedSettings()
+
+    await ensureLoaded()
+
+    expect(autoComplete.value).toBe(false)
+  })
+
+  it('persists a change to auto-complete', async () => {
+    const { ensureLoaded, setAutoComplete } = useSharedSettings()
+    await ensureLoaded()
+
+    setAutoComplete(true)
+
+    const stored = JSON.parse(localStorage.getItem('inkspire.generationSettings')!)
+    expect(stored.autoComplete).toBe(true)
+  })
+
+  it('reset does not touch auto-complete', async () => {
+    const { ensureLoaded, setAutoComplete, reset, autoComplete } = useSharedSettings()
+    await ensureLoaded()
+    setAutoComplete(true)
+
+    reset()
+
+    expect(autoComplete.value).toBe(true)
+  })
+
   it('does not throw when localStorage is unavailable', async () => {
     const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked')

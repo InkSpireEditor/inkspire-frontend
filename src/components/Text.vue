@@ -26,7 +26,8 @@ import GenerationSettings from './GenerationSettings.vue'
 const { selectedFile, clearSelectedFile } = useSharedFiles()
 const { selectedModelName, selectedModelProtocol, thinkEnabled } = useSharedModel()
 const { refresh: refreshGitStatus } = useSharedGit()
-const { temperature, promptBudget, prefixShare, numCtx, sendSelection } = useSharedSettings()
+const { temperature, promptBudget, prefixShare, numCtx, sendSelection, autoComplete } =
+  useSharedSettings()
 const { title: titleFeatureEnabled, ensureLoaded: ensureFeaturesLoaded } = useSharedFeatures()
 const route = useRoute()
 const rename = useRename()
@@ -50,7 +51,13 @@ const hasSelection = ref(false)
 const canReroll = ref(false)
 
 /** How long to wait after the last keystroke before writing it back to the API, in ms. */
-const AUTO_SAVE_DEBOUNCE_MS = 2000
+const AUTO_SAVE_DEBOUNCE_MS = 1000
+
+/** How long to wait after the last keystroke before proposing a completion
+ *  (frontend#9) -- longer than the autosave debounce above, so the save this
+ *  needs has normally already landed by the time this fires rather than racing
+ *  it. */
+const IDLE_COMPLETION_MS = 2000
 
 // --- Component State ---
 /**
@@ -109,6 +116,7 @@ const handleProseChange = (next: Prose) => {
   prose.value = next
   isDirty.value = true
   scheduleAutoSave()
+  scheduleIdleCompletion()
 }
 
 /** Starts fresh from what the API answered, discarding whatever was open. */
@@ -140,6 +148,7 @@ const loadFile = async (file: FileSelection) => {
     readMode.value = false
 
     cancelAutoSave()
+    cancelIdleCompletion()
   } catch (e) {
     console.error('Error loading file:', e)
     if (e instanceof NotFoundError) {
@@ -227,6 +236,7 @@ const putOnce = async (): Promise<boolean> => {
       // to stop, or it would raise this same dialog on every further keystroke, and
       // a queued resend would do the same the instant it ran.
       cancelAutoSave()
+      cancelIdleCompletion()
       saveAgain = false
       displayError(
         'This file no longer exists. It may have been renamed or deleted elsewhere. ' +
@@ -264,6 +274,105 @@ const cancelAutoSave = () => {
   }
 }
 
+let idleTimer: number | null = null
+/** Whether a completion request is in flight, so a keystroke's own
+ *  `scheduleIdleCompletion` does not start a second one -- `tryIdleCompletion`'s
+ *  own re-checks, below, are what a race against typing is actually guarded by. */
+let completing = false
+/** Aborts the in-flight completion request, if there is one, the moment the
+ *  writer types again (frontend#9) -- the proposal it would answer with is
+ *  about to describe text that is no longer at the end of the file. */
+let completionAbort: AbortController | null = null
+
+/**
+ * (Re)starts the idle timer that proposes a completion once typing pauses
+ * (frontend#9), replacing any still-pending one -- the same shape
+ * `scheduleAutoSave` has, with its own longer delay. A no-op with the setting
+ * off, so toggling it off mid-session needs nothing else to take effect.
+ */
+const scheduleIdleCompletion = () => {
+  cancelIdleCompletion()
+  if (!autoComplete.value) return
+  idleTimer = window.setTimeout(() => {
+    idleTimer = null
+    tryIdleCompletion()
+  }, IDLE_COMPLETION_MS)
+}
+
+const cancelIdleCompletion = () => {
+  if (idleTimer) {
+    clearTimeout(idleTimer)
+    idleTimer = null
+  }
+  completionAbort?.abort()
+}
+
+/**
+ * Whether the editor's own caret sits collapsed at the very end of the text --
+ * the one position a completion proposal may be shown at (`MarkdownEditor.vue`'s
+ * own reasoning: the overlay covers rather than displaces what follows it).
+ *
+ * Not a strict `=== text.value.length`: a single trailing newline is not its
+ * own reachable caret position in most browsers, so the caret at the visual
+ * end of a file ending in one lands right *before* it, one short of the
+ * text's own length, not after it. Nothing meaningful follows either
+ * position, so both count -- without this, a real chapter ending in exactly
+ * one `\n` (nearly every one does) never passed this check at all.
+ */
+const isCaretAtEndOfText = () => {
+  const offsets = editor.value?.getSelectionOffsets() ?? null
+  if (offsets === null || offsets.start !== offsets.end) return false
+  return /^\n*$/.test(text.value.slice(offsets.end))
+}
+
+/**
+ * Proposes a completion through the editor's own ghost overlay, once the
+ * writer has paused with the caret at the end of the file (frontend#9).
+ *
+ * **Every failure here is silent** -- no modal, unlike every other request
+ * this component makes. An automatic proposal that did not arrive is a
+ * non-event; interrupting the writer with a dialog they did not ask for would
+ * be worse than no proposal at all.
+ *
+ * Saves first, the same way `runGeneration` does and for the same reason: the
+ * server reads the file fresh from disk. Re-checks the caret is still at the
+ * end once the save, and again once the request, resolves -- either can take
+ * a moment, in which the writer may have kept typing, moved the caret, started
+ * a real generation, or closed the file.
+ */
+const tryIdleCompletion = async () => {
+  if (!autoComplete.value || isGenerating.value || completing || readMode.value) return
+  if (!selectedModelName.value) return
+  const file = currentFile.value
+  if (!file || !text.value) return
+  if (!isCaretAtEndOfText()) return
+
+  completing = true
+  completionAbort = new AbortController()
+  try {
+    if (!(await save())) return
+    if (currentFile.value !== file || isGenerating.value || readMode.value) return
+    if (!isCaretAtEndOfText()) return
+
+    const proposed = await llmService.complete(
+      file.space,
+      file.id,
+      selectedModelName.value,
+      completionAbort.signal,
+    )
+    if (!proposed) return
+    if (currentFile.value !== file || isGenerating.value || readMode.value) return
+    if (!isCaretAtEndOfText()) return
+
+    editor.value?.showProposal(proposed)
+  } catch {
+    // Silent, by design -- see this function's own docstring.
+  } finally {
+    completing = false
+    completionAbort = null
+  }
+}
+
 const isGenerating = ref(false)
 let generation: AbortController | null = null
 
@@ -292,8 +401,11 @@ const runGeneration = async (
 ) => {
   // Any debounce left over from typing just before this was triggered would
   // otherwise fire mid-stream -- this covers it, and covers it before the
-  // request is sent rather than after.
+  // request is sent rather than after. A showing proposal is stale the moment
+  // a real generation is about to stream into the same spot.
   cancelAutoSave()
+  cancelIdleCompletion()
+  editor.value?.clearProposal()
   if (!(await save())) {
     displayError(saveFailedMessage)
     return
@@ -520,6 +632,7 @@ const toggleReadMode = () => {
   if (!readMode.value) {
     hasSelection.value = false
     canReroll.value = false
+    cancelIdleCompletion()
   }
   readMode.value = !readMode.value
 }
@@ -532,6 +645,7 @@ const displayError = (msg: string) => {
 // Watch for changes in selected file
 watch(selectedFile, (file) => {
   cancelAutoSave()
+  cancelIdleCompletion()
   if (file) {
     loadFile(file)
   } else {
@@ -577,6 +691,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('beforeunload', warnBeforeUnload)
   cancelAutoSave()
+  cancelIdleCompletion()
   if (currentFile.value) {
     save()
   }
