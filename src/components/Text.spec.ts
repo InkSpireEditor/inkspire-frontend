@@ -542,6 +542,21 @@ describe('Text.vue', () => {
     return button
   }
 
+  /** Generates once via the Generate button, leaving a `gen` run at the end of
+   *  the text and the caret collapsed right after it -- the state Reroll
+   *  (api#5) and Discard (frontend#33) both act on. */
+  const generateOnce = async (wrapper: ReturnType<typeof mount>, delta: string) => {
+    vi.mocked(llmService.generate).mockImplementationOnce(
+      async (_space, _id, _model, onDelta) => {
+        onDelta(delta)
+      }
+    )
+    await clickButton(wrapper, 'Generate')
+    await flushPromises()
+    vi.mocked(llmService.generate).mockClear()
+    vi.mocked(filesManagerService.putDocument).mockClear()
+  }
+
   it('refuses to generate when the pre-generate save fails, and never calls the API', async () => {
     // The server reads the file fresh from disk once asked to generate -- asking
     // it to continue text that failed to save would ask about a sentence that was
@@ -952,21 +967,6 @@ describe('Text.vue', () => {
     const rerollButton = (wrapper: ReturnType<typeof mount>) =>
       wrapper.findAll('button').find((b) => b.text() === 'Reroll')!
 
-    /** Generates once via the Generate button, leaving a `gen` run at the end of
-     *  the text and the caret collapsed right after it -- the state a reroll acts
-     *  on. */
-    const generateOnce = async (wrapper: ReturnType<typeof mount>, delta: string) => {
-      vi.mocked(llmService.generate).mockImplementationOnce(
-        async (_space, _id, _model, onDelta) => {
-          onDelta(delta)
-        }
-      )
-      await clickButton(wrapper, 'Generate')
-      await flushPromises()
-      vi.mocked(llmService.generate).mockClear()
-      vi.mocked(filesManagerService.putDocument).mockClear()
-    }
-
     it('sends whatever instruction is currently typed, not a snapshot from the original generation (api#19)', async () => {
       const wrapper = await mountWithFile()
       await generateOnce(wrapper, ' and then.')
@@ -1064,6 +1064,121 @@ describe('Text.vue', () => {
       await readToggle.trigger('click')
 
       expect(rerollButton(wrapper).attributes('disabled')).toBeDefined()
+    })
+  })
+
+  describe('discard (frontend#33)', () => {
+    const discardButton = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('button').find((b) => b.text() === 'Discard')!
+
+    it('is disabled with no generated run, and enabled once there is one', async () => {
+      const wrapper = await mountWithFile()
+      expect(discardButton(wrapper).attributes('disabled')).toBeDefined()
+
+      await generateOnce(wrapper, ' and then.')
+      expect(discardButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it('deletes the generated run, saves without it, and asks no model', async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+      const vm = wrapper.vm as any
+      expect(vm.text).toBe('Initial content and then.')
+
+      await discardButton(wrapper).trigger('click')
+      await flushPromises()
+
+      // Nothing was asked of a model -- this is Reroll's first half with no
+      // generation after it.
+      expect(llmService.generate).not.toHaveBeenCalled()
+      expect(vm.text).toBe('Initial content')
+
+      // The deletion is an ordinary edit from here on, written back by the
+      // existing autosave debounce -- no save call of its own.
+      vi.advanceTimersByTime(1000)
+      await flushPromises()
+      expect(filesManagerService.putDocument).toHaveBeenCalledWith(
+        OPEN.space,
+        OPEN.id,
+        'Initial content',
+        handwritten('Initial content')
+      )
+    })
+
+    it("leaves the writer's own correction alone, discarding only the generated text after it", async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+      const vm = wrapper.vm as any
+      const before = vm.text as string // 'Initial content and then.'
+
+      // A correction typed inside the generated run splits it into
+      // gen/fix/gen (`classify`'s own rule): both neighbours of the insertion
+      // are generated text, so the inserted character is marked `fix`.
+      const splitAt = before.indexOf('and') + 'and'.length
+      const corrected = before.slice(0, splitAt) + '!' + before.slice(splitAt)
+
+      const element = wrapper.find('[contenteditable]').element as HTMLElement
+      element.textContent = corrected
+      const textNode = element.firstChild
+      if (textNode) {
+        const range = document.createRange()
+        range.setStart(textNode, splitAt + 1)
+        range.collapse(true)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+      }
+      element.dispatchEvent(new InputEvent('input', { inputType: 'insertText' }))
+      await flushPromises()
+
+      // The caret now sits right after the correction, at the start of the
+      // trailing `gen` run -- which is what Discard removes.
+      await discardButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(vm.text).toBe(corrected.slice(0, splitAt + 1))
+    })
+
+    it('is disabled in Read mode, since the editor it needs is unmounted there', async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+      expect(discardButton(wrapper).attributes('disabled')).toBeUndefined()
+
+      const readToggle = wrapper.findAll('button').find((b) => b.text() === 'Read')!
+      await readToggle.trigger('click')
+
+      expect(discardButton(wrapper).attributes('disabled')).toBeDefined()
+    })
+
+    it('is disabled while a generation is streaming', async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+
+      let resolveGen: () => void = () => {}
+      vi.mocked(llmService.generate).mockImplementation(
+        () => new Promise<void>((resolve) => { resolveGen = resolve })
+      )
+      await clickButton(wrapper, 'Generate')
+      await flushPromises()
+      expect(discardButton(wrapper).attributes('disabled')).toBeDefined()
+
+      resolveGen()
+      await flushPromises()
+    })
+
+    it('cancels any idle-completion timer the deletion itself started, so no ' +
+      'proposal appears for the spot it just removed from', async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+      autoComplete.value = true
+
+      await discardButton(wrapper).trigger('click')
+      await flushPromises()
+
+      vi.advanceTimersByTime(2000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
     })
   })
 

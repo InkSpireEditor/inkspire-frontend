@@ -48,9 +48,11 @@ const hasSelection = ref(false)
 
 /**
  * Whether the editor's own `rerollTarget()` would answer a span right now, bound
- * from its `rerollableChange` emit (api#5). What Reroll's disabled state reads.
+ * from its `rerollableChange` emit -- what Reroll's (api#5) and Discard's
+ * (frontend#33) disabled state both read. Named for the fact rather than for
+ * either action, since both buttons now depend on it.
  */
-const canReroll = ref(false)
+const genRunAtCaret = ref(false)
 
 /** How long to wait after the last keystroke before writing it back to the API, in ms. */
 const AUTO_SAVE_DEBOUNCE_MS = 1000
@@ -519,7 +521,7 @@ const handleReroll = async () => {
     displayError('No model selected')
     return
   }
-  if (!isLoggedIn() || !currentFile.value || !canReroll.value) return
+  if (!isLoggedIn() || !currentFile.value || !genRunAtCaret.value) return
 
   const target = editor.value?.rerollTarget() ?? null
   if (target === null) return
@@ -538,6 +540,34 @@ const handleReroll = async () => {
     'Could not save before generating. The deleted text is still recoverable with ' +
       'Ctrl+Z -- try again once it saves.',
   )
+}
+
+/**
+ * Removes the generated run at the caret outright (frontend#33) -- Reroll's first
+ * half with no generation after it. No model is asked anything and no save is
+ * awaited beforehand: unlike Reroll, nothing here depends on the file on disk
+ * being current, since nothing is sent to the server at all. The deletion goes
+ * through the editor's own `removeRange`, which emits `proseChange` the same way
+ * typing does; `handleProseChange` marks the file dirty and the existing autosave
+ * debounce writes the deletion back, so this needs no `save()` call of its own.
+ *
+ * Disables itself after one press with no extra code: `removeRange` leaves the
+ * caret collapsed at the start of what is now a `fix` or plain prose, and the
+ * editor's own `rerollableChange` emit follows that automatically.
+ */
+const handleDiscard = () => {
+  if (isGenerating.value) return
+  if (!currentFile.value || !genRunAtCaret.value) return
+
+  const target = editor.value?.rerollTarget() ?? null
+  if (target === null) return
+  editor.value?.removeRange(target.start, target.end)
+
+  // After the deletion, not before: `removeRange` -> `proseChange` ->
+  // `handleProseChange` restarts this timer synchronously, and discarding is an
+  // explicit "not this" -- proposing a completion into the same spot two seconds
+  // later would answer a question the writer just said no to.
+  cancelIdleCompletion()
 }
 
 /** Whether a title suggestion is currently in flight. */
@@ -628,7 +658,7 @@ const handleStopGenerating = () => {
 }
 
 /**
- * Toggles Read mode, clearing `hasSelection` and `canReroll` on the way in.
+ * Toggles Read mode, clearing `hasSelection` and `genRunAtCaret` on the way in.
  *
  * The editor unmounts in Read mode (replaced by the rendered-prose div below), so
  * neither emit ever fires to say its answer stopped mattering -- without this, the
@@ -637,7 +667,7 @@ const handleStopGenerating = () => {
 const toggleReadMode = () => {
   if (!readMode.value) {
     hasSelection.value = false
-    canReroll.value = false
+    genRunAtCaret.value = false
     cancelIdleCompletion()
   }
   readMode.value = !readMode.value
@@ -748,7 +778,7 @@ onUnmounted(() => {
           :prose="prose"
           @prose-change="handleProseChange"
           @selection-change="(live) => (hasSelection = live)"
-          @rerollable-change="(possible) => (canReroll = possible)"
+          @rerollable-change="(possible) => (genRunAtCaret = possible)"
         />
         <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
         <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
@@ -760,8 +790,15 @@ onUnmounted(() => {
           <button @click="save" :disabled="!currentFile">Save</button>
           <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
           <button
+            @click="handleDiscard"
+            :disabled="!currentFile || isGenerating || !genRunAtCaret"
+            title="Delete the generated text at the caret. Ctrl+Z puts it back."
+          >
+            Discard
+          </button>
+          <button
             @click="handleReroll"
-            :disabled="!currentFile || isGenerating || !canReroll"
+            :disabled="!currentFile || isGenerating || !genRunAtCaret"
             title="Put the caret in text a model wrote"
           >
             Reroll

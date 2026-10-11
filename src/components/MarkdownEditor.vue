@@ -72,8 +72,8 @@ const emit = defineEmits<{
   selectionChange: [boolean]
   /** Whether `rerollTarget()` would answer a span right now. Fired only when the
    *  answer changes, mirroring `selectionChange`'s own contract -- the one piece of
-   *  state `Text.vue`'s Reroll button needs (api#5), without exposing the run
-   *  itself for something this cheap. */
+   *  state `Text.vue`'s Reroll **and Discard** buttons need (api#5, frontend#33),
+   *  without exposing the run itself for something this cheap. */
   rerollableChange: [boolean]
   /** Whether a completion proposal is showing right now (frontend#9). Fired only
    *  when the answer changes, mirroring the two contracts above. */
@@ -543,8 +543,9 @@ function getSelectionOffsets(): { start: number; end: number } | null {
 }
 
 /**
- * The `gen` run a reroll (api#5) would replace -- the one the caret sits in or at
- * either end of -- or `null` where there is none to reroll.
+ * The `gen` run a reroll (api#5) would replace, or a discard (frontend#33) would
+ * remove outright -- the one the caret sits in or at either end of -- or `null`
+ * where there is none to act on.
  *
  * Only a caret, never a live selection: a real selection already means Rewrite,
  * which the primary button offers, and offering both at once would be two buttons
@@ -577,10 +578,12 @@ function updateRerollability(): void {
 
 /**
  * Deletes the span from character `start` to character `end`, as one undo step --
- * the undoable half of a reroll (api#5). `Text.vue` calls this with `rerollTarget()`'s
- * own answer, then generates again with a caret where `start` now sits; the existing
- * `appendGenerated` needs no change to insert there, since this leaves the caret
- * collapsed at exactly that position.
+ * the undoable half of a reroll (api#5), and the whole of a discard (frontend#33),
+ * which calls this and generates nothing after. `Text.vue` calls this with
+ * `rerollTarget()`'s own answer; a reroll then generates again with a caret where
+ * `start` now sits -- the existing `appendGenerated` needs no change to insert
+ * there, since this leaves the caret collapsed at exactly that position -- and a
+ * discard stops here.
  *
  * Mirrors `appendGenerated`'s own structure: `document.execCommand('delete')` where
  * it exists, so the deletion lands on the browser's own undo stack, and the same
