@@ -12,6 +12,7 @@ import * as sharedModel from '../services/sharedModel'
 import * as sharedGit from '../services/sharedGit'
 import * as sharedSettings from '../services/sharedSettings'
 import * as sharedFeatures from '../services/sharedFeatures'
+import * as sharedInstruction from '../services/sharedInstruction'
 
 // Mock services. NotFoundError is the real class: Text.vue branches on it with
 // instanceof, so a stand-in would not be recognised.
@@ -79,6 +80,13 @@ describe('Text.vue', () => {
    *  `sharedSettings`'s `autoComplete`. Off by default; a test in that block
    *  flips it. */
   let autoComplete: Ref<boolean>
+  /** The writer's own one-off steering for the next generation (api#19) --
+   *  `sharedInstruction`'s `instruction`. Empty by default; a test in that block
+   *  sets it directly, the same way `autoComplete` is flipped directly above. */
+  let instructionRef: Ref<string>
+  /** A real spy, not a no-op: a test asserts the file-switch watcher actually
+   *  cleared it, which a bare `vi.fn()` could not show. */
+  let mockClearInstruction: () => void
 
   /** The file the sidebar has open, named by its space as well as its id. */
   const OPEN = { space: 'stories' as const, id: 'a1b2c3d4e5f60718' }
@@ -129,6 +137,19 @@ describe('Text.vue', () => {
       setSendSelection: vi.fn(),
       setAutoComplete: vi.fn(),
       reset: vi.fn()
+    })
+    // Empty by default -- a test in the instruction block (api#19) sets it
+    // directly, the way `autoComplete` is flipped directly above.
+    instructionRef = ref('')
+    mockClearInstruction = vi.fn(() => {
+      instructionRef.value = ''
+    })
+    vi.spyOn(sharedInstruction, 'useSharedInstruction').mockReturnValue({
+      instruction: instructionRef,
+      setInstruction: vi.fn((value: string) => {
+        instructionRef.value = value
+      }),
+      clearInstruction: mockClearInstruction
     })
     // Off by default -- a test in the title-proposal block (frontend#30) flips it.
     titleFeature = ref(false)
@@ -871,6 +892,62 @@ describe('Text.vue', () => {
     })
   })
 
+  describe("the writer's own instruction (api#19)", () => {
+    it('sends what is typed when Generate is clicked', async () => {
+      const wrapper = await mountWithFile()
+      instructionRef.value = 'Make this more neutral.'
+
+      vi.mocked(llmService.generate).mockImplementation(async (_space, _id, _model, onDelta) => {
+        onDelta(' and then.')
+      })
+
+      await clickButton(wrapper, 'Generate')
+      await flushPromises()
+
+      expect(llmService.generate).toHaveBeenCalledWith(
+        OPEN.space,
+        OPEN.id,
+        'llama3',
+        expect.any(Function),
+        expect.objectContaining({ instruction: 'Make this more neutral.' })
+      )
+    })
+
+    it('sends nothing when the field is empty', async () => {
+      const wrapper = await mountWithFile()
+
+      vi.mocked(llmService.generate).mockImplementation(async (_space, _id, _model, onDelta) => {
+        onDelta(' and then.')
+      })
+
+      await clickButton(wrapper, 'Generate')
+      await flushPromises()
+
+      const [, , , , options] = vi.mocked(llmService.generate).mock.calls[0]!
+      expect(options?.instruction).toBeUndefined()
+    })
+
+    it('is cleared when the selected file changes', async () => {
+      await mountWithFile()
+      instructionRef.value = 'Make this more neutral.'
+
+      selectedFile.value = { space: 'notes', id: '0f1e2d3c4b5a6978' }
+      await flushPromises()
+
+      expect(instructionRef.value).toBe('')
+    })
+
+    it('is not cleared by toggling Read mode', async () => {
+      const wrapper = await mountWithFile()
+      instructionRef.value = 'Make this more neutral.'
+
+      await clickButton(wrapper, 'Read')
+      await clickButton(wrapper, 'Edit')
+
+      expect(instructionRef.value).toBe('Make this more neutral.')
+    })
+  })
+
   describe('reroll (api#5)', () => {
     const rerollButton = (wrapper: ReturnType<typeof mount>) =>
       wrapper.findAll('button').find((b) => b.text() === 'Reroll')!
@@ -889,6 +966,30 @@ describe('Text.vue', () => {
       vi.mocked(llmService.generate).mockClear()
       vi.mocked(filesManagerService.putDocument).mockClear()
     }
+
+    it('sends whatever instruction is currently typed, not a snapshot from the original generation (api#19)', async () => {
+      const wrapper = await mountWithFile()
+      await generateOnce(wrapper, ' and then.')
+
+      // Typed only now, after the generation the reroll is resampling -- proves
+      // this is read live, not carried over from when that first call was made.
+      instructionRef.value = 'Make this more neutral.'
+      vi.mocked(llmService.generate).mockImplementationOnce(
+        async (_space, _id, _model, onDelta) => {
+          onDelta(' instead.')
+        }
+      )
+      await rerollButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(llmService.generate).toHaveBeenCalledWith(
+        OPEN.space,
+        OPEN.id,
+        'llama3',
+        expect.any(Function),
+        expect.objectContaining({ instruction: 'Make this more neutral.' })
+      )
+    })
 
     it('is disabled with no generated run, and enabled once there is one', async () => {
       const wrapper = await mountWithFile()

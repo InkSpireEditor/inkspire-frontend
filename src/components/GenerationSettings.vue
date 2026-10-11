@@ -11,6 +11,7 @@
 import { onMounted } from 'vue'
 import { useSharedSettings } from '../services/sharedSettings'
 import { useSharedModel } from '../services/sharedModel'
+import GenerationInstruction from './GenerationInstruction.vue'
 
 const {
   temperature,
@@ -141,6 +142,8 @@ const onNumCtxInput = (raw: string) => {
         shows one short sentence in grey. Tab accepts it; any other key dismisses it.
       </span>
     </label>
+
+    <GenerationInstruction />
 
     <!-- Only ollama honours `think` -- the chat-completions path ignores it, so a
          checkbox there would appear to work and silently do nothing. -->

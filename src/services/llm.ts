@@ -44,6 +44,11 @@ export interface GenerateOptions {
     prefixShare?: number
     /** The context window allocated on the ollama path, overriding `INKSPIRE_LLM_NUM_CTX`. */
     numCtx?: number
+    /** The writer's own one-off steering for this generation alone (inkspire-api#19)
+     *  -- "make this more neutral", "continue as if a day has passed". Omit (or
+     *  pass `undefined`/`""`) for a plain generation; unlike the settings above,
+     *  there is no server default this overrides. */
+    instruction?: string
     /** Aborts the generation when triggered. */
     signal?: AbortSignal
 }
@@ -88,6 +93,7 @@ export const llmService = {
             promptBudget,
             prefixShare,
             numCtx,
+            instruction,
             signal,
         } = options
         // A selection's start is the anchor's start; a bare cursor is the anchor's
@@ -108,6 +114,7 @@ export const llmService = {
                 prompt_budget: promptBudget,
                 prefix_share: prefixShare,
                 num_ctx: numCtx,
+                instruction,
             }),
             signal,
         });

@@ -335,6 +335,41 @@ describe('llmService', () => {
     )
   })
 
+  it('sends an instruction under its own field name, and omits it when not given (api#19)', async () => {
+    fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
+
+    await llmService.generate('stories', 'f1', 'm', () => {}, {
+      instruction: 'Make this more neutral.',
+    })
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_URL}/stories/file/f1/generate`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: 'm',
+          think: undefined,
+          cursor_para: undefined,
+          cursor_offset: undefined,
+          cursor_end_para: undefined,
+          cursor_end_offset: undefined,
+          temperature: undefined,
+          prompt_budget: undefined,
+          prefix_share: undefined,
+          num_ctx: undefined,
+          instruction: 'Make this more neutral.',
+        }),
+      }),
+    )
+
+    fetchSpy.mockResolvedValueOnce(streamed(['data: [DONE]\n\n']))
+    await llmService.generate('stories', 'f1', 'm', () => {})
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${API_URL}/stories/file/f1/generate`,
+      expect.objectContaining({ body: BARE_BODY('m') }),
+    )
+  })
+
   describe('getDefaults', () => {
     it('fetches the servers own settings', async () => {
       const defaults = {

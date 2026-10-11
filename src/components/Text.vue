@@ -17,6 +17,7 @@ import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
 import { useSharedModel } from '../services/sharedModel'
 import { useSharedGit } from '../services/sharedGit'
 import { useSharedSettings } from '../services/sharedSettings'
+import { useSharedInstruction } from '../services/sharedInstruction'
 import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
@@ -28,6 +29,7 @@ const { selectedModelName, selectedModelProtocol, thinkEnabled } = useSharedMode
 const { refresh: refreshGitStatus } = useSharedGit()
 const { temperature, promptBudget, prefixShare, numCtx, sendSelection, autoComplete } =
   useSharedSettings()
+const { instruction, clearInstruction } = useSharedInstruction()
 const { title: titleFeatureEnabled, ensureLoaded: ensureFeaturesLoaded } = useSharedFeatures()
 const route = useRoute()
 const rename = useRename()
@@ -444,6 +446,10 @@ const runGeneration = async (
         promptBudget: promptBudget.value,
         prefixShare: prefixShare.value,
         numCtx: numCtx.value ?? undefined,
+        // Read live, the same way every setting above is -- a reroll picks up
+        // whatever is currently typed, no snapshot (api#19). Empty coerced to
+        // absent, the same conversion `suggestTitle`'s own call site uses.
+        instruction: instruction.value || undefined,
       }
     )
   } catch (e) {
@@ -646,6 +652,10 @@ const displayError = (msg: string) => {
 watch(selectedFile, (file) => {
   cancelAutoSave()
   cancelIdleCompletion()
+  // Kept across several generations of the same file (api#19), but a different
+  // file is a fresh context -- the same reasoning Tree.vue's own modalInstruction
+  // clears on a fresh context (there, opening the modal) rather than on each use.
+  clearInstruction()
   if (file) {
     loadFile(file)
   } else {

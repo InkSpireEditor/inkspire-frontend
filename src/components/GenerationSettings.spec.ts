@@ -4,6 +4,7 @@ import GenerationSettings from './GenerationSettings.vue'
 import { llmService } from '../services/llm'
 import { resetSharedSettings } from '../services/sharedSettings'
 import { useSharedModel, resetSharedModel } from '../services/sharedModel'
+import { resetSharedInstruction } from '../services/sharedInstruction'
 
 vi.mock('../services/llm', () => ({
   llmService: {
@@ -27,12 +28,14 @@ describe('GenerationSettings.vue', () => {
     localStorage.clear()
     resetSharedSettings()
     resetSharedModel()
+    resetSharedInstruction()
   })
 
   afterEach(() => {
     localStorage.clear()
     resetSharedSettings()
     resetSharedModel()
+    resetSharedInstruction()
   })
 
   it('initialises its sliders from the defaults route', async () => {
@@ -178,6 +181,18 @@ describe('GenerationSettings.vue', () => {
       await flushPromises()
 
       expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    })
+  })
+
+  describe('the instruction field (api#19/frontend#24)', () => {
+    it('is hosted in the panel, between auto-complete and the thinking checkbox', async () => {
+      const wrapper = mount(GenerationSettings)
+      await flushPromises()
+
+      const names = wrapper.findAll('.field-label').map((label) => label.text())
+      const autoCompleteIndex = names.indexOf('Propose a completion while idle')
+      const instructionIndex = names.indexOf('Instruction')
+      expect(instructionIndex).toBeGreaterThan(autoCompleteIndex)
     })
   })
 
