@@ -144,14 +144,21 @@ const onNumCtxInput = (raw: string) => {
 
     <!-- Only ollama honours `think` -- the chat-completions path ignores it, so a
          checkbox there would appear to work and silently do nothing. -->
-    <label v-if="selectedModelProtocol === 'ollama'" class="think-toggle">
-      <input
-        type="checkbox"
-        :checked="thinkEnabled"
-        @change="setThinkEnabled(($event.target as HTMLInputElement).checked)"
-      />
-      Think before writing
-    </label>
+    <div v-if="selectedModelProtocol === 'ollama'" class="field">
+      <label class="think-toggle">
+        <input
+          type="checkbox"
+          :checked="thinkEnabled"
+          @change="setThinkEnabled(($event.target as HTMLInputElement).checked)"
+        />
+        Think before writing
+      </label>
+      <span class="field-hint">
+        Lets the model reason before it answers. The reasoning itself is never
+        shown; on a small context window it can use up the whole thing and leave
+        nothing for the actual prose.
+      </span>
+    </div>
 
     <button type="button" class="reset" @click="reset">Reset to server defaults</button>
   </div>
