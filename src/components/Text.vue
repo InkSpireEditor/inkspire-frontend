@@ -699,7 +699,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="text-page">
+  <!--
+    Ctrl+Enter triggers the same Generate/Rewrite button below (frontend#32).
+    Bound here rather than in `MarkdownEditor.vue`, which is deliberately
+    described as intercepting no key (`MarkdownEditor.spec.ts`'s own guard for
+    that) -- a keydown inside the editor still bubbles up to this root, so one
+    listener here covers the editor and the rest of this pane alike. `.prevent`
+    stops the browser's own Enter-in-a-contenteditable default (a line break)
+    from landing first.
+  -->
+  <div class="text-page" @keydown.ctrl.enter.prevent="handleGenerate">
     <div class="header">
       <button
         v-if="fileName"

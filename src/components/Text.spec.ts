@@ -832,6 +832,45 @@ describe('Text.vue', () => {
     )
   })
 
+  describe('Ctrl+Enter (frontend#32)', () => {
+    it('triggers the same generation Clicking Generate would', async () => {
+      const wrapper = await mountWithFile()
+
+      vi.mocked(llmService.generate).mockImplementation(async (_space, _id, _model, onDelta) => {
+        onDelta(' and then.')
+      })
+
+      await wrapper.find('.text-page').trigger('keydown', { key: 'Enter', ctrlKey: true })
+      await flushPromises()
+
+      expect(llmService.generate).toHaveBeenCalledTimes(1)
+      const vm = wrapper.vm as any
+      expect(vm.text).toBe('Initial content and then.')
+    })
+
+    it('does nothing without the Ctrl modifier', async () => {
+      const wrapper = await mountWithFile()
+
+      await wrapper.find('.text-page').trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+
+      expect(llmService.generate).not.toHaveBeenCalled()
+    })
+
+    it('still fires from a keydown that bubbles up from inside the editor', async () => {
+      const wrapper = await mountWithFile()
+
+      vi.mocked(llmService.generate).mockImplementation(async (_space, _id, _model, onDelta) => {
+        onDelta(' and then.')
+      })
+
+      await wrapper.find('[contenteditable]').trigger('keydown', { key: 'Enter', ctrlKey: true })
+      await flushPromises()
+
+      expect(llmService.generate).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('reroll (api#5)', () => {
     const rerollButton = (wrapper: ReturnType<typeof mount>) =>
       wrapper.findAll('button').find((b) => b.text() === 'Reroll')!
