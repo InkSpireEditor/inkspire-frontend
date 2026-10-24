@@ -26,10 +26,17 @@ const error = ref<string | null>(null)
 const PX_PER_UNIT = 48
 /** Half of widthStep, widening an arc's bracket a little past its two endpoints. */
 const ARC_X_PADDING_UNITS = 0.5
-/** Gap between an arc's row and the top of its two vertical guide lines. */
-const ARC_Y_PADDING_UNITS = 1
-/** How far an arc's curve bulges below its row -- ported from the Typst template's own d=5. */
-const ARC_SAG_UNITS = 5
+/**
+ * An arc is a bracket above the whole timeline, as in the Typst template (`draw-arc`): its
+ * curve starts this many units above the top row, its control point is `ARC_CONTROL_UNITS`
+ * above it, and its label is `ARC_LABEL_UNITS` above it. Two dashed lines run from the curve's
+ * ends down to the bottom of the drawing.
+ */
+const ARC_BASE_UNITS = 1
+const ARC_CONTROL_UNITS = 5
+const ARC_LABEL_UNITS = 2
+/** Room above an arc's curve for its stroke, so the top edge is not drawn flush with the SVG's. */
+const ARC_TOP_PADDING_PX = 8
 
 const load = async () => {
   const id = route.params.id
@@ -59,7 +66,20 @@ const svgWidthPx = computed(() => {
   return maxWidthUnits * PX_PER_UNIT
 })
 
-const svgHeightPx = computed(() => (data.value ? data.value.maxHeight * PX_PER_UNIT : 0))
+/**
+ * The room above the events for the arcs: a quadratic curve reaches half the way from its end
+ * points to its control point. The server's layout leaves none, so the drawing is shifted down
+ * by this much when there are arcs, and by nothing when there are not.
+ */
+const arcBandPx = computed(() => {
+  if (!data.value || data.value.arcs.length === 0) return 0
+  const peakUnits = ARC_BASE_UNITS + (ARC_CONTROL_UNITS - ARC_BASE_UNITS) / 2
+  return peakUnits * PX_PER_UNIT + ARC_TOP_PADDING_PX
+})
+
+const svgHeightPx = computed(() =>
+  data.value ? arcBandPx.value + data.value.maxHeight * PX_PER_UNIT : 0
+)
 
 interface ThreadSegment {
   color: string
@@ -95,9 +115,13 @@ interface ArcBracket {
   name: string
   x1: number
   x2: number
-  rowY: number
-  topY: number
-  curveY: number
+  /** Where the curve starts and ends, and where the guide lines start. Negative: above the top row. */
+  baseY: number
+  /** The curve's control point. */
+  controlY: number
+  labelY: number
+  /** Where the guide lines end, at the bottom of the drawing. */
+  bottomY: number
 }
 
 const arcs = computed<ArcBracket[]>(() => {
@@ -108,10 +132,15 @@ const arcs = computed<ArcBracket[]>(() => {
     const last = eventsByKey.value.get(arc.lastEvent)!
     const x1 = (first.x1 - ARC_X_PADDING_UNITS) * PX_PER_UNIT
     const x2 = (last.x2 + ARC_X_PADDING_UNITS) * PX_PER_UNIT
-    const rowY = (maxHeight - 1) * PX_PER_UNIT
-    const topY = rowY - ARC_Y_PADDING_UNITS * PX_PER_UNIT
-    const curveY = rowY + ARC_SAG_UNITS * PX_PER_UNIT
-    return { name: arc.name, x1, x2, rowY, topY, curveY }
+    return {
+      name: arc.name,
+      x1,
+      x2,
+      baseY: -ARC_BASE_UNITS * PX_PER_UNIT,
+      controlY: -ARC_CONTROL_UNITS * PX_PER_UNIT,
+      labelY: -ARC_LABEL_UNITS * PX_PER_UNIT,
+      bottomY: (maxHeight - 1) * PX_PER_UNIT,
+    }
   })
 })
 
@@ -162,44 +191,46 @@ const eventBoxes = computed<EventBox[]>(() =>
 
         <div class="timeline-scroll">
           <svg :width="svgWidthPx" :height="svgHeightPx">
-            <g class="threads">
-              <line
-                v-for="(thread, i) in threads"
-                :key="i"
-                :x1="thread.x1"
-                :y1="thread.y1"
-                :x2="thread.x2"
-                :y2="thread.y2"
-                :stroke="thread.color"
-              />
-            </g>
-
-            <g class="arcs">
-              <template v-for="arc in arcs" :key="arc.name">
-                <line class="arc-guide" :x1="arc.x1" :y1="arc.topY" :x2="arc.x1" :y2="arc.rowY" />
-                <line class="arc-guide" :x1="arc.x2" :y1="arc.topY" :x2="arc.x2" :y2="arc.rowY" />
-                <path
-                  class="arc-curve"
-                  :d="`M ${arc.x1} ${arc.rowY} Q ${(arc.x1 + arc.x2) / 2} ${arc.curveY} ${arc.x2} ${arc.rowY}`"
+            <g :transform="`translate(0, ${arcBandPx})`">
+              <g class="threads">
+                <line
+                  v-for="(thread, i) in threads"
+                  :key="i"
+                  :x1="thread.x1"
+                  :y1="thread.y1"
+                  :x2="thread.x2"
+                  :y2="thread.y2"
+                  :stroke="thread.color"
                 />
-                <text class="arc-label" :x="(arc.x1 + arc.x2) / 2" :y="arc.rowY + (arc.curveY - arc.rowY) / 2.5">
-                  {{ arc.name }}
-                </text>
-              </template>
-            </g>
+              </g>
 
-            <g class="events">
-              <g v-for="box in eventBoxes" :key="box.key" :transform="`translate(${box.x}, ${box.y})`">
-                <rect class="event-box" :width="box.width" :height="box.height" rx="4" />
-                <text class="event-date" :x="box.width / 2" :y="box.height / 3">{{ box.date }}</text>
-                <a v-if="box.href" :href="box.href" target="_blank" rel="noopener">
-                  <text class="event-description event-link" :x="box.width / 2" :y="(box.height * 2) / 3">
+              <g class="arcs">
+                <template v-for="arc in arcs" :key="arc.name">
+                  <line class="arc-guide" :x1="arc.x1" :y1="arc.baseY" :x2="arc.x1" :y2="arc.bottomY" />
+                  <line class="arc-guide" :x1="arc.x2" :y1="arc.baseY" :x2="arc.x2" :y2="arc.bottomY" />
+                  <path
+                    class="arc-curve"
+                    :d="`M ${arc.x1} ${arc.baseY} Q ${(arc.x1 + arc.x2) / 2} ${arc.controlY} ${arc.x2} ${arc.baseY}`"
+                  />
+                  <text class="arc-label" :x="(arc.x1 + arc.x2) / 2" :y="arc.labelY">
+                    {{ arc.name }}
+                  </text>
+                </template>
+              </g>
+
+              <g class="events">
+                <g v-for="box in eventBoxes" :key="box.key" :transform="`translate(${box.x}, ${box.y})`">
+                  <rect class="event-box" :width="box.width" :height="box.height" rx="4" />
+                  <text class="event-date" :x="box.width / 2" :y="box.height / 3">{{ box.date }}</text>
+                  <a v-if="box.href" :href="box.href" target="_blank" rel="noopener">
+                    <text class="event-description event-link" :x="box.width / 2" :y="(box.height * 2) / 3">
+                      {{ box.description }}
+                    </text>
+                  </a>
+                  <text v-else class="event-description" :x="box.width / 2" :y="(box.height * 2) / 3">
                     {{ box.description }}
                   </text>
-                </a>
-                <text v-else class="event-description" :x="box.width / 2" :y="(box.height * 2) / 3">
-                  {{ box.description }}
-                </text>
+                </g>
               </g>
             </g>
           </svg>

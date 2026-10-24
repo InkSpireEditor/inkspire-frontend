@@ -83,7 +83,9 @@ describe('TimelineView.vue', () => {
 
     const svg = wrapper.find('svg')
     expect(svg.attributes('width')).toBe('600') // (11.5 + widthStep 1) * 48
-    expect(svg.attributes('height')).toBe('384') // maxHeight 8.0 * 48
+    // The arcs sit above the events, in a band of their own: the curve peaks 3 units (144px)
+    // above the top row, plus 8px of padding, ahead of the events' 8.0 * 48 = 384.
+    expect(svg.attributes('height')).toBe('536') // 152 + 384
   })
 
   it("offers a way back to the story's dashboard", async () => {
@@ -147,14 +149,43 @@ describe('TimelineView.vue', () => {
     const guides = wrapper.findAll('.arc-guide')
     expect(guides).toHaveLength(2)
     expect(guides[0]?.attributes('x1')).toBe('24')
-    expect(guides[0]?.attributes('y1')).toBe('288')
+    // From one unit above the top row down to the bottom of the drawing, (8.0 - 1) * 48.
+    expect(guides[0]?.attributes('y1')).toBe('-48')
     expect(guides[0]?.attributes('y2')).toBe('336')
     expect(guides[1]?.attributes('x1')).toBe('576')
 
     const curve = wrapper.find('.arc-curve')
-    expect(curve.attributes('d')).toBe('M 24 336 Q 300 576 576 336')
+    // Starts one unit above the top row, with its control point five units above.
+    expect(curve.attributes('d')).toBe('M 24 -48 Q 300 -240 576 -48')
 
     expect(wrapper.find('.arc-label').text()).toBe('Opening')
+    expect(wrapper.find('.arc-label').attributes('y')).toBe('-96')
+  })
+
+  it("leaves room above the events for an arc's curve and its label", async () => {
+    vi.mocked(timelineService.get).mockResolvedValue(TIMELINE_FIXTURE)
+    const router = await routerAt('a1b2c3d4e5f60718')
+
+    const wrapper = mount(TimelineView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    // The drawing is shifted down by the band, so the curve's peak (-48 + (-240 - -48) / 2 =
+    // -144, as a quadratic reaches half the way to its control point) lands inside the SVG.
+    const band = Number(wrapper.find('svg > g').attributes('transform')!.match(/, ([\d.]+)\)/)![1])
+    expect(band).toBeGreaterThan(144)
+    expect(band + Number(wrapper.find('.arc-label').attributes('y'))).toBeGreaterThan(0)
+    expect(Number(wrapper.find('svg').attributes('height'))).toBe(band + 384)
+  })
+
+  it('keeps the events-only height for a timeline with no arcs', async () => {
+    vi.mocked(timelineService.get).mockResolvedValue({ ...TIMELINE_FIXTURE, arcs: [] })
+    const router = await routerAt('a1b2c3d4e5f60718')
+
+    const wrapper = mount(TimelineView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    expect(wrapper.find('svg').attributes('height')).toBe('384') // maxHeight 8.0 * 48
+    expect(wrapper.find('svg > g').attributes('transform')).toBe('translate(0, 0)')
   })
 
   it('lists each character in the legend with its authored colour', async () => {
