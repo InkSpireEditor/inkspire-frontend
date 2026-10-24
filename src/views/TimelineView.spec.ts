@@ -202,6 +202,41 @@ describe('TimelineView.vue', () => {
     expect(wrapper.text()).toContain('John Smith')
   })
 
+  it('pans by dragging, and shows the grabbing cursor only while it does', async () => {
+    vi.mocked(timelineService.get).mockResolvedValue(TIMELINE_FIXTURE)
+    const router = await routerAt('a1b2c3d4e5f60718')
+
+    const wrapper = mount(TimelineView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    const area = wrapper.find('.timeline-scroll')
+    // jsdom does no layout, so scrollLeft is a plain property here.
+    Object.defineProperty(area.element, 'scrollLeft', { value: 200, writable: true })
+    const send = async (type: string, clientX: number) => {
+      area.element.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: 'mouse',
+          button: 0,
+          clientX,
+          clientY: 0
+        })
+      )
+      await wrapper.vm.$nextTick()
+    }
+
+    await send('pointerdown', 300)
+    expect(area.classes()).not.toContain('panning')
+
+    await send('pointermove', 250)
+    expect(area.classes()).toContain('panning')
+    expect((area.element as HTMLElement).scrollLeft).toBe(250)
+
+    await send('pointerup', 250)
+    expect(area.classes()).not.toContain('panning')
+  })
+
   it('says so when a timeline has no events yet', async () => {
     vi.mocked(timelineService.get).mockResolvedValue({
       title: 'Bare Timeline', maxHeight: 0, widthStep: 1, characters: [], events: [], arcs: []

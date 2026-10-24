@@ -14,11 +14,15 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { timelineService, type TimelineResponse } from '../services/timeline'
 import BackLink from '../components/BackLink.vue'
+import { usePanScroll } from '../services/panScroll'
 
 const route = useRoute()
 /** Whatever the URL names, for the way back to the dashboard. */
 const storyId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const data = ref<TimelineResponse | null>(null)
+const scrollArea = ref<HTMLElement | null>(null)
+const { panning, onPointerDown, onPointerMove, onPointerUp, onClickCapture } =
+  usePanScroll(scrollArea)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -189,7 +193,16 @@ const eventBoxes = computed<EventBox[]>(() =>
           Events are shown in chronological order — spacing does not represent elapsed time.
         </p>
 
-        <div class="timeline-scroll">
+        <div
+          ref="scrollArea"
+          class="timeline-scroll"
+          :class="{ panning }"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerUp"
+          @click.capture="onClickCapture"
+        >
           <svg :width="svgWidthPx" :height="svgHeightPx">
             <g :transform="`translate(0, ${arcBandPx})`">
               <g class="threads">
@@ -296,6 +309,13 @@ h1 {
   overflow-x: auto;
   flex: 1;
   min-height: 0;
+  /* Dragging pans (services/panScroll.ts); a drag would otherwise select the text under it. */
+  cursor: grab;
+  user-select: none;
+}
+
+.timeline-scroll.panning {
+  cursor: grabbing;
 }
 
 .event-box {
