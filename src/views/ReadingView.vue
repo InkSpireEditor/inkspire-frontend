@@ -8,12 +8,14 @@
  * `renderMarkdown` (`services/markdown.ts`), the same one the editor's own Read
  * toggle uses.
  */
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { filesManagerService } from '../services/filesManager'
 import { renderMarkdown } from '../services/markdown'
+import BackLink from '../components/BackLink.vue'
 
 const route = useRoute()
+const storyId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const storyName = ref('')
 const html = ref('')
 const hasChapters = ref(false)
@@ -54,6 +56,7 @@ watch(() => route.params.id, load)
 
 <template>
   <div class="reading-view">
+    <BackLink v-if="storyId" :story-id="storyId" />
     <p v-if="loading">Loading…</p>
     <p v-else-if="error" class="error">{{ error }}</p>
     <template v-else>

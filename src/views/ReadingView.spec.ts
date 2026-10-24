@@ -11,7 +11,10 @@ vi.mock('../services/filesManager', () => ({
 async function routerAt(storyId: string) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/story/:id/read', name: 'read', component: ReadingView }]
+    routes: [
+      { path: '/story/:id/read', name: 'read', component: ReadingView },
+      { path: '/story/:id', name: 'dashboard', component: { template: '<div />' } }
+    ]
   })
   await router.push({ name: 'read', params: { id: storyId } })
   return router
@@ -76,6 +79,25 @@ describe('ReadingView.vue', () => {
     expect(wrapper.find('script').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('<script>')
     expect(wrapper.text()).toContain('Ordinary text.')
+  })
+
+  it("offers a way back to the story's dashboard", async () => {
+    vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+      id: 'a1b2c3d4e5f60718',
+      name: 'Example Story',
+      summary: '',
+      files: []
+    })
+    const router = await routerAt('a1b2c3d4e5f60718')
+
+    const wrapper = mount(ReadingView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.find('.back-link').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.params.id).toBe('a1b2c3d4e5f60718')
   })
 
   it('says so when a story has no chapters yet', async () => {
