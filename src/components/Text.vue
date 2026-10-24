@@ -10,7 +10,7 @@ import {
 } from '../services/provenance'
 import { llmService } from '../services/llm'
 import { cursorFromOffset, rangeFromOffsets, type Cursor, type CursorRange } from '../services/cursor'
-import { renderMarkdown } from '../services/markdown'
+import RenderedProse from './RenderedProse.vue'
 import { useRename } from '../services/rename'
 import { useSharedFeatures } from '../services/sharedFeatures'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
@@ -660,7 +660,7 @@ const handleStopGenerating = () => {
 /**
  * Toggles Read mode, clearing `hasSelection` and `genRunAtCaret` on the way in.
  *
- * The editor unmounts in Read mode (replaced by the rendered-prose div below), so
+ * The editor unmounts in Read mode (replaced by the rendered prose below), so
  * neither emit ever fires to say its answer stopped mattering -- without this, the
  * buttons would keep reading whatever they were before Read was clicked.
  */
@@ -780,8 +780,9 @@ onUnmounted(() => {
           @selection-change="(live) => (hasSelection = live)"
           @rerollable-change="(possible) => (genRunAtCaret = possible)"
         />
-        <!-- Sanitised in renderMarkdown, through DOMPurify -- nothing here escapes that. -->
-        <div v-else class="rendered-prose" v-html="renderMarkdown(text)"></div>
+        <div v-else class="read-pane">
+          <RenderedProse class="rendered-prose" :text="text" />
+        </div>
 
         <div class="actions">
           <button @click="toggleReadMode" :disabled="!currentFile">
@@ -899,22 +900,17 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
-.rendered-prose {
+/* The scroll area for Read mode, in the editing surface's place: same padding, so toggling
+   between the two does not move the text down or sideways. The centred column is
+   RenderedProse, inside it. */
+.read-pane {
   flex: 1;
   min-height: 240px;
   overflow-y: auto;
   padding: 1.25rem 1.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background-color: var(--color-background-soft);
-  color: var(--color-text);
-  font-family: var(--font-prose);
-  line-height: 1.7;
-  overflow-wrap: break-word;
-  box-shadow: var(--shadow-card);
 }
 
-/* Same surface as .rendered-prose: a pane, not a writing surface, with nothing to write. */
+/* A pane, not a writing surface, with nothing to write. Flat, like the surfaces it stands in for. */
 .no-file-pane {
   flex: 1;
   min-height: 240px;
@@ -922,15 +918,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 1.25rem 1.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background-color: var(--color-background-soft);
   color: var(--color-text);
   opacity: 0.45;
-}
-
-.rendered-prose :deep(p) {
-  margin: 0 0 var(--space-4) 0;
 }
 
 .actions {

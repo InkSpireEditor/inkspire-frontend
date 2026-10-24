@@ -4,20 +4,19 @@
  *
  * Entirely client-side: the API has no bulk-content route, so every chapter's prose
  * is fetched on its own -- the same cost the dashboard's word count already pays --
- * and joined here, one heading per chapter, before rendering through the shared
- * `renderMarkdown` (`services/markdown.ts`), the same one the editor's own Read
- * toggle uses.
+ * and joined here, one heading per chapter, before being drawn by `RenderedProse`, the
+ * same component the editor's own Read toggle uses.
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { filesManagerService } from '../services/filesManager'
-import { renderMarkdown } from '../services/markdown'
 import BackLink from '../components/BackLink.vue'
+import RenderedProse from '../components/RenderedProse.vue'
 
 const route = useRoute()
 const storyId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const storyName = ref('')
-const html = ref('')
+const markdown = ref('')
 const hasChapters = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -36,11 +35,9 @@ const load = async () => {
     const bodies = await Promise.all(
       story.files.map((file) => filesManagerService.getFileContent('stories', file.id))
     )
-    const markdown = story.files
+    markdown.value = story.files
       .map((file, index) => `## ${file.name}\n\n${bodies[index]}`)
       .join('\n\n')
-
-    html.value = renderMarkdown(markdown)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load the story'
   } finally {
@@ -62,8 +59,7 @@ watch(() => route.params.id, load)
     <template v-else>
       <h1>{{ storyName }}</h1>
       <p v-if="!hasChapters" class="empty">No chapters yet.</p>
-      <!-- Sanitised just above, through DOMPurify -- nothing here escapes that. -->
-      <div v-else class="prose" v-html="html"></div>
+      <RenderedProse v-else :text="markdown" />
     </template>
   </div>
 </template>
@@ -92,25 +88,10 @@ h1 {
   opacity: 0.7;
 }
 
-.prose {
-  color: var(--color-text);
-  font-family: var(--font-prose);
-  line-height: 1.7;
-}
-
-.prose :deep(h2) {
-  color: var(--color-heading);
-  font-weight: var(--font-weight-bold);
-  margin-top: var(--space-6);
+/* A chapter's heading is set apart by a rule under it. The prose component itself styles every
+   heading the same way, since a Markdown heading inside a chapter is not a chapter. */
+.reading-view :deep(h2) {
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--color-border);
-}
-
-.prose :deep(h2:first-child) {
-  margin-top: 0;
-}
-
-.prose :deep(p) {
-  margin: 0 0 var(--space-4) 0;
 }
 </style>
