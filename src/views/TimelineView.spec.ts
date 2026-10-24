@@ -237,6 +237,93 @@ describe('TimelineView.vue', () => {
     expect(area.classes()).not.toContain('panning')
   })
 
+  describe('the character legend', () => {
+    const mountLoaded = async () => {
+      vi.mocked(timelineService.get).mockResolvedValue(TIMELINE_FIXTURE)
+      const router = await routerAt('a1b2c3d4e5f60718')
+      const wrapper = mount(TimelineView, { global: { plugins: [router] } })
+      await flushPromises()
+      return { wrapper, router }
+    }
+    /** Thread colours, one per drawn line: the fixture draws alpha's blue once and beta's red once. */
+    const threadColours = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.threads line').map((line) => line.attributes('stroke'))
+    const dimmedEvents = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.events > g').map((box) => box.classes().includes('dimmed'))
+
+    it("removes a character's thread when its entry is clicked, and keeps the other's", async () => {
+      const { wrapper } = await mountLoaded()
+      expect(threadColours(wrapper)).toEqual(['blue', 'red'])
+
+      await wrapper.findAll('.legend-item')[0]!.trigger('click')
+
+      expect(threadColours(wrapper)).toEqual(['red'])
+      expect(wrapper.findAll('.legend-item')[0]!.classes()).toContain('hidden')
+      expect(wrapper.findAll('.legend-item')[0]!.attributes('aria-pressed')).toBe('false')
+    })
+
+    it('shows a hidden character again when its entry is clicked a second time', async () => {
+      const { wrapper } = await mountLoaded()
+      const entry = () => wrapper.findAll('.legend-item')[0]!
+
+      await entry().trigger('click')
+      await entry().trigger('click')
+
+      expect(threadColours(wrapper)).toEqual(['blue', 'red'])
+      expect(entry().classes()).not.toContain('hidden')
+    })
+
+    it('toggles from the keyboard', async () => {
+      const { wrapper } = await mountLoaded()
+
+      await wrapper.findAll('.legend-item')[1]!.trigger('keyup', { key: 'Enter' })
+
+      expect(threadColours(wrapper)).toEqual(['blue'])
+    })
+
+    it('dims an event only when every character in it is hidden', async () => {
+      const { wrapper } = await mountLoaded()
+      // first: alpha. second: alpha and beta. third: beta.
+      expect(dimmedEvents(wrapper)).toEqual([false, false, false])
+
+      await wrapper.findAll('.legend-item')[0]!.trigger('click')
+      expect(dimmedEvents(wrapper)).toEqual([true, false, false])
+
+      await wrapper.findAll('.legend-item')[1]!.trigger('click')
+      expect(dimmedEvents(wrapper)).toEqual([true, true, true])
+    })
+
+    it('hides every character from the heading, then shows them all back', async () => {
+      const { wrapper } = await mountLoaded()
+
+      await wrapper.find('.legend h2').trigger('click')
+      expect(threadColours(wrapper)).toEqual([])
+      expect(wrapper.findAll('.legend-item.hidden')).toHaveLength(2)
+
+      await wrapper.find('.legend h2').trigger('click')
+      expect(threadColours(wrapper)).toEqual(['blue', 'red'])
+    })
+
+    it('hides the rest when some are already hidden, rather than showing everything', async () => {
+      const { wrapper } = await mountLoaded()
+      await wrapper.findAll('.legend-item')[0]!.trigger('click')
+
+      await wrapper.find('.legend h2').trigger('click')
+
+      expect(wrapper.findAll('.legend-item.hidden')).toHaveLength(2)
+    })
+
+    it('starts a different story with nothing hidden', async () => {
+      const { wrapper, router } = await mountLoaded()
+      await wrapper.findAll('.legend-item')[0]!.trigger('click')
+
+      await router.push({ name: 'timeline', params: { id: 'other000000000018' } })
+      await flushPromises()
+
+      expect(wrapper.findAll('.legend-item.hidden')).toHaveLength(0)
+    })
+  })
+
   it('says so when a timeline has no events yet', async () => {
     vi.mocked(timelineService.get).mockResolvedValue({
       title: 'Bare Timeline', maxHeight: 0, widthStep: 1, characters: [], events: [], arcs: []

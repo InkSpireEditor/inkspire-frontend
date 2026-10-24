@@ -20,6 +20,8 @@ const route = useRoute()
 /** Whatever the URL names, for the way back to the dashboard. */
 const storyId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const data = ref<TimelineResponse | null>(null)
+/** Characters switched off in the legend: their threads are not drawn, and an event only they are in is dimmed. */
+const hiddenCharacters = ref<Set<string>>(new Set())
 const scrollArea = ref<HTMLElement | null>(null)
 const { panning, onPointerDown, onPointerMove, onPointerUp, onClickCapture } =
   usePanScroll(scrollArea)
@@ -48,6 +50,8 @@ const load = async () => {
 
   loading.value = true
   error.value = null
+  // A previous story's characters mean nothing here.
+  hiddenCharacters.value = new Set()
   try {
     data.value = await timelineService.get(id)
   } catch (e) {
@@ -61,6 +65,20 @@ onMounted(load)
 // A timeline link elsewhere can be clicked while this view is already open, which
 // changes the param without remounting the component.
 watch(() => route.params.id, load)
+
+const toggleCharacter = (key: string) => {
+  const next = new Set(hiddenCharacters.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  hiddenCharacters.value = next
+}
+
+/** The legend's heading: hide every character, or show every one back. */
+const toggleAllCharacters = () => {
+  const characters = data.value?.characters ?? []
+  const allHidden = characters.every((c) => hiddenCharacters.value.has(c.key))
+  hiddenCharacters.value = allHidden ? new Set() : new Set(characters.map((c) => c.key))
+}
 
 const eventsByKey = computed(() => new Map((data.value?.events ?? []).map((e) => [e.key, e])))
 
@@ -100,19 +118,21 @@ interface ThreadSegment {
  */
 const threads = computed<ThreadSegment[]>(() => {
   if (!data.value) return []
-  return data.value.characters.flatMap((character) =>
-    character.events.slice(0, -1).map((key, i) => {
-      const from = eventsByKey.value.get(key)!
-      const to = eventsByKey.value.get(character.events[i + 1]!)!
-      return {
-        color: character.color,
-        x1: ((from.x1 + from.x2) / 2) * PX_PER_UNIT,
-        y1: ((from.y1 + from.y2) / 2) * PX_PER_UNIT,
-        x2: ((to.x1 + to.x2) / 2) * PX_PER_UNIT,
-        y2: ((to.y1 + to.y2) / 2) * PX_PER_UNIT,
-      }
-    })
-  )
+  return data.value.characters
+    .filter((character) => !hiddenCharacters.value.has(character.key))
+    .flatMap((character) =>
+      character.events.slice(0, -1).map((key, i) => {
+        const from = eventsByKey.value.get(key)!
+        const to = eventsByKey.value.get(character.events[i + 1]!)!
+        return {
+          color: character.color,
+          x1: ((from.x1 + from.x2) / 2) * PX_PER_UNIT,
+          y1: ((from.y1 + from.y2) / 2) * PX_PER_UNIT,
+          x2: ((to.x1 + to.x2) / 2) * PX_PER_UNIT,
+          y2: ((to.y1 + to.y2) / 2) * PX_PER_UNIT,
+        }
+      })
+    )
 })
 
 interface ArcBracket {
@@ -157,6 +177,8 @@ interface EventBox {
   y: number
   width: number
   height: number
+  /** Every character in the event is switched off in the legend. */
+  dimmed: boolean
 }
 
 const eventBoxes = computed<EventBox[]>(() =>
@@ -169,6 +191,7 @@ const eventBoxes = computed<EventBox[]>(() =>
     y: e.y1 * PX_PER_UNIT,
     width: (e.x2 - e.x1) * PX_PER_UNIT,
     height: (e.y2 - e.y1) * PX_PER_UNIT,
+    dimmed: e.characters.length > 0 && e.characters.every((c) => hiddenCharacters.value.has(c)),
   }))
 )
 </script>
@@ -182,12 +205,34 @@ const eventBoxes = computed<EventBox[]>(() =>
       <h1>{{ data.title }}</h1>
       <p v-if="data.events.length === 0" class="empty">No events yet.</p>
       <template v-else>
-        <ul class="legend">
-          <li v-for="character in data.characters" :key="character.key">
-            <span class="swatch" :style="{ backgroundColor: character.color }"></span>
-            {{ character.name }}
-          </li>
-        </ul>
+        <div class="legend">
+          <h2
+            role="button"
+            tabindex="0"
+            title="Click a character to show or hide their thread"
+            @click="toggleAllCharacters"
+            @keyup.enter="toggleAllCharacters"
+          >
+            Characters
+          </h2>
+          <ul>
+            <li
+              v-for="character in data.characters"
+              :key="character.key"
+              class="legend-item"
+              :class="{ hidden: hiddenCharacters.has(character.key) }"
+              role="button"
+              tabindex="0"
+              :aria-pressed="!hiddenCharacters.has(character.key)"
+              @click="toggleCharacter(character.key)"
+              @keyup.enter="toggleCharacter(character.key)"
+              @keyup.space.prevent="toggleCharacter(character.key)"
+            >
+              <span class="swatch" :style="{ backgroundColor: character.color }"></span>
+              {{ character.name }}
+            </li>
+          </ul>
+        </div>
 
         <p class="caption">
           Events are shown in chronological order — spacing does not represent elapsed time.
@@ -232,7 +277,12 @@ const eventBoxes = computed<EventBox[]>(() =>
               </g>
 
               <g class="events">
-                <g v-for="box in eventBoxes" :key="box.key" :transform="`translate(${box.x}, ${box.y})`">
+                <g
+                v-for="box in eventBoxes"
+                :key="box.key"
+                :class="{ dimmed: box.dimmed }"
+                :transform="`translate(${box.x}, ${box.y})`"
+              >
                   <rect class="event-box" :width="box.width" :height="box.height" rx="4" />
                   <text class="event-date" :x="box.width / 2" :y="box.height / 3">{{ box.date }}</text>
                   <a v-if="box.href" :href="box.href" target="_blank" rel="noopener">
@@ -275,20 +325,46 @@ h1 {
   opacity: 0.7;
 }
 
+/* The same chips as the lorebook's type legend (LoreView.vue). */
 .legend {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  padding: 0;
-  margin: 0;
-}
-
-.legend li {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.legend h2 {
+  margin: 0;
+  font-size: 0.85rem;
   color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.legend ul {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  gap: var(--space-2);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: 0.85rem;
+}
+
+.legend-item.hidden {
+  opacity: 0.4;
+  text-decoration: line-through;
 }
 
 .swatch {
@@ -316,6 +392,14 @@ h1 {
 
 .timeline-scroll.panning {
   cursor: grabbing;
+}
+
+.events > g {
+  transition: opacity var(--transition);
+}
+
+.events > g.dimmed {
+  opacity: 0.35;
 }
 
 .event-box {
