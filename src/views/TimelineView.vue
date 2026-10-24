@@ -10,11 +10,19 @@
  * scale from, which is why the caption below says "chronological order" rather
  * than something more precise than the data supports.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { timelineService, type TimelineResponse } from '../services/timeline'
 import BackLink from '../components/BackLink.vue'
 import { usePanScroll } from '../services/panScroll'
+import {
+  ZOOM_MAX,
+  ZOOM_MIN,
+  anchoredScroll,
+  clampZoom,
+  stepZoom,
+  wheelZoom,
+} from '../services/zoom'
 
 const route = useRoute()
 /** Whatever the URL names, for the way back to the dashboard. */
@@ -22,6 +30,8 @@ const storyId = computed(() => (typeof route.params.id === 'string' ? route.para
 const data = ref<TimelineResponse | null>(null)
 /** Characters switched off in the legend: their threads are not drawn, and an event only they are in is dimmed. */
 const hiddenCharacters = ref<Set<string>>(new Set())
+/** 1 is the drawing at its laid-out size. Scales the whole SVG, text included. */
+const zoom = ref(1)
 const scrollArea = ref<HTMLElement | null>(null)
 const { panning, onPointerDown, onPointerMove, onPointerUp, onClickCapture } =
   usePanScroll(scrollArea)
@@ -52,6 +62,7 @@ const load = async () => {
   error.value = null
   // A previous story's characters mean nothing here.
   hiddenCharacters.value = new Set()
+  zoom.value = 1
   try {
     data.value = await timelineService.get(id)
   } catch (e) {
@@ -65,6 +76,43 @@ onMounted(load)
 // A timeline link elsewhere can be clicked while this view is already open, which
 // changes the param without remounting the component.
 watch(() => route.params.id, load)
+
+/**
+ * Zooms to `target`, keeping the point at (`anchorX`, `anchorY`) -- measured from the scroll
+ * area's own top-left corner -- under the same spot on screen. Without an anchor, the middle of
+ * the visible area. The scroll offsets are set after the render: the SVG has to have grown
+ * before there is room to scroll into.
+ */
+const zoomTo = async (target: number, anchorX?: number, anchorY?: number) => {
+  const next = clampZoom(target)
+  if (next === zoom.value) return
+  const ratio = next / zoom.value
+  const area = scrollArea.value
+  zoom.value = next
+  if (area === null) return
+  const left = anchoredScroll(area.scrollLeft, anchorX ?? area.clientWidth / 2, ratio)
+  const top = anchoredScroll(area.scrollTop, anchorY ?? area.clientHeight / 2, ratio)
+  await nextTick()
+  area.scrollLeft = left
+  area.scrollTop = top
+}
+
+/**
+ * The wheel zooms around the pointer, as it does in the lorebook's graph. Scrolling is by
+ * dragging or by the scrollbars. `preventDefault` stops the wheel scrolling the area as well
+ * (and, with Ctrl held, the browser zooming the whole page).
+ */
+const onWheel = (event: WheelEvent) => {
+  event.preventDefault()
+  const area = scrollArea.value
+  if (area === null) return
+  const box = area.getBoundingClientRect()
+  zoomTo(
+    wheelZoom(zoom.value, event.deltaY, event.deltaMode),
+    event.clientX - box.left,
+    event.clientY - box.top
+  )
+}
 
 const toggleCharacter = (key: string) => {
   const next = new Set(hiddenCharacters.value)
@@ -205,33 +253,65 @@ const eventBoxes = computed<EventBox[]>(() =>
       <h1>{{ data.title }}</h1>
       <p v-if="data.events.length === 0" class="empty">No events yet.</p>
       <template v-else>
-        <div class="legend">
-          <h2
-            role="button"
-            tabindex="0"
-            title="Click a character to show or hide their thread"
-            @click="toggleAllCharacters"
-            @keyup.enter="toggleAllCharacters"
-          >
-            Characters
-          </h2>
-          <ul>
-            <li
-              v-for="character in data.characters"
-              :key="character.key"
-              class="legend-item"
-              :class="{ hidden: hiddenCharacters.has(character.key) }"
+        <div class="toolbar">
+          <div class="legend">
+            <h2
               role="button"
               tabindex="0"
-              :aria-pressed="!hiddenCharacters.has(character.key)"
-              @click="toggleCharacter(character.key)"
-              @keyup.enter="toggleCharacter(character.key)"
-              @keyup.space.prevent="toggleCharacter(character.key)"
+              title="Click a character to show or hide their thread"
+              @click="toggleAllCharacters"
+              @keyup.enter="toggleAllCharacters"
             >
-              <span class="swatch" :style="{ backgroundColor: character.color }"></span>
-              {{ character.name }}
-            </li>
-          </ul>
+              Characters
+            </h2>
+            <ul>
+              <li
+                v-for="character in data.characters"
+                :key="character.key"
+                class="legend-item"
+                :class="{ hidden: hiddenCharacters.has(character.key) }"
+                role="button"
+                tabindex="0"
+                :aria-pressed="!hiddenCharacters.has(character.key)"
+                @click="toggleCharacter(character.key)"
+                @keyup.enter="toggleCharacter(character.key)"
+                @keyup.space.prevent="toggleCharacter(character.key)"
+              >
+                <span class="swatch" :style="{ backgroundColor: character.color }"></span>
+                {{ character.name }}
+              </li>
+            </ul>
+          </div>
+
+          <div class="zoom" role="group" aria-label="Zoom">
+            <button
+              type="button"
+              aria-label="Zoom out"
+              title="Zoom out"
+              :disabled="zoom <= ZOOM_MIN"
+              @click="zoomTo(stepZoom(zoom, -1))"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              class="zoom-level"
+              title="Reset to 100%"
+              :disabled="zoom === 1"
+              @click="zoomTo(1)"
+            >
+              {{ Math.round(zoom * 100) }}%
+            </button>
+            <button
+              type="button"
+              aria-label="Zoom in"
+              title="Zoom in"
+              :disabled="zoom >= ZOOM_MAX"
+              @click="zoomTo(stepZoom(zoom, 1))"
+            >
+              +
+            </button>
+          </div>
         </div>
 
         <p class="caption">
@@ -247,8 +327,13 @@ const eventBoxes = computed<EventBox[]>(() =>
           @pointerup="onPointerUp"
           @pointercancel="onPointerUp"
           @click.capture="onClickCapture"
+          @wheel="onWheel"
         >
-          <svg :width="svgWidthPx" :height="svgHeightPx">
+          <svg
+            :width="svgWidthPx * zoom"
+            :height="svgHeightPx * zoom"
+            :viewBox="`0 0 ${svgWidthPx} ${svgHeightPx}`"
+          >
             <g :transform="`translate(0, ${arcBandPx})`">
               <g class="threads">
                 <line
@@ -323,6 +408,51 @@ h1 {
 .empty {
   color: var(--color-text);
   opacity: 0.7;
+}
+
+.toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.zoom button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color var(--transition);
+}
+
+.zoom button:hover:not(:disabled) {
+  background-color: var(--color-background-mute);
+}
+
+.zoom button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.zoom button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.zoom-level {
+  min-width: 52px;
 }
 
 /* The same chips as the lorebook's type legend (LoreView.vue). */

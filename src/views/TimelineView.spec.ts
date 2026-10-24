@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import TimelineView from './TimelineView.vue'
+import { wheelZoom } from '../services/zoom'
 import { timelineService } from '../services/timeline'
 
 vi.mock('../services/timeline', () => ({
@@ -321,6 +322,132 @@ describe('TimelineView.vue', () => {
       await flushPromises()
 
       expect(wrapper.findAll('.legend-item.hidden')).toHaveLength(0)
+    })
+  })
+
+  describe('zoom', () => {
+    const mountLoaded = async () => {
+      vi.mocked(timelineService.get).mockResolvedValue(TIMELINE_FIXTURE)
+      const router = await routerAt('a1b2c3d4e5f60718')
+      const wrapper = mount(TimelineView, { global: { plugins: [router] } })
+      await flushPromises()
+      return { wrapper, router }
+    }
+    const size = (wrapper: ReturnType<typeof mount>) => {
+      const svg = wrapper.find('svg')
+      return [svg.attributes('width'), svg.attributes('height'), svg.attributes('viewBox')]
+    }
+
+    it('draws at its laid-out size by default, with a viewBox of that size', async () => {
+      const { wrapper } = await mountLoaded()
+
+      // 600 wide, 536 tall (the arcs' band and the events), as the other tests pin.
+      expect(size(wrapper)).toEqual(['600', '536', '0 0 600 536'])
+      expect(wrapper.find('.zoom-level').text()).toBe('100%')
+      expect(wrapper.find('.zoom-level').attributes('disabled')).toBeDefined()
+    })
+
+    it('scales the SVG, not its contents, when zoomed in', async () => {
+      const { wrapper } = await mountLoaded()
+
+      await wrapper.find('button[aria-label="Zoom in"]').trigger('click')
+
+      // 1.25 times the base size, with the same viewBox so everything scales together.
+      expect(size(wrapper)).toEqual(['750', '670', '0 0 600 536'])
+      expect(wrapper.find('.zoom-level').text()).toBe('125%')
+      expect(wrapper.find('.events > g').attributes('transform')).toBe('translate(48, 0)')
+    })
+
+    it('zooms out, and resets from the percentage', async () => {
+      const { wrapper } = await mountLoaded()
+
+      await wrapper.find('button[aria-label="Zoom out"]').trigger('click')
+      expect(wrapper.find('.zoom-level').text()).toBe('80%')
+
+      await wrapper.find('.zoom-level').trigger('click')
+      expect(size(wrapper)).toEqual(['600', '536', '0 0 600 536'])
+    })
+
+    it('disables a button at the end of its range', async () => {
+      const { wrapper } = await mountLoaded()
+      const zoomOut = () => wrapper.find('button[aria-label="Zoom out"]')
+
+      for (let i = 0; i < 10; i++) await zoomOut().trigger('click')
+
+      expect(wrapper.find('.zoom-level').text()).toBe('25%')
+      expect(zoomOut().attributes('disabled')).toBeDefined()
+      expect(wrapper.find('button[aria-label="Zoom in"]').attributes('disabled')).toBeUndefined()
+    })
+
+    it('zooms in on the wheel scrolled up and out on the wheel scrolled down', async () => {
+      const { wrapper } = await mountLoaded()
+      const area = wrapper.find('.timeline-scroll')
+      const wheel = async (deltaY: number) => {
+        const event = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true })
+        area.element.dispatchEvent(event)
+        await wrapper.vm.$nextTick()
+        return event
+      }
+
+      const up = await wheel(-100)
+      expect(wrapper.find('.zoom-level').text()).toBe('122%')
+      // Without this the wheel would scroll the area under the zoom as well.
+      expect(up.defaultPrevented).toBe(true)
+
+      await wheel(100)
+      await wheel(100)
+      expect(wrapper.find('.zoom-level').text()).toBe('82%')
+    })
+
+    it('zooms the same with Ctrl held, without the browser zooming the page', async () => {
+      const { wrapper } = await mountLoaded()
+      const event = new WheelEvent('wheel', {
+        deltaY: -100,
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true
+      })
+
+      wrapper.find('.timeline-scroll').element.dispatchEvent(event)
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('.zoom-level').text()).toBe('122%')
+      expect(event.defaultPrevented).toBe(true)
+    })
+
+    it('keeps the point under the pointer in place, by adjusting the scroll offset', async () => {
+      const { wrapper } = await mountLoaded()
+      const area = wrapper.find('.timeline-scroll').element as HTMLElement
+      Object.defineProperty(area, 'scrollLeft', { value: 300, writable: true })
+      Object.defineProperty(area, 'scrollTop', { value: 0, writable: true })
+      area.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect
+
+      area.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: -100,
+          ctrlKey: true,
+          clientX: 100,
+          clientY: 0,
+          bubbles: true,
+          cancelable: true
+        })
+      )
+      await flushPromises()
+
+      // The point 100px in from the edge is at 300 + 100 = 400 in the content. After the
+      // zoom it is at 400 * ratio, and it has to stay 100px in from the edge.
+      const ratio = wheelZoom(1, -100, 0)
+      expect(area.scrollLeft).toBeCloseTo(400 * ratio - 100, 5)
+    })
+
+    it('starts a different story at 100%', async () => {
+      const { wrapper, router } = await mountLoaded()
+      await wrapper.find('button[aria-label="Zoom in"]').trigger('click')
+
+      await router.push({ name: 'timeline', params: { id: 'other000000000018' } })
+      await flushPromises()
+
+      expect(wrapper.find('.zoom-level').text()).toBe('100%')
     })
   })
 
