@@ -943,25 +943,10 @@ watch(
   overflow-y: auto;
   /* The writing zone is the page itself: no border, shadow or fill of its own, and no focus
      indicator either -- the caret is the indication. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-hover) transparent;
 }
 
 .surface:focus {
   outline: none;
-}
-
-.surface::-webkit-scrollbar {
-  width: 8px;
-}
-
-.surface::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.surface::-webkit-scrollbar-thumb {
-  background-color: var(--color-border-hover);
-  border-radius: var(--radius-pill);
 }
 
 /* A contenteditable has no placeholder attribute, so it is drawn rather than declared.

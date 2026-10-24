@@ -108,6 +108,28 @@ body.dark-theme {
   font-weight: normal;
 }
 
+/* Every scrollbar in the app: thin, no visible track, a thumb in the hover-border colour.
+   The standard properties cover current browsers; the -webkit- rules cover older ones, which
+   ignore them. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-hover) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-hover);
+  border-radius: var(--radius-pill);
+}
+
 body {
   min-height: 100vh;
   color: var(--color-text);

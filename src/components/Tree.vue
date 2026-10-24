@@ -610,13 +610,12 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background-color: var(--color-panel);
-  border-right: 1px solid var(--color-divider);
 }
 
 .space-tabs {
   display: flex;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-background-soft);
+  border-bottom: 1px solid var(--color-divider);
+  background-color: var(--color-panel);
 }
 
 .space-tab {
@@ -639,7 +638,6 @@ onUnmounted(() => {
 .space-tab.active {
   color: var(--color-primary);
   border-bottom-color: var(--color-primary);
-  background-color: var(--color-panel);
 }
 
 .space-tab:focus-visible {

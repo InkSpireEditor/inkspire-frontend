@@ -42,9 +42,12 @@ onMounted(() => {
 
 <template>
   <div class="model-selector">
-    <h3>Models</h3>
     <div v-if="error" class="error">{{ error }}</div>
-    <select :value="selectedModelName" @change="onSelect(($event.target as HTMLSelectElement).value)">
+    <select
+      aria-label="Model"
+      title="Model"
+      :value="selectedModelName"
+      @change="onSelect(($event.target as HTMLSelectElement).value)">
       <option v-for="model in models" :key="model.name" :value="model.name">
         {{ model.name }}
       </option>
@@ -54,17 +57,9 @@ onMounted(() => {
 
 <style scoped>
 .model-selector {
-  padding: 1rem;
-  border-top: 1px solid var(--color-border);
-  background-color: var(--color-background);
-}
-
-h3 {
-  margin-top: 0;
-  margin-bottom: 0.5rem;
-  font-size: 1.1rem;
-  color: var(--color-heading);
-  font-weight: var(--font-weight-bold);
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-divider);
+  background-color: var(--color-panel);
 }
 
 select {

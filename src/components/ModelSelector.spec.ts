@@ -22,9 +22,10 @@ describe('ModelSelector.vue', () => {
     resetSharedModel()
   })
 
-  it('renders title', () => {
+  it('names the select for assistive technology, with no visible heading', () => {
     const wrapper = mount(ModelSelector)
-    expect(wrapper.find('h3').text()).toBe('Models')
+    expect(wrapper.find('select').attributes('aria-label')).toBe('Model')
+    expect(wrapper.find('h3').exists()).toBe(false)
   })
 
   it('fetches and displays models on mount', async () => {
