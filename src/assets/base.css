@@ -73,6 +73,14 @@
 
   /* Soft focus ring for keyboard/click focus (accessible + polished). */
   --focus-ring: 0 0 0 3px var(--color-primary-soft);
+
+  /* One variable per role a typeface plays. System fonts only: nothing is loaded. */
+  --font-ui: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
+    Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  /* Rendered prose uses the interface font. Change this one line to give it its own. */
+  --font-prose: var(--font-ui);
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas,
+    monospace;
 }
 
 body.dark-theme {
@@ -138,19 +146,7 @@ body {
     color var(--transition-theme),
     background-color var(--transition-theme);
   line-height: 1.6;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    sans-serif;
+  font-family: var(--font-ui);
   font-size: 15px;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

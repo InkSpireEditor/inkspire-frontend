@@ -931,8 +931,7 @@ watch(
   padding: 1.25rem 1.5rem;
   background-color: var(--color-background);
   color: var(--color-text);
-  font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
-    Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 1rem;
   line-height: 1.7;
   /* The prose carries its own newlines, so they have to be honoured rather than collapsed;
@@ -960,8 +959,7 @@ watch(
   top: 0;
   left: 0;
   padding: 1.25rem 1.5rem;
-  font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
-    Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 1rem;
   line-height: 1.7;
   color: var(--color-text);
@@ -1015,8 +1013,7 @@ watch(
    comment for why. */
 .ghost-proposal {
   position: absolute;
-  font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
-    Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 1rem;
   line-height: 1.7;
   white-space: pre-wrap;

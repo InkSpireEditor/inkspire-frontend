@@ -908,6 +908,7 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   background-color: var(--color-background-soft);
   color: var(--color-text);
+  font-family: var(--font-prose);
   line-height: 1.7;
   overflow-wrap: break-word;
   box-shadow: var(--shadow-card);

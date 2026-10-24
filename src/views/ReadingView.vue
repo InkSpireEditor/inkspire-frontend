@@ -91,6 +91,7 @@ h1 {
 
 .prose {
   color: var(--color-text);
+  font-family: var(--font-prose);
   line-height: 1.7;
 }
 
