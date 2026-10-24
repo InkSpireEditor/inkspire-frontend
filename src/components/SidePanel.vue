@@ -31,8 +31,8 @@ defineEmits<{ close: [] }>()
   height: 100%;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border);
-  background: var(--color-background);
+  border: 1px solid var(--color-divider);
+  background: var(--color-panel);
   transition: margin-right 220ms ease;
 }
 
@@ -45,7 +45,7 @@ defineEmits<{ close: [] }>()
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-divider);
   flex-shrink: 0;
 }
 

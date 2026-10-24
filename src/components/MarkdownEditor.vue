@@ -929,9 +929,7 @@ watch(
   flex: 1;
   min-height: 240px;
   padding: 1.25rem 1.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background-color: var(--color-background-soft);
+  background-color: var(--color-background);
   color: var(--color-text);
   font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
     Menlo, Consolas, monospace;
@@ -943,16 +941,27 @@ watch(
   white-space: pre-wrap;
   overflow-wrap: break-word;
   overflow-y: auto;
-  /* Raised writing surface above the recessed canvas. */
-  box-shadow: var(--shadow-card);
-  transition: border-color var(--transition), box-shadow var(--transition);
+  /* The writing zone is the page itself: no border, shadow or fill of its own, and no focus
+     indicator either -- the caret is the indication. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-hover) transparent;
 }
 
 .surface:focus {
   outline: none;
-  border-color: var(--color-primary);
-  /* Keep the card elevation, add the focus ring on top. */
-  box-shadow: var(--focus-ring), var(--shadow-card);
+}
+
+.surface::-webkit-scrollbar {
+  width: 8px;
+}
+
+.surface::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.surface::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-hover);
+  border-radius: var(--radius-pill);
 }
 
 /* A contenteditable has no placeholder attribute, so it is drawn rather than declared.

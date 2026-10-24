@@ -1018,7 +1018,6 @@ button.active {
 
 .icon-btn:hover:not(:disabled) {
   background-color: var(--color-background-mute);
-  color: var(--color-primary);
   /* Overrides the blanket button:hover's lift -- a glyph sliding up reads as
      broken in a way a bigger button's shadow does not. */
   transform: none;

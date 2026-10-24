@@ -609,9 +609,8 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--color-background);
-  box-shadow: var(--shadow-normal);
-  border-right: 1px solid var(--color-border);
+  background-color: var(--color-panel);
+  border-right: 1px solid var(--color-divider);
 }
 
 .space-tabs {
@@ -634,13 +633,13 @@ onUnmounted(() => {
 }
 
 .space-tab:hover {
-  background-color: var(--hover-background);
+  background-color: var(--color-background-mute);
 }
 
 .space-tab.active {
   color: var(--color-primary);
   border-bottom-color: var(--color-primary);
-  background-color: var(--color-background);
+  background-color: var(--color-panel);
 }
 
 .space-tab:focus-visible {
@@ -654,8 +653,8 @@ onUnmounted(() => {
   align-items: center;
   height: 48px;
   padding: 0 8px 0 16px;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-background);
+  border-bottom: 1px solid var(--color-divider);
+  background-color: var(--color-panel);
   position: relative;
 }
 
@@ -690,7 +689,6 @@ onUnmounted(() => {
 
 .icon-btn:hover {
     background-color: var(--color-background-mute);
-    color: var(--color-primary);
 }
 
 .icon-btn:focus-visible {

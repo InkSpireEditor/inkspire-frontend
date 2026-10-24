@@ -80,9 +80,9 @@ const handleLoginSuccess = () => {
 aside {
   width: 300px;
   height: 100%;
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-divider);
   overflow: hidden;
-  background-color: var(--color-background);
+  background-color: var(--color-panel);
   /* Slide out via negative margin so the tree contents don't squish while
      animating; .app-layout's overflow:hidden clips the off-screen panel. */
   transition: margin-left 220ms ease;
@@ -116,7 +116,6 @@ aside.collapsed {
 
 .sidebar-toggle:hover {
   background-color: var(--color-background-mute);
-  color: var(--color-primary);
 }
 
 .sidebar-toggle:focus-visible {
@@ -128,7 +127,6 @@ main {
   flex: 1;
   padding: 2rem 2rem 2.5rem;
   overflow-y: auto;
-  /* Slightly recessed canvas so the editor card reads as raised above it. */
   background-color: var(--color-background);
 }
 
