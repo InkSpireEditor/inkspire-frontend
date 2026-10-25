@@ -426,6 +426,6 @@ h1 {
 
 .delete-story:hover {
   background-color: var(--color-danger);
-  color: white;
+  color: var(--color-text-on-fill);
 }
 </style>

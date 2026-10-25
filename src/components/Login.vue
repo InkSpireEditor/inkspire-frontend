@@ -142,7 +142,7 @@ button {
   width: 100%;
   padding: 0.75rem;
   background-color: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-fill);
   border: none;
   border-radius: var(--radius-sm);
   font-size: 1rem;

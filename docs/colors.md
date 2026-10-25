@@ -16,7 +16,7 @@ semantic tokens below do.
 
 | Token | Swatch | Value | Read by |
 |---|---|---|---|
-| `--ink-c-grey-100` | ![](colors/ink-c-grey-100.svg) | `#ffffff` | `--color-background-soft` |
+| `--ink-c-grey-100` | ![](colors/ink-c-grey-100.svg) | `#ffffff` | `--color-background-soft`, `--color-text-on-fill` |
 | `--ink-c-grey-96` | ![](colors/ink-c-grey-96.svg) | `#f5f5f5` | `--color-background` |
 | `--ink-c-grey-93` | ![](colors/ink-c-grey-93.svg) | `#ececec` | `--color-panel` |
 | `--ink-c-grey-89` | ![](colors/ink-c-grey-89.svg) | `#e4e4e4` | `--color-background-mute` |
@@ -52,6 +52,8 @@ What components read. Each one is a base colour or a literal value, per theme.
 | `--color-primary-hover` | ![](colors/color-primary-hover-light.svg) `#1976d2` | ![](colors/color-primary-hover-dark.svg) `#2196f3` | Login.vue, Modal.vue, Text.vue |
 | `--color-primary-soft` | ![](colors/color-primary-soft-light.svg) `rgba(33, 150, 243, 0.1)` | ![](colors/color-primary-soft-dark.svg) `rgba(17, 134, 227, 0.2)` | Text.vue, TreeItem.vue, main.css |
 | `--color-danger` | ![](colors/color-danger-light.svg) `#f44336` | ![](colors/color-danger-dark.svg) `#f44336` | DashboardView.vue, GenerationSettings.vue, GitPanel.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, TimelineView.vue |
+| `--color-text-on-fill` | ![](colors/color-text-on-fill-light.svg) `#ffffff` | ![](colors/color-text-on-fill-dark.svg) `#ffffff` | DashboardView.vue, Login.vue, Modal.vue, Text.vue |
+| `--color-backdrop` | ![](colors/color-backdrop-light.svg) `rgba(0, 0, 0, 0.5)` | ![](colors/color-backdrop-dark.svg) `rgba(0, 0, 0, 0.5)` | Modal.vue |
 
 ## Colours outside `base.css`
 
@@ -59,8 +61,6 @@ What components read. Each one is a base colour or a literal value, per theme.
 |---|---|---|
 | `components/MarkdownEditor.vue`, `::highlight(ink-gen)` | `rgba(111, 209, 139, 0.22)` | Tint behind text a model wrote |
 | `components/MarkdownEditor.vue`, `::highlight(ink-fix)` | `rgba(255, 180, 84, 0.26)` | Tint behind text the writer corrected in a model's run |
-| `components/Modal.vue` | `rgba(0, 0, 0, 0.5)` | Overlay behind an open dialog |
-| `views/LoreView.vue` | `#181818` / `#f8f8f8` | Fallback canvas colour for the graph, used only when `--color-background` cannot be read |
 | `views/LoreView.vue` | `#999` | Fallback for a link or node with no entry in the type/predicate palette |
 
 The provenance tints are literal on purpose: they must stay distinct from the primary and

@@ -40,7 +40,7 @@ const md = new MarkdownIt({ html: false, linkify: true })
 const ENTITY_METADATA_FIELDS = new Set(['id', 'local', 'types', 'aka', 'sections'])
 
 const route = useRoute()
-const { currentTheme, isDarkMode } = useTheme()
+const { currentTheme } = useTheme()
 
 /** Whatever the URL names, for the way back to the dashboard. */
 const storyId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
@@ -117,10 +117,8 @@ const highlighted = computed(() => {
 })
 
 /** The app's own background token, whichever theme is active. */
-const backgroundColor = (): string => {
-  const token = getComputedStyle(document.body).getPropertyValue('--color-background').trim()
-  return token || (isDarkMode() ? '#181818' : '#f8f8f8')
-}
+const backgroundColor = (): string =>
+  getComputedStyle(document.body).getPropertyValue('--color-background').trim()
 
 const mountGraph = () => {
   if (!container.value || !graphData) return

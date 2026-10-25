@@ -42,6 +42,10 @@
   --color-primary-hover: var(--ink-c-blue-46);
   --color-primary-soft: rgba(33, 150, 243, 0.1);
   --color-danger: var(--ink-c-red);
+  /* Text on a filled primary or danger button. */
+  --color-text-on-fill: var(--ink-c-grey-100);
+  /* The dimmed page behind an open dialog. */
+  --color-backdrop: rgba(0, 0, 0, 0.5);
 
   /* Layered, softer shadows read as more "expensive" than a single flat drop. */
   --shadow-strong: 0 2px 4px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.12);

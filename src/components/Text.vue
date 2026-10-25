@@ -1004,7 +1004,7 @@ button:focus-visible {
 
 button.primary {
   background-color: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-fill);
   border: none;
 }
 

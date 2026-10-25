@@ -65,7 +65,7 @@ const handleConfirm = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -135,7 +135,7 @@ button:disabled {
 
 .primary {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-fill);
   border: none;
 }
 
@@ -145,7 +145,7 @@ button:disabled {
 
 .danger {
   background: var(--color-danger);
-  color: white;
+  color: var(--color-text-on-fill);
   border: none;
 }
 
