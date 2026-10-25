@@ -30,7 +30,10 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
 ## What each page reads from the URL
 
 - `HomeView.vue` reads nothing from the URL. It fetches both `tree` responses and shows how many
-  stories, chapters, one-shots, notes folders and notes there are.
+  stories, chapters, one-shots, notes folders and notes there are, and the last eight files opened
+  in this browser, each a link to its `write` or `write-root` route. The list is kept in
+  `localStorage` by `services/recentFiles.ts`, which records every file the shared selection moves
+  to; a file no longer in its tree is left out and forgotten.
 - `DashboardView.vue` reads `space` and `id`. It fetches `GET /api/<space>/dir/{id}` and draws the
   name, the synopsis or context (called a synopsis in `stories`, a context in `notes`), and the
   files with a word count each. It edits that text, and deletes the directory. A story also has

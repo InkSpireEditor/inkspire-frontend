@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countEntries } from './homeStats'
+import { countEntries, resolveRecent } from './homeStats'
 import type { DirEntry, FileEntry, TreeApiResponse } from './filesManager'
 
 const file = (id: string): FileEntry => ({ id, name: id, status: '' })
@@ -36,5 +36,50 @@ describe('countEntries', () => {
     const counts = countEntries(tree([]), notes)
     expect(counts.notesFolders).toBe(2)
     expect(counts.notes).toBe(3)
+  })
+})
+
+describe('resolveRecent', () => {
+  const stories = tree([dir('s1', [file('c1'), file('c2')])], [file('o1')])
+  const notes = tree([dir('f1', [file('n1')])], [file('n2')])
+  const trees = { stories, notes }
+
+  it('finds a chapter with its story, and keeps the order recorded', () => {
+    expect(
+      resolveRecent(
+        [
+          { space: 'stories', id: 'c2' },
+          { space: 'stories', id: 'c1' }
+        ],
+        trees
+      ).map((one) => [one.id, one.dir?.id])
+    ).toEqual([
+      ['c2', 's1'],
+      ['c1', 's1']
+    ])
+  })
+
+  it('finds a one-shot and a note at the root with no directory', () => {
+    const found = resolveRecent(
+      [
+        { space: 'stories', id: 'o1' },
+        { space: 'notes', id: 'n2' }
+      ],
+      trees
+    )
+    expect(found.map((one) => one.dir)).toEqual([null, null])
+  })
+
+  it('finds a note in a folder with the folder', () => {
+    const [found] = resolveRecent([{ space: 'notes', id: 'n1' }], trees)
+    expect(found).toEqual({ space: 'notes', id: 'n1', name: 'n1', dir: { id: 'f1', name: 'f1' } })
+  })
+
+  it('leaves out a file that is no longer in its tree', () => {
+    expect(resolveRecent([{ space: 'stories', id: 'gone' }], trees)).toEqual([])
+  })
+
+  it('looks only in the space the file was opened in', () => {
+    expect(resolveRecent([{ space: 'notes', id: 'c1' }], trees)).toEqual([])
   })
 })
