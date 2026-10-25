@@ -17,6 +17,7 @@ vi.mock('../services/filesManager', async () => {
       getDirContent: vi.fn(),
       getFileContent: vi.fn(),
       delDir: vi.fn(),
+      editDir: vi.fn(),
       reorderChapters: vi.fn()
     }
   }
@@ -50,6 +51,23 @@ async function routerAt(storyId: string) {
     ]
   })
   await router.push({ name: 'dashboard', params: { id: storyId } })
+  return router
+}
+
+/** A router whose dashboard and write routes carry the space, as the real ones do. */
+async function routerAtSpace(space: 'stories' | 'notes', dirId: string) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'home', component: Stub },
+      { path: '/:space/:id', name: 'dashboard', component: DashboardView },
+      { path: '/:space/:id/write/:fileId', name: 'write', component: Stub },
+      { path: '/stories/:id/read', name: 'read', component: Stub },
+      { path: '/stories/:id/timeline', name: 'timeline', component: Stub },
+      { path: '/stories/:id/lore', name: 'lore', component: Stub }
+    ]
+  })
+  await router.push({ name: 'dashboard', params: { space, id: dirId } })
   return router
 }
 
@@ -484,6 +502,201 @@ describe('DashboardView.vue', () => {
 
       expect(wrapper.text()).toContain('Network error')
       expect(wrapper.text()).not.toContain('Delete anyway')
+    })
+  })
+
+  describe('a notes folder\'s page', () => {
+    const FOLDER = 'f0f0f0f0f0f0f0f0'
+
+    async function mountFolder(files = [{ id: 'n1n1n1n1n1n1n1n1', name: 'A Note', status: 'idea' }]) {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: FOLDER,
+        name: 'Research',
+        summary: 'What the notes share.',
+        files
+      })
+      const router = await routerAtSpace('notes', FOLDER)
+      const wrapper = mount(DashboardView, {
+        global: { plugins: [router], stubs: { teleport: true } }
+      })
+      await flushPromises()
+      return { wrapper, router }
+    }
+
+    it('shows the folder\'s name, its context and its files, read from the notes root', async () => {
+      const { wrapper } = await mountFolder()
+
+      expect(filesManagerService.getDirContent).toHaveBeenCalledWith('notes', FOLDER)
+      expect(wrapper.find('h1').text()).toBe('Research')
+      expect(wrapper.text()).toContain('What the notes share.')
+      expect(wrapper.find('.chapter').text()).toContain('A Note')
+      expect(wrapper.find('.chapter').text()).toContain('idea')
+    })
+
+    it('links a note to its write route in the notes space', async () => {
+      const { wrapper } = await mountFolder()
+
+      expect(wrapper.find('.chapter a').attributes('href')).toBe(
+        `/notes/${FOLDER}/write/n1n1n1n1n1n1n1n1`
+      )
+    })
+
+    it('counts the words of a note from the notes root', async () => {
+      vi.mocked(filesManagerService.getFileContent).mockResolvedValue('one two three')
+      const { wrapper } = await mountFolder()
+
+      expect(filesManagerService.getFileContent).toHaveBeenCalledWith('notes', 'n1n1n1n1n1n1n1n1')
+      expect(wrapper.find('.word-count').text()).toBe('3 words')
+    })
+
+    it('offers none of what only a story has', async () => {
+      const { wrapper } = await mountFolder()
+
+      expect(wrapper.findComponent(GitPanel).exists()).toBe(false)
+      expect(wrapper.findAll('.read-link')).toHaveLength(0)
+      expect(wrapper.find('.chapter').attributes('draggable')).toBe('false')
+    })
+
+    it('says so when a folder has no files yet', async () => {
+      const { wrapper } = await mountFolder([])
+
+      expect(wrapper.text()).toContain('No files yet.')
+    })
+
+    it('deletes an empty folder in one confirm, and tells the sidebar which tree changed', async () => {
+      vi.mocked(filesManagerService.delDir).mockResolvedValue(null)
+      const listener = vi.fn()
+      window.addEventListener('stories:changed', listener)
+      const { wrapper, router } = await mountFolder([])
+
+      await clickButton(wrapper, 'Delete notes folder')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+      window.removeEventListener('stories:changed', listener)
+
+      expect(filesManagerService.delDir).toHaveBeenCalledWith('notes', FOLDER)
+      expect(router.currentRoute.value.name).toBe('home')
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: { space: 'notes' } })
+      )
+    })
+
+    it('shows the API\'s message when the folder holds more than its files, with no forced delete', async () => {
+      vi.mocked(filesManagerService.delDir).mockRejectedValue(
+        new Error('"Research" also holds extras, which deleting it would remove.')
+      )
+      const { wrapper } = await mountFolder([])
+
+      await clickButton(wrapper, 'Delete notes folder')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('also holds extras')
+      expect(wrapper.text()).not.toContain('Delete anyway')
+    })
+
+    it('clears the selection if it pointed at a file of the deleted folder', async () => {
+      vi.mocked(filesManagerService.delDir).mockResolvedValue(null)
+      const { wrapper } = await mountFolder()
+      useSharedFiles().setSelectedFile('notes', 'n1n1n1n1n1n1n1n1')
+
+      await clickButton(wrapper, 'Delete notes folder')
+      await clickButton(wrapper, 'Delete')
+      await flushPromises()
+
+      expect(useSharedFiles().selectedFile.value).toBeNull()
+    })
+  })
+
+  describe('editing the synopsis or the context', () => {
+    const ID = 'a1b2c3d4e5f60718'
+
+    async function mountAt(space: 'stories' | 'notes', summary: string) {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: ID,
+        name: 'Example',
+        summary,
+        files: []
+      })
+      const router = await routerAtSpace(space, ID)
+      const wrapper = mount(DashboardView, {
+        global: { plugins: [router], stubs: { teleport: true } }
+      })
+      await flushPromises()
+      return wrapper
+    }
+
+    it('opens the text in a field, and saves it with the directory\'s name', async () => {
+      vi.mocked(filesManagerService.editDir).mockResolvedValue({})
+      const wrapper = await mountAt('stories', 'Old line.')
+
+      await wrapper.find('[aria-label="Edit synopsis"]').trigger('click')
+      const field = wrapper.find('textarea')
+      expect((field.element as HTMLTextAreaElement).value).toBe('Old line.')
+      await field.setValue('New line.')
+      await clickButton(wrapper, 'Save')
+      await flushPromises()
+
+      expect(filesManagerService.editDir).toHaveBeenCalledWith('stories', ID, 'Example', 'New line.')
+      expect(wrapper.find('textarea').exists()).toBe(false)
+      expect(wrapper.text()).toContain('New line.')
+    })
+
+    it('calls a folder\'s text its context, and saves it to the notes root', async () => {
+      vi.mocked(filesManagerService.editDir).mockResolvedValue({})
+      const wrapper = await mountAt('notes', '')
+
+      await wrapper.find('[aria-label="Edit context"]').trigger('click')
+      await wrapper.find('textarea').setValue('Shared by these notes.')
+      await clickButton(wrapper, 'Save')
+      await flushPromises()
+
+      expect(filesManagerService.editDir).toHaveBeenCalledWith(
+        'notes',
+        ID,
+        'Example',
+        'Shared by these notes.'
+      )
+    })
+
+    it('tells the sidebar which tree to fetch again', async () => {
+      vi.mocked(filesManagerService.editDir).mockResolvedValue({})
+      const listener = vi.fn()
+      window.addEventListener('stories:changed', listener)
+      const wrapper = await mountAt('notes', 'Text.')
+
+      await wrapper.find('[aria-label="Edit context"]').trigger('click')
+      await clickButton(wrapper, 'Save')
+      await flushPromises()
+      window.removeEventListener('stories:changed', listener)
+
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: { space: 'notes' } })
+      )
+    })
+
+    it('changes nothing on Cancel', async () => {
+      const wrapper = await mountAt('stories', 'Old line.')
+
+      await wrapper.find('[aria-label="Edit synopsis"]').trigger('click')
+      await wrapper.find('textarea').setValue('Discarded.')
+      await clickButton(wrapper, 'Cancel')
+
+      expect(filesManagerService.editDir).not.toHaveBeenCalled()
+      expect(wrapper.find('textarea').exists()).toBe(false)
+      expect(wrapper.text()).toContain('Old line.')
+    })
+
+    it('keeps the field open and shows the error when the save fails', async () => {
+      vi.mocked(filesManagerService.editDir).mockRejectedValue(new Error('Failed to edit directory'))
+      const wrapper = await mountAt('stories', 'Old line.')
+
+      await wrapper.find('[aria-label="Edit synopsis"]').trigger('click')
+      await clickButton(wrapper, 'Save')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Failed to edit directory')
+      expect(wrapper.find('textarea').exists()).toBe(true)
     })
   })
 })

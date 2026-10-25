@@ -10,6 +10,9 @@ import type { ProvenanceMetadata } from './provenance';
  * the editor is handed metadata that already matches the prose. Nothing displays this yet;
  * it is here so a later interface can say what happened without the route changing.
  */
+/** The longest synopsis or context the API accepts, in characters (inkspire_api/fs.py). */
+export const MAX_SUMMARY_LENGTH = 2000;
+
 export interface Reconciled {
     revision: string | null;
     recovered: string[];

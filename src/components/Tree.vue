@@ -5,7 +5,7 @@ import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
 import Icon from './Icon.vue'
-import { filesManagerService, type FileSystemNode } from '../services/filesManager'
+import { filesManagerService, MAX_SUMMARY_LENGTH, type FileSystemNode } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import { useTheme } from '../services/theme'
 import { useSharedFeatures } from '../services/sharedFeatures'
@@ -31,16 +31,17 @@ const refreshGitStatusQuietly = () => {
 }
 
 /**
- * Tells a story's dashboard, if one happens to be open, that this component just
- * changed one of that story's own chapters (or the story itself) -- a change the
- * dashboard has no way to notice through its own fetch. Carried as `detail` rather
- * than reusing the plain, detail-less 'stories:changed' event this component also
- * listens for (dispatched by the dashboard after a delete): without a storyId, a
- * dashboard for an unrelated story would reload for no reason.
+ * Tells a directory's page, if one happens to be open, that this component just
+ * changed one of that directory's own files (or the directory itself) -- a change the
+ * page has no way to notice through its own fetch. Carried as `detail` rather than
+ * reusing the event with no directory in it that the page also dispatches after a
+ * delete: without a `storyId`, a page for an unrelated directory would reload for no
+ * reason. Named for the stories it was first written for; `space` says which root's
+ * directory it is, and the page reads the root from its own URL.
  */
-const notifyDashboard = (storyId: string | null | undefined) => {
+const notifyDashboard = (storyId: string | null | undefined, space: Space) => {
     if (storyId) {
-        window.dispatchEvent(new CustomEvent('stories:changed', { detail: { storyId } }))
+        window.dispatchEvent(new CustomEvent('stories:changed', { detail: { storyId, space } }))
     }
 }
 
@@ -50,7 +51,6 @@ const ACTIVE_SPACE_KEY = 'activeSpace'
 // Client-side input limits, mirroring the API's. Checked here only to fail fast
 // with a readable message; the backend rejects over-long input regardless.
 const MAX_NAME_LENGTH = 255
-const MAX_SUMMARY_LENGTH = 2000
 // Matches inkspire_api/titles.py's own ceiling on the writer's steering.
 const MAX_INSTRUCTION_LENGTH = 300
 
@@ -380,18 +380,16 @@ const submitModal = async () => {
         
         showModal.value = false
         fetchTree(space, { silent: true }) // Refresh tree without folding it
-        if (space === 'stories') {
-            refreshGitStatusQuietly()
-            const storyId =
-                modalType.value === 'create-file'
-                    ? targetNodeId.value
-                    : modalType.value === 'edit' && nodeToEdit.value
-                      ? nodeToEdit.value.type === 'D'
-                          ? nodeToEdit.value.id
-                          : nodeToEdit.value.parentId
-                      : null
-            notifyDashboard(storyId)
-        }
+        if (space === 'stories') refreshGitStatusQuietly()
+        const storyId =
+            modalType.value === 'create-file'
+                ? targetNodeId.value
+                : modalType.value === 'edit' && nodeToEdit.value
+                  ? nodeToEdit.value.type === 'D'
+                      ? nodeToEdit.value.id
+                      : nodeToEdit.value.parentId
+                  : null
+        notifyDashboard(storyId, space)
     } catch (e) {
         errorMessage.value = 'Operation failed'
         showError.value = true
@@ -400,7 +398,8 @@ const submitModal = async () => {
 }
 
 /**
- * Confirms and executes the deletion of a node.
+ * Confirms and executes the deletion of a file. A directory is deleted from its own page
+ * (`DashboardView.vue`), which can name what is in the way, so the menu offers it nowhere.
  */
 const confirmDelete = async () => {
     if (!isLoggedIn() || !nodeToDelete.value) return
@@ -408,38 +407,27 @@ const confirmDelete = async () => {
     const space = activeSpace.value
     const deletedNode = nodeToDelete.value
     try {
-        if (deletedNode.type === 'D') {
-            await filesManagerService.delDir(space, deletedNode.id)
-            // The directory's own page, or a file of it, is open: the URL names an id
-            // the API no longer has.
-            if (route.params.id === deletedNode.id) {
-                router.push({ name: 'home' })
-            }
-        } else {
-            if (selectedFileId.value === deletedNode.id) {
-                clearSelectedFile()
-            }
-            // A file deleted while its own write route is open leaves that route
-            // pointing at an id the API no longer has -- clearing the selection above
-            // does not move the editor off that URL, so this does, the same way
-            // renameFile above follows a rename to its new id instead of away. A file
-            // in a directory goes back to the directory's page, one outside any to home.
-            if (route.name === 'write' && route.params.fileId === deletedNode.id) {
-                router.push({
-                    name: 'dashboard',
-                    params: { space: route.params.space, id: route.params.id },
-                })
-            } else if (route.name === 'write-root' && route.params.fileId === deletedNode.id) {
-                router.push({ name: 'home' })
-            }
-            await filesManagerService.delFile(space, deletedNode.id)
+        if (selectedFileId.value === deletedNode.id) {
+            clearSelectedFile()
         }
+        // A file deleted while its own write route is open leaves that route
+        // pointing at an id the API no longer has -- clearing the selection above
+        // does not move the editor off that URL, so this does, the same way
+        // renameFile above follows a rename to its new id instead of away. A file
+        // in a directory goes back to the directory's page, one outside any to home.
+        if (route.name === 'write' && route.params.fileId === deletedNode.id) {
+            router.push({
+                name: 'dashboard',
+                params: { space: route.params.space, id: route.params.id },
+            })
+        } else if (route.name === 'write-root' && route.params.fileId === deletedNode.id) {
+            router.push({ name: 'home' })
+        }
+        await filesManagerService.delFile(space, deletedNode.id)
         showConfirm.value = false
         fetchTree(space, { silent: true })
-        if (space === 'stories') {
-            refreshGitStatusQuietly()
-            notifyDashboard(deletedNode.type === 'D' ? deletedNode.id : deletedNode.parentId)
-        }
+        if (space === 'stories') refreshGitStatusQuietly()
+        notifyDashboard(deletedNode.parentId, space)
     } catch (e) {
         errorMessage.value = 'Delete failed'
         showError.value = true
@@ -460,13 +448,15 @@ const handleLogout = async () => {
  * 'stories:changed' also fires for changes this component made itself --
  * `notifyDashboard` dispatches it with a `storyId` right after this component's own
  * `fetchTree` call above, so the refetch here is a harmless repeat in that case. The
- * case this listener exists for is DashboardView.vue's plain, detail-less dispatch
- * after deleting a story: a change to the stories tree this component did not make
- * and so cannot refresh through its own fetchTree calls. Always refetches, even if
- * the stories tab is not the one open.
+ * case this listener exists for is DashboardView.vue's dispatch after deleting a
+ * directory or editing its text: a change to a tree this component did not make and
+ * so cannot refresh through its own fetchTree calls. The event's `space` says which
+ * tree (the stories when it names none), and it is fetched again even if that
+ * space's tab is not the one open.
  */
-const handleStoriesChanged = () => {
-    fetchTree('stories', { silent: true })
+const handleStoriesChanged = (event: Event) => {
+    const space = (event as CustomEvent<{ space?: Space }>).detail?.space ?? 'stories'
+    fetchTree(space, { silent: true })
 }
 
 onMounted(() => {

@@ -46,12 +46,6 @@ const isFolder = computed(() => {
   return props.node.type === 'D'
 })
 
-/**
- * A story's own delete moved to its dashboard, where it can name what is in the
- * way and ask for the story's name before it really deletes. A chapter and a notes
- * folder have no such concern, so their delete stays here.
- */
-const isStoryDirectory = computed(() => isFolder.value && context.space?.value === 'stories')
 
 /**
  * A directory reads differently in each space: a story is a book, and a directory in
@@ -92,20 +86,16 @@ const toggle = () => {
 }
 
 /**
- * Every file has a URL, in either space, so a file's row navigates there: one in a directory
- * to `/:space/:id/write/:fileId`, one outside any (a one-shot, a note at the root) to
- * `/:space/write/:fileId`. A story directory's row navigates to its page. A notes folder's row
- * only expands for now, until a folder has a page of its own. The disclosure triangle expands
- * a story directory too -- see `toggle`.
+ * Every file and every directory has a URL, in either space, so a row navigates there: a
+ * directory to its page (`/:space/:id`), where its text is edited and where it is deleted --
+ * which is why the menu offers no Delete on one -- a file in a directory to
+ * `/:space/:id/write/:fileId`, and one outside any (a one-shot, a note at the root) to
+ * `/:space/write/:fileId`. The disclosure triangle only expands a directory -- see `toggle`.
  */
 const select = () => {
   const space = context.space?.value ?? 'stories'
   if (isFolder.value) {
-    if (space === 'stories') {
-      router.push({ name: 'dashboard', params: { space, id: props.node.id } })
-    } else {
-      toggle()
-    }
+    router.push({ name: 'dashboard', params: { space, id: props.node.id } })
     return
   }
   if (props.node.parentId) {
@@ -164,7 +154,6 @@ const closeMenu = () => {
             <template v-if="isFolder">
                 <div @click.stop="handleAction('create-file')">New File</div>
                 <div @click.stop="handleAction('edit')">Edit</div>
-                <div v-if="!isStoryDirectory" @click.stop="handleAction('delete')">Delete</div>
             </template>
             <!-- File Actions -->
             <template v-else>

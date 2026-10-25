@@ -90,21 +90,21 @@ describe('TreeItem.vue', () => {
     expect(mountTreeItem(fileNode).find('.icon').attributes('data-icon')).toBe('page')
   })
 
-  it('toggles folder expansion when clicked', async () => {
+  it('toggles folder expansion when the disclosure triangle is clicked', async () => {
     const wrapper = mountTreeItem(folderNode)
-    const content = wrapper.find('.tree-node-content')
-    
+    const toggle = wrapper.find('.toggle-icon')
+
     // Initially closed
     expect(wrapper.find('.tree-children').exists()).toBe(false)
-    
+
     // Click to open
-    await content.trigger('click')
+    await toggle.trigger('click')
     expect(wrapper.find('.toggle-icon').classes()).toContain('open')
     expect(wrapper.find('.tree-children').exists()).toBe(true)
     expect(wrapper.findComponent(TreeItem).exists()).toBe(true)
-    
+
     // Click to close
-    await content.trigger('click')
+    await toggle.trigger('click')
     expect(wrapper.find('.tree-children').exists()).toBe(false)
   })
 
@@ -232,24 +232,27 @@ describe('TreeItem.vue', () => {
       })
     })
 
-    it('only expands a notes folder on a click, until a folder has a page of its own', async () => {
+    it('navigates to a notes folder\'s page on a click, without expanding it', async () => {
       space.value = 'notes'
       const wrapper = mountTreeItem(folderNode)
 
       await wrapper.find('.tree-node-content').trigger('click')
 
-      expect(mockPush).not.toHaveBeenCalled()
-      expect(wrapper.find('.tree-children').exists()).toBe(true)
+      expect(mockPush).toHaveBeenCalledWith({
+        name: 'dashboard',
+        params: { space: 'notes', id: folderNode.id }
+      })
+      expect(wrapper.find('.tree-children').exists()).toBe(false)
     })
 
-    it('still offers Delete on a notes folder', async () => {
+    it('omits Delete from a notes folder\'s menu too -- it is on the folder\'s page', async () => {
       space.value = 'notes'
       const wrapper = mountTreeItem(folderNode)
 
       await wrapper.find('.node-actions-trigger').trigger('click')
 
       const entries = wrapper.findAll('.context-menu div').map((el) => el.text())
-      expect(entries).toContain('Delete')
+      expect(entries).toEqual(['New File', 'Edit'])
     })
   })
 

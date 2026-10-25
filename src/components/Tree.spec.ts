@@ -557,6 +557,19 @@ describe('Tree.vue', () => {
         expect(filesManagerService.getTree).toHaveBeenCalledWith('stories')
     })
 
+    it('refetches the notes tree when the event names the notes space', async () => {
+        // DashboardView.vue edits or deletes a notes folder from its own page.
+        mountTree()
+        await flushPromises()
+        vi.mocked(filesManagerService.getTree).mockClear()
+
+        window.dispatchEvent(new CustomEvent('stories:changed', { detail: { space: 'notes' } }))
+        await flushPromises()
+
+        expect(filesManagerService.getTree).toHaveBeenCalledWith('notes')
+        expect(filesManagerService.getTree).not.toHaveBeenCalledWith('stories')
+    })
+
     describe('telling a story\'s dashboard about a change made from the sidebar', () => {
         function listenForStoriesChanged() {
             const listener = vi.fn()
@@ -651,7 +664,35 @@ describe('Tree.vue', () => {
             window.removeEventListener('stories:changed', listener)
         })
 
-        it('does not dispatch for a notes-space change', async () => {
+        it('names the folder and the space when a note is added to a notes folder', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{ id: 'folder-1', name: 'Research', summary: '', files: [] }],
+                files: []
+            })
+            vi.mocked(filesManagerService.addFile).mockResolvedValue({
+                id: 'note-1', name: 'a-note.txt', dir: 'folder-1',
+            })
+            const wrapper = mountTree()
+            await flushPromises()
+            await openTab(wrapper, 'Notes')
+            const listener = listenForStoriesChanged()
+
+            const folder = wrapper.findAllComponents(TreeItem)
+                .find(item => item.props('node').name === 'Research')
+            await folder?.find('.node-actions-trigger').trigger('click')
+            const newFileBtn = folder?.findAll('.context-menu div').find(d => d.text() === 'New File')
+            await newFileBtn?.trigger('click')
+            const modal = wrapper.findComponent(Modal)
+            await modal.find('input').setValue('a-note.txt')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+
+            const event = listener.mock.calls[0]?.[0] as CustomEvent<{ storyId?: string; space?: string }>
+            expect(event.detail).toEqual({ storyId: 'folder-1', space: 'notes' })
+            window.removeEventListener('stories:changed', listener)
+        })
+
+        it('does not dispatch for a note outside every folder, which no page shows', async () => {
             vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
             vi.mocked(filesManagerService.addFile).mockResolvedValue({})
             const wrapper = mountTree()

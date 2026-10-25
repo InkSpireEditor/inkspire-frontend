@@ -15,7 +15,7 @@ on a light or a dark page.
 | ![](icons/page.svg) | `page` | `U+1F4C4` | Page Facing Up | TreeItem.vue |
 | ![](icons/folder.svg) | `folder` | `U+1F4C1` | File Folder | spaces.ts |
 | ![](icons/triangle.svg) | `triangle` | `U+1F53A` | Up-Pointing Red Triangle | TreeItem.vue |
-| ![](icons/pencil.svg) | `pencil` | `U+1F589` | Lower Left Pencil | Text.vue |
+| ![](icons/pencil.svg) | `pencil` | `U+1F589` | Lower Left Pencil | DashboardView.vue, Text.vue |
 | ![](icons/save.svg) | `save` | `U+1F4BE` | Floppy Disk | Text.vue |
 | ![](icons/stop.svg) | `stop` | `U+23F9` | Black Square For Stop | Text.vue |
 | ![](icons/trash.svg) | `trash` | `U+1F5D1` | Wastebasket | Text.vue |

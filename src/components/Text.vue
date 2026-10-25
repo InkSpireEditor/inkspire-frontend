@@ -617,10 +617,12 @@ const handleSuggestTitle = async () => {
     // that this file's name just changed -- the same event `Tree.vue`'s own edits
     // dispatch (`notifyDashboard`). `route.params.id` is the directory id on the write
     // route and `undefined` on the write-root route (a file outside any directory);
-    // `Tree.vue`'s listener refreshes the stories tree regardless of whether an id came
+    // `Tree.vue`'s listener refreshes that space's tree regardless of whether an id came
     // with it.
     window.dispatchEvent(
-      new CustomEvent('stories:changed', { detail: { storyId: route.params.id } }),
+      new CustomEvent('stories:changed', {
+        detail: { storyId: route.params.id, space: file.space },
+      }),
     )
     refreshGitStatus().catch(() => {})
   } catch (e) {

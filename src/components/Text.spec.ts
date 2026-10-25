@@ -1230,7 +1230,7 @@ describe('Text.vue', () => {
       )
     })
 
-    it('dispatches stories:changed, carrying the write route\'s story id', async () => {
+    it('dispatches stories:changed, carrying the write route\'s directory id and the file\'s space', async () => {
       mockRoute.name = 'write'
       mockRoute.params = { id: 'story-1', fileId: OPEN.id }
       titleFeature.value = true
@@ -1245,7 +1245,7 @@ describe('Text.vue', () => {
 
       expect(listener).toHaveBeenCalledTimes(1)
       expect(listener).toHaveBeenCalledWith(
-        expect.objectContaining({ detail: { storyId: 'story-1' } })
+        expect.objectContaining({ detail: { storyId: 'story-1', space: 'stories' } })
       )
       window.removeEventListener('stories:changed', listener)
     })
