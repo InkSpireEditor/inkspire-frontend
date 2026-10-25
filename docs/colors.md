@@ -88,10 +88,3 @@ Not colours of their own, so no swatch.
 | `--shadow-strong` | Modal.vue, TreeItem.vue (context menu), Tree.vue (root menu) |
 | `--shadow-card` | Login.vue |
 | `--focus-ring` | 11 uses across components; it is `0 0 0 3px var(--color-primary-soft)` |
-
-## Problems found
-
-Listed so the next passes remove them.
-
-- **The dark theme was tuned separately from the light one:** the semantic tokens above do not
-  step by the same amount between themes. This is no longer a goal (frontend#38).
