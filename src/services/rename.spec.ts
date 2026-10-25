@@ -81,7 +81,7 @@ describe('useRename', () => {
 
   it('replaces the write route when the renamed file is the one open there', async () => {
     mockRoute.name = 'write'
-    mockRoute.params = { id: 'story-1', fileId: 'old-id' }
+    mockRoute.params = { space: 'stories', id: 'story-1', fileId: 'old-id' }
     vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
     const rename = useRename()
 
@@ -89,13 +89,41 @@ describe('useRename', () => {
 
     expect(mockReplace).toHaveBeenCalledWith({
       name: 'write',
-      params: { id: 'story-1', fileId: 'new-id' },
+      params: { space: 'stories', id: 'story-1', fileId: 'new-id' },
+    })
+  })
+
+  it('keeps the space and the directory of a note when it replaces the route', async () => {
+    mockRoute.name = 'write'
+    mockRoute.params = { space: 'notes', id: 'folder-1', fileId: 'old-id' }
+    vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
+    const rename = useRename()
+
+    await rename('notes', 'old-id', 'New Name')
+
+    expect(mockReplace).toHaveBeenCalledWith({
+      name: 'write',
+      params: { space: 'notes', id: 'folder-1', fileId: 'new-id' },
+    })
+  })
+
+  it('replaces the root write route for a file outside any directory', async () => {
+    mockRoute.name = 'write-root'
+    mockRoute.params = { space: 'stories', fileId: 'old-id' }
+    vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
+    const rename = useRename()
+
+    await rename('stories', 'old-id', 'New Name')
+
+    expect(mockReplace).toHaveBeenCalledWith({
+      name: 'write-root',
+      params: { space: 'stories', fileId: 'new-id' },
     })
   })
 
   it('does not replace the route for a file other than the one open there', async () => {
     mockRoute.name = 'write'
-    mockRoute.params = { id: 'story-1', fileId: 'some-other-id' }
+    mockRoute.params = { space: 'stories', id: 'story-1', fileId: 'some-other-id' }
     vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
     const rename = useRename()
 

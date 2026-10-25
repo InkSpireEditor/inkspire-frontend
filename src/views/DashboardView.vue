@@ -222,7 +222,7 @@ const confirmForceDelete = async () => {
           @drop="onDrop(file.id)"
           @dragend="draggedChapterId = null"
         >
-          <router-link :to="{ name: 'write', params: { id: story.id, fileId: file.id } }">
+          <router-link :to="{ name: 'write', params: { space: 'stories', id: story.id, fileId: file.id } }">
             {{ file.name }}
           </router-link>
           <span class="chapter-meta">

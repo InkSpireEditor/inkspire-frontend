@@ -11,7 +11,7 @@ defineProps<{ storyId: string }>()
 </script>
 
 <template>
-  <router-link :to="{ name: 'dashboard', params: { id: storyId } }" class="back-link">
+  <router-link :to="{ name: 'dashboard', params: { space: 'stories', id: storyId } }" class="back-link">
     <Icon name="arrow-left" /> Back to the dashboard
   </router-link>
 </template>

@@ -613,11 +613,12 @@ const handleSuggestTitle = async () => {
   try {
     const suggested = await llmService.suggestTitle(file.id)
     await rename(file.space, file.id, suggested)
-    // Tells the sidebar (and, for a chapter, that story's dashboard if open) that
-    // this file's name just changed -- the same event `Tree.vue`'s own edits
-    // dispatch (`notifyDashboard`). `route.params.id` is the story id on the write
-    // route and `undefined` for a one-shot opened at `/`; `Tree.vue`'s listener
-    // refreshes the stories tree regardless of whether a story id came with it.
+    // Tells the sidebar (and, for a file in a directory, that directory's page if open)
+    // that this file's name just changed -- the same event `Tree.vue`'s own edits
+    // dispatch (`notifyDashboard`). `route.params.id` is the directory id on the write
+    // route and `undefined` on the write-root route (a file outside any directory);
+    // `Tree.vue`'s listener refreshes the stories tree regardless of whether an id came
+    // with it.
     window.dispatchEvent(
       new CustomEvent('stories:changed', { detail: { storyId: route.params.id } }),
     )
@@ -637,8 +638,8 @@ const handleSuggestTitle = async () => {
  * modal grows the instruction field and the Generate button (frontend#30); the
  * dice button here stays the plain, no-instruction, immediate-apply path.
  *
- * `parentId` carries the story id on the write route (`undefined` off it, for a
- * one-shot or a note), so `Tree.vue`'s own post-edit dashboard refresh -- which
+ * `parentId` carries the directory id on the write route (`undefined` off it, for a
+ * file outside any directory), so `Tree.vue`'s own post-edit dashboard refresh -- which
  * already keys off a chapter node's `parentId` -- keeps working for an edit that
  * arrived this way instead of from the tree itself.
  */
@@ -651,8 +652,7 @@ const requestEditTitle = () => {
         space: file.space,
         id: file.id,
         name: fileName.value,
-        parentId:
-          file.space === 'stories' && route.name === 'write' ? route.params.id : undefined,
+        parentId: route.name === 'write' ? route.params.id : undefined,
       },
     }),
   )

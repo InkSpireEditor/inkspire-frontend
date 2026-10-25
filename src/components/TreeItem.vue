@@ -28,15 +28,13 @@ const BASE_PADDING_PX = 16
  * these handlers would mean threading them through every level.
  */
 interface TreeContext {
-  selectedNodeId: Ref<string | null>
   space?: Ref<Space>
-  onSelect: (node: FileSystemNode) => void
   onAction: (action: string, node: FileSystemNode | null, parentId?: string | null) => void
 }
 
 // 'inject' retrieves the state and methods provided by the ancestor 'Tree' component.
 const context = inject<TreeContext>('treeContext')!
-const { onSelect, onAction } = context
+const { onAction } = context
 const router = useRouter()
 
 const isOpen = ref(false)
@@ -94,29 +92,29 @@ const toggle = () => {
 }
 
 /**
- * A story reads differently than a note: a story directory or chapter has a URL, so
- * the row navigates there; a notes folder only expands, and a note sets the shared
- * selection directly, exactly as either already did before routing existed. A note
- * also returns to '/' -- the only route Text.vue renders under -- since without
- * that, opening one while a story route is showing would set the selection with
- * nothing on screen watching it. The disclosure triangle keeps expanding a story
- * directory too -- see `toggle`.
+ * Every file has a URL, in either space, so a file's row navigates there: one in a directory
+ * to `/:space/:id/write/:fileId`, one outside any (a one-shot, a note at the root) to
+ * `/:space/write/:fileId`. A story directory's row navigates to its page. A notes folder's row
+ * only expands for now, until a folder has a page of its own. The disclosure triangle expands
+ * a story directory too -- see `toggle`.
  */
 const select = () => {
-  const space = context.space?.value
+  const space = context.space?.value ?? 'stories'
   if (isFolder.value) {
     if (space === 'stories') {
-      router.push({ name: 'dashboard', params: { id: props.node.id } })
+      router.push({ name: 'dashboard', params: { space, id: props.node.id } })
     } else {
       toggle()
     }
     return
   }
-  if (space === 'stories' && props.node.parentId) {
-    router.push({ name: 'write', params: { id: props.node.parentId, fileId: props.node.id } })
+  if (props.node.parentId) {
+    router.push({
+      name: 'write',
+      params: { space, id: props.node.parentId, fileId: props.node.id },
+    })
   } else {
-    onSelect(props.node)
-    router.push({ name: 'home' }).catch(() => {})
+    router.push({ name: 'write-root', params: { space, fileId: props.node.id } })
   }
 }
 

@@ -10,22 +10,16 @@ vi.mock('vue-router', () => ({
 }))
 
 describe('TreeItem.vue', () => {
-  const mockOnSelect = vi.fn()
   const mockOnAction = vi.fn()
-  const selectedNodeId = ref<string | null>(null)
-
   const space = ref<'stories' | 'notes'>('stories')
 
   beforeEach(() => {
     mockPush.mockClear()
-    mockOnSelect.mockClear()
     mockOnAction.mockClear()
   })
 
   const treeContext = {
-    selectedNodeId,
     space,
-    onSelect: mockOnSelect,
     onAction: mockOnAction
   }
 
@@ -94,12 +88,6 @@ describe('TreeItem.vue', () => {
   it('shows a file the same way in either space', () => {
     space.value = 'notes'
     expect(mountTreeItem(fileNode).find('.icon').attributes('data-icon')).toBe('page')
-  })
-
-  it('calls onSelect when a file node is clicked', async () => {
-    const wrapper = mountTreeItem(fileNode)
-    await wrapper.find('.tree-node-content').trigger('click')
-    expect(mockOnSelect).toHaveBeenCalledWith(fileNode)
   })
 
   it('toggles folder expansion when clicked', async () => {
@@ -176,9 +164,11 @@ describe('TreeItem.vue', () => {
 
       await wrapper.find('.tree-node-content').trigger('click')
 
-      expect(mockPush).toHaveBeenCalledWith({ name: 'dashboard', params: { id: folderNode.id } })
+      expect(mockPush).toHaveBeenCalledWith({
+        name: 'dashboard',
+        params: { space: 'stories', id: folderNode.id }
+      })
       expect(wrapper.find('.tree-children').exists()).toBe(false)
-      expect(mockOnSelect).not.toHaveBeenCalled()
     })
 
     it('still expands on a click on the disclosure triangle', async () => {
@@ -191,7 +181,7 @@ describe('TreeItem.vue', () => {
       expect(mockPush).not.toHaveBeenCalled()
     })
 
-    it('navigates to the editor on a chapter click, without calling onSelect', async () => {
+    it('navigates to the editor on a chapter click', async () => {
       space.value = 'stories'
       const wrapper = mountTreeItem(chapterNode)
 
@@ -199,23 +189,57 @@ describe('TreeItem.vue', () => {
 
       expect(mockPush).toHaveBeenCalledWith({
         name: 'write',
-        params: { id: chapterNode.parentId, fileId: chapterNode.id }
+        params: { space: 'stories', id: chapterNode.parentId, fileId: chapterNode.id }
       })
-      expect(mockOnSelect).not.toHaveBeenCalled()
+    })
+
+    it('navigates to the root write route on a one-shot click, which has no directory', async () => {
+      space.value = 'stories'
+      const wrapper = mountTreeItem(fileNode)
+
+      await wrapper.find('.tree-node-content').trigger('click')
+
+      expect(mockPush).toHaveBeenCalledWith({
+        name: 'write-root',
+        params: { space: 'stories', fileId: fileNode.id }
+      })
     })
   })
 
   describe('in the notes space', () => {
-    it('selects a note and returns to \'/\', so Text.vue is there to show it', async () => {
-      // Regression: without the navigation, opening a note while a story route is
-      // showing set the selection with nothing on screen watching it.
+    it('navigates to a note in a folder by the folder and the note', async () => {
+      space.value = 'notes'
+      const note: FileSystemNode = { ...fileNode, parentId: folderNode.id }
+      const wrapper = mountTreeItem(note)
+
+      await wrapper.find('.tree-node-content').trigger('click')
+
+      expect(mockPush).toHaveBeenCalledWith({
+        name: 'write',
+        params: { space: 'notes', id: folderNode.id, fileId: note.id }
+      })
+    })
+
+    it('navigates to a note at the root by the note alone', async () => {
       space.value = 'notes'
       const wrapper = mountTreeItem(fileNode)
 
       await wrapper.find('.tree-node-content').trigger('click')
 
-      expect(mockOnSelect).toHaveBeenCalledWith(fileNode)
-      expect(mockPush).toHaveBeenCalledWith({ name: 'home' })
+      expect(mockPush).toHaveBeenCalledWith({
+        name: 'write-root',
+        params: { space: 'notes', fileId: fileNode.id }
+      })
+    })
+
+    it('only expands a notes folder on a click, until a folder has a page of its own', async () => {
+      space.value = 'notes'
+      const wrapper = mountTreeItem(folderNode)
+
+      await wrapper.find('.tree-node-content').trigger('click')
+
+      expect(mockPush).not.toHaveBeenCalled()
+      expect(wrapper.find('.tree-children').exists()).toBe(true)
     })
 
     it('still offers Delete on a notes folder', async () => {

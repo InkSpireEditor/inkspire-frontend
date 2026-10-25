@@ -194,11 +194,11 @@ describe('Tree.vue', () => {
 
             expect(mockPush).toHaveBeenCalledWith({
                 name: 'write',
-                params: { id: 'story-1', fileId: 'chapter-1' },
+                params: { space: 'stories', id: 'story-1', fileId: 'chapter-1' },
             })
         })
 
-        it('selects a newly created one-shot directly, since it has no route', async () => {
+        it('routes to a newly created one-shot, which has no directory in its URL', async () => {
             vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
             vi.mocked(filesManagerService.addFile).mockResolvedValue({
                 id: 'one-shot-1', name: 'a-solo-piece', dir: null,
@@ -213,11 +213,13 @@ describe('Tree.vue', () => {
             await modal.vm.$emit('confirm')
             await flushPromises()
 
-            expect(mockPush).not.toHaveBeenCalled()
-            expect(useSharedFiles().selectedFileId.value).toBe('one-shot-1')
+            expect(mockPush).toHaveBeenCalledWith({
+                name: 'write-root',
+                params: { space: 'stories', fileId: 'one-shot-1' },
+            })
         })
 
-        it('selects a newly created note directly, since it has no route', async () => {
+        it('routes to a newly created note at the root, which has no directory in its URL', async () => {
             vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
             vi.mocked(filesManagerService.addFile).mockResolvedValue({
                 id: 'note-1', name: 'a-note.txt', dir: null,
@@ -233,8 +235,10 @@ describe('Tree.vue', () => {
             await modal.vm.$emit('confirm')
             await flushPromises()
 
-            expect(mockPush).not.toHaveBeenCalled()
-            expect(useSharedFiles().selectedFileId.value).toBe('note-1')
+            expect(mockPush).toHaveBeenCalledWith({
+                name: 'write-root',
+                params: { space: 'notes', fileId: 'note-1' },
+            })
         })
 
         it('does not touch the selection or the route when creating a directory', async () => {
@@ -452,7 +456,7 @@ describe('Tree.vue', () => {
         expect(wrapper.text()).not.toContain('Example Story')
     })
 
-    it('selects a file with the space it was opened in', async () => {
+    it('opens a file under the space it is in', async () => {
         vi.mocked(filesManagerService.getTree).mockImplementation(async (space): Promise<TreeApiResponse> => ({
             dirs: [],
             files: space === 'notes'
@@ -466,9 +470,9 @@ describe('Tree.vue', () => {
 
         await wrapper.findComponent(TreeItem).find('.tree-node-content').trigger('click')
 
-        expect(useSharedFiles().selectedFile.value).toEqual({
-            space: 'notes',
-            id: '2f3e4d5c6b7a8991',
+        expect(mockPush).toHaveBeenCalledWith({
+            name: 'write-root',
+            params: { space: 'notes', fileId: '2f3e4d5c6b7a8991' },
         })
     })
 
@@ -741,7 +745,7 @@ describe('Tree.vue', () => {
         it('replaces the editor URL when it is the renamed file that is open', async () => {
             vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new0000000000000' })
             mockRoute.name = 'write'
-            mockRoute.params = { id: 'story00000000000', fileId: 'f1f1f1f1f1f1f1f1' }
+            mockRoute.params = { space: 'stories', id: 'story00000000000', fileId: 'f1f1f1f1f1f1f1f1' }
             const wrapper = mountTree()
             await flushPromises()
             await openRenameOn(wrapper)
@@ -752,7 +756,7 @@ describe('Tree.vue', () => {
 
             expect(mockReplace).toHaveBeenCalledWith({
                 name: 'write',
-                params: { id: 'story00000000000', fileId: 'new0000000000000' },
+                params: { space: 'stories', id: 'story00000000000', fileId: 'new0000000000000' },
             })
             mockRoute.name = 'home'
             mockRoute.params = {}
@@ -785,7 +789,7 @@ describe('Tree.vue', () => {
 
         it('leaves the write route for the story dashboard when the deleted chapter is open', async () => {
             mockRoute.name = 'write'
-            mockRoute.params = { id: 'story00000000000', fileId: 'chapter-1' }
+            mockRoute.params = { space: 'stories', id: 'story00000000000', fileId: 'chapter-1' }
             const wrapper = await mountWithChapterAndOpenDelete()
 
             const confirmModal = wrapper.findAllComponents(Modal).find(m => m.props('title') === 'Confirm Action')
@@ -794,15 +798,37 @@ describe('Tree.vue', () => {
 
             expect(mockPush).toHaveBeenCalledWith({
                 name: 'dashboard',
-                params: { id: 'story00000000000' },
+                params: { space: 'stories', id: 'story00000000000' },
             })
+            mockRoute.name = 'home'
+            mockRoute.params = {}
+        })
+
+        it('leaves the root write route for the homepage when the deleted file is open', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [],
+                files: [{ id: 'loose-1', name: 'Loose', status: '' }]
+            })
+            mockRoute.name = 'write-root'
+            mockRoute.params = { space: 'stories', fileId: 'loose-1' }
+            const wrapper = mountTree()
+            await flushPromises()
+            const file = wrapper.findAllComponents(TreeItem).find(item => item.props('node').name === 'Loose')
+            await file?.find('.node-actions-trigger').trigger('click')
+            await file?.findAll('.context-menu div').find(d => d.text() === 'Delete')?.trigger('click')
+
+            const confirmModal = wrapper.findAllComponents(Modal).find(m => m.props('title') === 'Confirm Action')
+            await confirmModal?.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(mockPush).toHaveBeenCalledWith({ name: 'home' })
             mockRoute.name = 'home'
             mockRoute.params = {}
         })
 
         it('does not navigate when the deleted chapter is not the one open', async () => {
             mockRoute.name = 'write'
-            mockRoute.params = { id: 'story00000000000', fileId: 'some-other-chapter' }
+            mockRoute.params = { space: 'stories', id: 'story00000000000', fileId: 'some-other-chapter' }
             const wrapper = await mountWithChapterAndOpenDelete()
 
             const confirmModal = wrapper.findAllComponents(Modal).find(m => m.props('title') === 'Confirm Action')

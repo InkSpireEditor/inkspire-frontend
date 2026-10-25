@@ -63,7 +63,6 @@ const activeSpace = ref<Space>(asSpace(localStorage.getItem(ACTIVE_SPACE_KEY)))
 const trees = ref<Record<Space, FileSystemNode[]>>({ stories: [], notes: [] })
 const fetched = ref<Record<Space, boolean>>({ stories: false, notes: false })
 const fileSystem = computed(() => trees.value[activeSpace.value])
-const selectedNodeId = ref<string | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -108,9 +107,7 @@ const showRootMenu = ref(false)
 // 'provide' allows us to share state and methods with all descendant components 
 // (like TreeItem) without having to pass props through every level of the tree.
 provide('treeContext', {
-  selectedNodeId: readonly(selectedNodeId), // Expose as readonly to ensure only this component mutates it
   space: readonly(activeSpace), // Which root the node is in, which decides its icon
-  onSelect: (node: FileSystemNode) => handleSelect(node),
   onAction: (action: string, node: FileSystemNode | null, parentId: string | null = null) => handleNodeAction(action, node, parentId)
 })
 
@@ -176,16 +173,6 @@ const selectSpace = (space: Space) => {
   localStorage.setItem(ACTIVE_SPACE_KEY, space)
   error.value = null
   if (!fetched.value[space]) fetchTree(space)
-}
-
-/**
- * Handles the selection of a tree node.
- * Updates the selected node state.
- * @param node The node being selected.
- */
-const handleSelect = (node: FileSystemNode) => {
-  selectedNodeId.value = node.id
-  setSelectedFile(activeSpace.value, node.id)
 }
 
 /**
@@ -369,18 +356,18 @@ const submitModal = async () => {
         const space = modalSpace.value
         if (modalType.value === 'create-file') {
             const created = await filesManagerService.addFile(space, name, targetNodeId.value)
-            // A chapter (a non-null `dir`, in the stories space) is opened by
-            // routing to it, the same way TreeItem's own row does -- EditorRoute
-            // then sets the shared selection itself from the route params. A
-            // one-shot or a note (frontend#31) takes the other, note-style path.
-            if (space === 'stories' && created.dir !== null) {
-                router.push({ name: 'write', params: { id: created.dir, fileId: created.id } })
+            // A new file is opened by routing to it, the same way TreeItem's own row
+            // does (frontend#31) -- EditorRoute then sets the shared selection itself
+            // from the route params. One in a directory has the directory in its URL;
+            // one outside any (a one-shot, a note at the root) does not.
+            if (created.dir !== null) {
+                router.push({ name: 'write', params: { space, id: created.dir, fileId: created.id } })
             } else {
-                setSelectedFile(space, created.id)
+                router.push({ name: 'write-root', params: { space, fileId: created.id } })
             }
         } else if (modalType.value === 'create-one-shot') {
             const created = await filesManagerService.addFile(space, name, null)
-            setSelectedFile(space, created.id) // dir is always null for a one-shot
+            router.push({ name: 'write-root', params: { space, fileId: created.id } })
         } else if (modalType.value === 'create-dir') {
             await filesManagerService.addDir(space, name, modalInputContext.value)
         } else if (modalType.value === 'edit' && nodeToEdit.value) {
@@ -423,20 +410,27 @@ const confirmDelete = async () => {
     try {
         if (deletedNode.type === 'D') {
             await filesManagerService.delDir(space, deletedNode.id)
+            // The directory's own page, or a file of it, is open: the URL names an id
+            // the API no longer has.
+            if (route.params.id === deletedNode.id) {
+                router.push({ name: 'home' })
+            }
         } else {
-            // Compared against the shared selection, not the local selectedNodeId: a
-            // story chapter's selection is now set by the write route rather than by
-            // handleSelect, so selectedNodeId alone would miss it.
             if (selectedFileId.value === deletedNode.id) {
                 clearSelectedFile()
-                selectedNodeId.value = null
             }
-            // A chapter deleted while its own write route is open leaves that route
+            // A file deleted while its own write route is open leaves that route
             // pointing at an id the API no longer has -- clearing the selection above
             // does not move the editor off that URL, so this does, the same way
-            // renameFile above follows a rename to its new id instead of away.
+            // renameFile above follows a rename to its new id instead of away. A file
+            // in a directory goes back to the directory's page, one outside any to home.
             if (route.name === 'write' && route.params.fileId === deletedNode.id) {
-                router.push({ name: 'dashboard', params: { id: route.params.id } })
+                router.push({
+                    name: 'dashboard',
+                    params: { space: route.params.space, id: route.params.id },
+                })
+            } else if (route.name === 'write-root' && route.params.fileId === deletedNode.id) {
+                router.push({ name: 'home' })
             }
             await filesManagerService.delFile(space, deletedNode.id)
         }

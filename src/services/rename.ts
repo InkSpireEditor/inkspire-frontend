@@ -8,8 +8,8 @@ import type { Space } from './spaces'
  *
  * A file's id is derived from its path, so renaming one *usually* changes it. Anything
  * still naming the old id is then pointing at something the API no longer has: the shared
- * selection, whose next save would fail, and the editor's own URL. Both are moved across
- * here. A directory keeps its id through a rename, so this is files only.
+ * selection, whose next save would fail, and the editor's own URL (the `write` or
+ * `write-root` route, in either space). Both are moved across here. A directory keeps its id through a rename, so this is files only.
  *
  * A rename that only changes case or spacing leaves the filename, and so the id, alone --
  * "first chapter" and "First Chapter" are one filename and two names. `setSelectedFile` is
@@ -38,12 +38,13 @@ export function useRename() {
     if (selectedFileId.value === id) {
       setSelectedFile(space, renamed.id)
     }
-    if (renamed.id !== id && route.name === 'write' && route.params.fileId === id) {
-      // The story id comes from the route being replaced rather than from the
-      // caller: it is the one place it is certainly present, and it cannot disagree.
+    const onWriteRoute = route.name === 'write' || route.name === 'write-root'
+    if (renamed.id !== id && onWriteRoute && route.params.fileId === id) {
+      // The space and the directory come from the route being replaced rather than from
+      // the caller: it is the one place they are certainly present, and it cannot disagree.
       router.replace({
-        name: 'write',
-        params: { id: route.params.id, fileId: renamed.id },
+        name: route.name as string,
+        params: { ...route.params, fileId: renamed.id },
       })
     }
     return renamed.id
