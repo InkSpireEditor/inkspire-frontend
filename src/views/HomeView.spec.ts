@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import HomeView from './HomeView.vue'
+import BarChart from '../components/BarChart.vue'
 import { filesManagerService } from '../services/filesManager'
 import type { TreeApiResponse } from '../services/filesManager'
 import { saveRecent, loadRecent } from '../services/recentFiles'
@@ -9,7 +10,7 @@ vi.mock('../services/filesManager', async () => {
   const actual = await vi.importActual<typeof import('../services/filesManager')>(
     '../services/filesManager'
   )
-  return { ...actual, filesManagerService: { getTree: vi.fn() } }
+  return { ...actual, filesManagerService: { getTree: vi.fn(), getFileContent: vi.fn() } }
 })
 
 const STORIES: TreeApiResponse = {
@@ -51,6 +52,10 @@ describe('HomeView.vue', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.mocked(filesManagerService.getTree).mockReset()
+    vi.mocked(filesManagerService.getFileContent).mockReset()
+    vi.mocked(filesManagerService.getFileContent).mockImplementation(async (_space, id) =>
+      ({ c1: 'one two three', c2: 'four five', o1: 'six' })[id as string] ?? ''
+    )
     vi.mocked(filesManagerService.getTree).mockImplementation(async (space) =>
       space === 'stories' ? STORIES : NOTES
     )
@@ -166,6 +171,66 @@ describe('HomeView.vue', () => {
 
       expect(links(wrapper)).toHaveLength(1)
       expect(loadRecent()).toEqual([{ space: 'stories', id: 'c1' }])
+    })
+  })
+
+  describe('the charts', () => {
+    const chartNamed = (wrapper: ReturnType<typeof mount>, title: string) =>
+      wrapper.findAllComponents(BarChart).find((chart) => chart.props('title') === title)
+
+    it('counts the chapters and one-shots under each status', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(chartNamed(wrapper, 'Status')?.props('bars')).toEqual([
+        { label: 'No status', value: 2 },
+        { label: 'draft', value: 1 }
+      ])
+    })
+
+    it('counts the words of each story from its chapters\' prose, and totals them', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      const chart = chartNamed(wrapper, 'Words per story')
+      expect(chart?.props('bars')).toEqual([
+        { label: 'Foo', value: 5, detail: '2 chapters' },
+        { label: 'Solo', value: 1, detail: 'One-shot' }
+      ])
+      expect(chart?.props('caption')).toBe('6 words in all')
+      expect(filesManagerService.getFileContent).toHaveBeenCalledWith('stories', 'c1')
+    })
+
+    it('says it is counting until the last file is in, and shows no total before then', async () => {
+      vi.mocked(filesManagerService.getFileContent).mockReturnValue(new Promise(() => {}))
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.counting').text()).toBe('Counting words…')
+      expect(chartNamed(wrapper, 'Words per story')).toBeUndefined()
+      expect(chartNamed(wrapper, 'Status')).toBeDefined()
+    })
+
+    it('counts a file that cannot be fetched as nothing, and still draws the chart', async () => {
+      vi.mocked(filesManagerService.getFileContent).mockImplementation(async (_space, id) => {
+        if (id === 'c2') throw new Error('Failed')
+        return 'one two three'
+      })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(chartNamed(wrapper, 'Words per story')?.props('bars')[0]).toMatchObject({
+        label: 'Foo',
+        value: 3
+      })
+    })
+
+    it('draws no chart for a tree with nothing in it', async () => {
+      vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.findAllComponents(BarChart)).toHaveLength(0)
     })
   })
 })

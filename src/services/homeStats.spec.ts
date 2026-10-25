@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { countEntries, resolveRecent } from './homeStats'
+import { countEntries, foldTail, NO_STATUS, resolveRecent, statusBars, sumBars, wordBars } from './homeStats'
 import type { DirEntry, FileEntry, TreeApiResponse } from './filesManager'
 
-const file = (id: string): FileEntry => ({ id, name: id, status: '' })
+const file = (id: string, status = ''): FileEntry => ({ id, name: id, status })
 const dir = (id: string, files: FileEntry[]): DirEntry => ({ id, name: id, summary: '', files })
 const tree = (dirs: DirEntry[], files: FileEntry[] = []): TreeApiResponse => ({ dirs, files })
 
@@ -81,5 +81,72 @@ describe('resolveRecent', () => {
 
   it('looks only in the space the file was opened in', () => {
     expect(resolveRecent([{ space: 'notes', id: 'c1' }], trees)).toEqual([])
+  })
+})
+
+describe('statusBars', () => {
+  it('counts the chapters and one-shots under each status, the most common first', () => {
+    const stories = tree(
+      [dir('s1', [file('a', 'draft'), file('b', 'done'), file('c', 'draft')])],
+      [file('o', 'draft')]
+    )
+    expect(statusBars(stories)).toEqual([
+      { label: 'draft', value: 3 },
+      { label: 'done', value: 1 }
+    ])
+  })
+
+  it('counts a file with no status under a label of its own', () => {
+    const bars = statusBars(tree([dir('s1', [file('a'), file('b', '  '), file('c', 'done')])]))
+    expect(bars).toContainEqual({ label: NO_STATUS, value: 2 })
+  })
+
+  it('breaks a tie by name', () => {
+    const bars = statusBars(tree([dir('s1', [file('a', 'revised'), file('b', 'done')])]))
+    expect(bars.map((bar) => bar.label)).toEqual(['done', 'revised'])
+  })
+
+  it('is empty for a tree with no files', () => {
+    expect(statusBars(tree([dir('s1', [])]))).toEqual([])
+  })
+})
+
+describe('wordBars', () => {
+  const words = { a: 100, b: 50, c: 300, o: 20 }
+
+  it('sums the words of a story\'s chapters, the story with the most first', () => {
+    const bars = wordBars(tree([dir('s1', [file('a'), file('b')]), dir('s2', [file('c')])]), words)
+    expect(bars).toEqual([
+      { label: 's2', value: 300, detail: '1 chapter' },
+      { label: 's1', value: 150, detail: '2 chapters' }
+    ])
+  })
+
+  it('gives a one-shot a bar of its own', () => {
+    const bars = wordBars(tree([], [file('o')]), words)
+    expect(bars).toEqual([{ label: 'o', value: 20, detail: 'One-shot' }])
+  })
+
+  it('counts a chapter whose prose could not be fetched as nothing', () => {
+    const bars = wordBars(tree([dir('s1', [file('a'), file('missing')])]), words)
+    expect(bars[0]?.value).toBe(100)
+  })
+})
+
+describe('foldTail', () => {
+  const bars = [10, 8, 6, 4, 2].map((value, i) => ({ label: `b${i}`, value }))
+
+  it('leaves a short list alone', () => {
+    expect(foldTail(bars, 5, 'Other')).toEqual(bars)
+  })
+
+  it('folds everything past the limit into one bar that makes the limit', () => {
+    const folded = foldTail(bars, 3, 'Other')
+    expect(folded).toHaveLength(3)
+    expect(folded[2]).toEqual({ label: 'Other', value: 12, detail: '3 more' })
+  })
+
+  it('keeps the total', () => {
+    expect(sumBars(foldTail(bars, 3, 'Other'))).toBe(sumBars(bars))
   })
 })

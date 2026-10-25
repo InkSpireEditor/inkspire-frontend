@@ -20,6 +20,7 @@ import {
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
 import { asSpace, type Space } from '../services/spaces'
+import { countWords } from '../services/words'
 import Modal from '../components/Modal.vue'
 import GitPanel from '../components/GitPanel.vue'
 import Icon from '../components/Icon.vue'
@@ -53,7 +54,7 @@ const loadWordCounts = async (inSpace: Space, files: FileEntry[]) => {
     files.map(async (file) => {
       try {
         const text = await filesManagerService.getFileContent(inSpace, file.id)
-        return [file.id, text.trim().split(/\s+/).filter(Boolean).length] as const
+        return [file.id, countWords(text)] as const
       } catch {
         return null
       }

@@ -61,3 +61,66 @@ export const resolveRecent = (
   }
   return found
 }
+
+/** One bar of a chart: what it is, how much, and a line of detail for its tooltip. */
+export interface Bar {
+  label: string
+  value: number
+  detail?: string
+}
+
+/** What a status-less file is counted under. */
+export const NO_STATUS = 'No status'
+
+const byValueThenLabel = (a: Bar, b: Bar) => b.value - a.value || a.label.localeCompare(b.label)
+
+/**
+ * How many chapters and one-shots carry each status, the most common first. A file with no
+ * status is counted under `NO_STATUS`, and where it sorts is where its count puts it.
+ */
+export const statusBars = (stories: TreeApiResponse): Bar[] => {
+  const counts = new Map<string, number>()
+  const files = [...stories.dirs.flatMap((dir) => dir.files), ...stories.files]
+  for (const file of files) {
+    const label = file.status.trim() || NO_STATUS
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  return [...counts].map(([label, value]) => ({ label, value })).sort(byValueThenLabel)
+}
+
+/**
+ * Words in each story, the most first. A story's words are its chapters', and a one-shot is its
+ * own bar. A file whose prose is not in `words` (it could not be fetched) adds nothing.
+ */
+export const wordBars = (stories: TreeApiResponse, words: Record<string, number>): Bar[] => {
+  const bars: Bar[] = stories.dirs.map((dir) => ({
+    label: dir.name,
+    value: dir.files.reduce((total, file) => total + (words[file.id] ?? 0), 0),
+    detail: dir.files.length === 1 ? '1 chapter' : `${dir.files.length} chapters`
+  }))
+  for (const file of stories.files) {
+    bars.push({ label: file.name, value: words[file.id] ?? 0, detail: 'One-shot' })
+  }
+  return bars.sort(byValueThenLabel)
+}
+
+/**
+ * The first `limit - 1` bars, and the rest folded into one called `otherLabel`, when there are
+ * more than `limit`. A chart of a dozen bars is a list; folding the tail keeps it a chart, and
+ * the table view still has every row.
+ */
+export const foldTail = (bars: Bar[], limit: number, otherLabel: string): Bar[] => {
+  if (bars.length <= limit) return bars
+  const kept = bars.slice(0, limit - 1)
+  const rest = bars.slice(limit - 1)
+  return [
+    ...kept,
+    {
+      label: otherLabel,
+      value: rest.reduce((total, bar) => total + bar.value, 0),
+      detail: `${rest.length} more`
+    }
+  ]
+}
+
+export const sumBars = (bars: Bar[]): number => bars.reduce((total, bar) => total + bar.value, 0)

@@ -34,6 +34,9 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
   in this browser, each a link to its `write` or `write-root` route. The list is kept in
   `localStorage` by `services/recentFiles.ts`, which records every file the shared selection moves
   to; a file no longer in its tree is left out and forgotten.
+  Under them are two bar charts (`components/BarChart.vue`, each with a table twin): how many
+  chapters and one-shots have each status, and the words in each story, counted from every
+  file's prose with one request per file.
 - `DashboardView.vue` reads `space` and `id`. It fetches `GET /api/<space>/dir/{id}` and draws the
   name, the synopsis or context (called a synopsis in `stories`, a context in `notes`), and the
   files with a word count each. It edits that text, and deletes the directory. A story also has

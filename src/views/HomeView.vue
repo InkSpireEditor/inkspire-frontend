@@ -1,12 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { filesManagerService, type TreeApiResponse } from '../services/filesManager'
-import { countEntries, resolveRecent, type Counts, type RecentFile } from '../services/homeStats'
+import {
+  countEntries,
+  foldTail,
+  resolveRecent,
+  statusBars,
+  sumBars,
+  wordBars,
+  type Bar,
+  type Counts,
+  type RecentFile
+} from '../services/homeStats'
+import { countWords } from '../services/words'
+import BarChart from '../components/BarChart.vue'
 import { loadRecent, saveRecent } from '../services/recentFiles'
 import type { RouteLocationRaw } from 'vue-router'
 
 const counts = ref<Counts | null>(null)
 const recent = ref<RecentFile[]>([])
+const statuses = ref<Bar[]>([])
+const storyWords = ref<Bar[]>([])
+/** Set while the prose is being fetched to count it, which takes a request per file. */
+const countingWords = ref(false)
+
+/** How many bars a chart draws before the rest are folded into one. */
+const MAX_BARS = 8
+const numbers = new Intl.NumberFormat()
+
+const shownStatuses = computed(() => foldTail(statuses.value, MAX_BARS, 'Other statuses'))
+const shownStoryWords = computed(() => foldTail(storyWords.value, MAX_BARS, 'Other stories'))
+const totalWords = computed(() => sumBars(storyWords.value))
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -46,6 +70,36 @@ const showRecent = (stories: TreeApiResponse, notes: TreeApiResponse) => {
 }
 
 /**
+ * Words in every file of the stories, counted from the prose, one request per file as the
+ * story's page does. The chart appears when the last count is in, so a total is never shown
+ * while some files are still missing from it; a file that cannot be fetched counts for nothing.
+ */
+let wordsRun = 0
+const loadWords = async (stories: TreeApiResponse) => {
+  const run = ++wordsRun
+  const files = [...stories.dirs.flatMap((dir) => dir.files), ...stories.files]
+  countingWords.value = true
+  try {
+    const counted = await Promise.all(
+      files.map(async (file) => {
+        try {
+          const text = await filesManagerService.getFileContent('stories', file.id)
+          return [file.id, countWords(text)] as const
+        } catch {
+          return null
+        }
+      })
+    )
+    // A reload that started after this one has the newer trees: leave its answer be.
+    if (run !== wordsRun) return
+    const words = Object.fromEntries(counted.filter((entry) => entry !== null))
+    storyWords.value = wordBars(stories, words)
+  } finally {
+    if (run === wordsRun) countingWords.value = false
+  }
+}
+
+/**
  * Both trees, in two requests the sidebar has already made once. `silent` keeps the numbers on
  * screen while a reload is under way, so a change made in the sidebar does not flash "Loading…".
  */
@@ -59,6 +113,8 @@ const load = async ({ silent = false } = {}) => {
     ])
     counts.value = countEntries(stories, notes)
     showRecent(stories, notes)
+    statuses.value = statusBars(stories)
+    loadWords(stories)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load the home page'
   } finally {
@@ -98,6 +154,22 @@ onUnmounted(() => window.removeEventListener('tree:changed', reload))
           <dt>{{ entry.label }}</dt>
         </div>
       </dl>
+
+      <BarChart
+        v-if="shownStatuses.length"
+        title="Status"
+        unit="files"
+        caption="Chapters and one-shots, by the status in their header"
+        :bars="shownStatuses"
+      />
+      <p v-if="countingWords && !shownStoryWords.length" class="counting">Counting words…</p>
+      <BarChart
+        v-else-if="shownStoryWords.length"
+        title="Words per story"
+        unit="words"
+        :caption="`${numbers.format(totalWords)} words in all`"
+        :bars="shownStoryWords"
+      />
     </template>
   </div>
 </template>
@@ -127,6 +199,14 @@ h2 {
 
 .recent {
   margin-bottom: var(--space-5);
+}
+
+.counts {
+  margin-bottom: var(--space-5);
+}
+
+.counting {
+  color: var(--color-text-muted);
 }
 
 .recent ul {
