@@ -9,29 +9,29 @@ is the same in every browser and follows the theme. A character drawn as text wo
 sized and often coloured by whichever font the browser picks. The swatches are grey so they show
 on a light or a dark page.
 
-| Icon | Name | Codepoint | Unicode name |
-|---|---|---|---|
-| ![](icons/book.svg) | `book` | `U+1F4D6` | Open Book |
-| ![](icons/page.svg) | `page` | `U+1F4C4` | Page Facing Up |
-| ![](icons/folder.svg) | `folder` | `U+1F4C1` | File Folder |
-| ![](icons/triangle.svg) | `triangle` | `U+1F53A` | Up-Pointing Red Triangle |
-| ![](icons/pencil.svg) | `pencil` | `U+1F589` | Lower Left Pencil |
-| ![](icons/save.svg) | `save` | `U+1F4BE` | Floppy Disk |
-| ![](icons/stop.svg) | `stop` | `U+23F9` | Black Square For Stop |
-| ![](icons/trash.svg) | `trash` | `U+1F5D1` | Wastebasket |
-| ![](icons/reroll.svg) | `reroll` | `U+1F5D8` | Clockwise Right And Left Semicircle Arrows |
-| ![](icons/sparkles.svg) | `sparkles` | `U+2728` | Sparkles |
-| ![](icons/gear.svg) | `gear` | `U+2699` | Gear |
-| ![](icons/dice.svg) | `dice` | `U+1F3B2` | Game Die |
-| ![](icons/sun.svg) | `sun` | `U+2600` | Black Sun With Rays |
-| ![](icons/moon.svg) | `moon` | `U+1F319` | Crescent Moon |
-| ![](icons/more.svg) | `more` | `U+22EE` | Vertical Ellipsis |
-| ![](icons/menu.svg) | `menu` | `U+2630` | Trigram For Heaven |
-| ![](icons/chevron-left.svg) | `chevron-left` | `U+00AB` | Left-Pointing Double Angle Quotation Mark |
-| ![](icons/close.svg) | `close` | `U+2715` | Multiplication X |
-| ![](icons/arrow-left.svg) | `arrow-left` | `U+2190` | Leftwards Arrow |
-| ![](icons/arrow-up.svg) | `arrow-up` | `U+2191` | Upwards Arrow |
-| ![](icons/arrow-down.svg) | `arrow-down` | `U+2193` | Downwards Arrow |
+| Icon | Name | Codepoint | Unicode name | Used by |
+|---|---|---|---|---|
+| ![](icons/book.svg) | `book` | `U+1F4D6` | Open Book | Text.vue, spaces.ts |
+| ![](icons/page.svg) | `page` | `U+1F4C4` | Page Facing Up | TreeItem.vue |
+| ![](icons/folder.svg) | `folder` | `U+1F4C1` | File Folder | spaces.ts |
+| ![](icons/triangle.svg) | `triangle` | `U+1F53A` | Up-Pointing Red Triangle | TreeItem.vue |
+| ![](icons/pencil.svg) | `pencil` | `U+1F589` | Lower Left Pencil | Text.vue |
+| ![](icons/save.svg) | `save` | `U+1F4BE` | Floppy Disk | Text.vue |
+| ![](icons/stop.svg) | `stop` | `U+23F9` | Black Square For Stop | Text.vue |
+| ![](icons/trash.svg) | `trash` | `U+1F5D1` | Wastebasket | Text.vue |
+| ![](icons/reroll.svg) | `reroll` | `U+1F5D8` | Clockwise Right And Left Semicircle Arrows | Text.vue |
+| ![](icons/sparkles.svg) | `sparkles` | `U+2728` | Sparkles | Text.vue |
+| ![](icons/gear.svg) | `gear` | `U+2699` | Gear | Text.vue |
+| ![](icons/dice.svg) | `dice` | `U+1F3B2` | Game Die | Text.vue, Tree.vue |
+| ![](icons/sun.svg) | `sun` | `U+2600` | Black Sun With Rays | Tree.vue |
+| ![](icons/moon.svg) | `moon` | `U+1F319` | Crescent Moon | Tree.vue |
+| ![](icons/more.svg) | `more` | `U+22EE` | Vertical Ellipsis | Tree.vue, TreeItem.vue |
+| ![](icons/menu.svg) | `menu` | `U+2630` | Trigram For Heaven | App.vue |
+| ![](icons/chevron-left.svg) | `chevron-left` | `U+00AB` | Left-Pointing Double Angle Quotation Mark | App.vue |
+| ![](icons/close.svg) | `close` | `U+2715` | Multiplication X | SidePanel.vue |
+| ![](icons/arrow-left.svg) | `arrow-left` | `U+2190` | Leftwards Arrow | BackLink.vue |
+| ![](icons/arrow-up.svg) | `arrow-up` | `U+2191` | Upwards Arrow | GitPanel.vue |
+| ![](icons/arrow-down.svg) | `arrow-down` | `U+2193` | Downwards Arrow | GitPanel.vue |
 
 ## Source and licence
 

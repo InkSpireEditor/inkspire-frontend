@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { applyEdit, metadataFromProse, proseFromMetadata, type Prose } from '../services/provenance'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type DOMWrapper } from '@vue/test-utils'
 import { computed, ref, type Ref } from 'vue'
 import Text from './Text.vue'
 import MarkdownEditor from './MarkdownEditor.vue'
@@ -71,6 +71,10 @@ const typed = (body: string) => proseFromMetadata(body, null)
  */
 const continued = (before: string, added: string) =>
   metadataFromProse(applyEdit(typed(before), before + added, 'gen'))
+
+/** A button's accessible name: an icon button carries it as an aria-label, a text button as its text. */
+const nameOf = (button: DOMWrapper<Element>): string =>
+  button.attributes('aria-label') ?? button.text()
 
 describe('Text.vue', () => {
   let selectedFile: any
@@ -537,7 +541,7 @@ describe('Text.vue', () => {
   }
 
   const clickButton = async (wrapper: ReturnType<typeof mount>, label: string) => {
-    const button = wrapper.findAll('button').find(b => b.text() === label)
+    const button = wrapper.findAll('button').find(b => nameOf(b) === label)
     await button?.trigger('click')
     return button
   }
@@ -747,7 +751,9 @@ describe('Text.vue', () => {
     await wrapper.vm.$nextTick()
 
     expect(
-      wrapper.findAll('button').find((b) => b.text() === 'Rewrite' || b.text() === 'Generate')!.text()
+      nameOf(
+        wrapper.findAll('button').find((b) => nameOf(b) === 'Rewrite' || nameOf(b) === 'Generate')!
+      )
     ).toBe('Rewrite')
 
     await clickButton(wrapper, 'Rewrite')
@@ -831,17 +837,17 @@ describe('Text.vue', () => {
       }
     )
 
-    expect(wrapper.findAll('button').some(b => b.text() === 'Stop')).toBe(false)
+    expect(wrapper.findAll('button').some(b => nameOf(b) === 'Stop')).toBe(false)
 
     await clickButton(wrapper, 'Generate')
     await flushPromises()
-    expect(wrapper.findAll('button').some(b => b.text() === 'Stop')).toBe(true)
+    expect(wrapper.findAll('button').some(b => nameOf(b) === 'Stop')).toBe(true)
 
     await clickButton(wrapper, 'Stop')
     await flushPromises()
 
     expect(captured?.aborted).toBe(true)
-    expect(wrapper.findAll('button').some(b => b.text() === 'Stop')).toBe(false)
+    expect(wrapper.findAll('button').some(b => nameOf(b) === 'Stop')).toBe(false)
     finish()
   })
 
@@ -965,7 +971,7 @@ describe('Text.vue', () => {
 
   describe('reroll (api#5)', () => {
     const rerollButton = (wrapper: ReturnType<typeof mount>) =>
-      wrapper.findAll('button').find((b) => b.text() === 'Reroll')!
+      wrapper.findAll('button').find((b) => nameOf(b) === 'Reroll')!
 
     it('sends whatever instruction is currently typed, not a snapshot from the original generation (api#19)', async () => {
       const wrapper = await mountWithFile()
@@ -1060,7 +1066,7 @@ describe('Text.vue', () => {
       await generateOnce(wrapper, ' and then.')
       expect(rerollButton(wrapper).attributes('disabled')).toBeUndefined()
 
-      const readToggle = wrapper.findAll('button').find((b) => b.text() === 'Read')!
+      const readToggle = wrapper.findAll('button').find((b) => nameOf(b) === 'Read')!
       await readToggle.trigger('click')
 
       expect(rerollButton(wrapper).attributes('disabled')).toBeDefined()
@@ -1069,7 +1075,7 @@ describe('Text.vue', () => {
 
   describe('discard (frontend#33)', () => {
     const discardButton = (wrapper: ReturnType<typeof mount>) =>
-      wrapper.findAll('button').find((b) => b.text() === 'Discard')!
+      wrapper.findAll('button').find((b) => nameOf(b) === 'Discard')!
 
     it('is disabled with no generated run, and enabled once there is one', async () => {
       const wrapper = await mountWithFile()
@@ -1144,7 +1150,7 @@ describe('Text.vue', () => {
       await generateOnce(wrapper, ' and then.')
       expect(discardButton(wrapper).attributes('disabled')).toBeUndefined()
 
-      const readToggle = wrapper.findAll('button').find((b) => b.text() === 'Read')!
+      const readToggle = wrapper.findAll('button').find((b) => nameOf(b) === 'Read')!
       await readToggle.trigger('click')
 
       expect(discardButton(wrapper).attributes('disabled')).toBeDefined()
@@ -1260,7 +1266,7 @@ describe('Text.vue', () => {
     it('is not hidden in Read mode -- it never touches the editor', async () => {
       titleFeature.value = true
       const wrapper = await mountWithFile()
-      const readToggle = wrapper.findAll('button').find((b) => b.text() === 'Read')!
+      const readToggle = wrapper.findAll('button').find((b) => nameOf(b) === 'Read')!
       await readToggle.trigger('click')
 
       expect(diceButton(wrapper).exists()).toBe(true)
@@ -1321,9 +1327,88 @@ describe('Text.vue', () => {
     })
   })
 
+  describe('the action row', () => {
+    const iconOf = (button: DOMWrapper<Element> | undefined) =>
+      button?.find('svg').attributes('data-icon')
+    const named = (wrapper: ReturnType<typeof mount>, name: string) =>
+      wrapper.findAll('button').find((b) => nameOf(b) === name)
+
+    it('shows each secondary button as an icon, named by its aria-label and title', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+
+      const expected: Record<string, string> = {
+        Read: 'book',
+        Save: 'save',
+        Discard: 'trash',
+        Reroll: 'reroll',
+        Settings: 'gear'
+      }
+      for (const [name, icon] of Object.entries(expected)) {
+        const button = named(wrapper, name)
+        expect(iconOf(button), name).toBe(icon)
+        expect(button?.text(), `${name} has no visible label`).toBe('')
+        expect(button?.attributes('title'), name).toBeTruthy()
+      }
+    })
+
+    it('swaps the Read icon for a pencil while reading, and names it Edit', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+
+      await named(wrapper, 'Read')!.trigger('click')
+
+      expect(iconOf(named(wrapper, 'Edit'))).toBe('pencil')
+      expect(named(wrapper, 'Read')).toBeUndefined()
+    })
+
+    it('shows the primary button as a sparkles icon, named Generate', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+
+      const primary = wrapper.find('button.primary')
+      expect(iconOf(primary)).toBe('sparkles')
+      expect(primary.text()).toBe('')
+      expect(primary.attributes('aria-label')).toBe('Generate')
+      expect(primary.attributes('title')).toBe('Generate')
+      expect(primary.classes()).not.toContain('rewrite')
+    })
+
+    it('renames the primary button Rewrite, and outlines it, while text is selected', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+
+      wrapper.findComponent(MarkdownEditor).vm.$emit('selectionChange', true)
+      await wrapper.vm.$nextTick()
+
+      const primary = wrapper.find('button.primary')
+      expect(primary.attributes('aria-label')).toBe('Rewrite')
+      expect(primary.attributes('title')).toBe('Rewrite')
+      expect(primary.classes()).toContain('rewrite')
+      // The icon is the same one: the look changes, not the glyph.
+      expect(iconOf(primary)).toBe('sparkles')
+    })
+
+    it('says whether the settings panel is open', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+
+      expect(named(wrapper, 'Settings')!.attributes('aria-pressed')).toBe('false')
+
+      await named(wrapper, 'Settings')!.trigger('click')
+
+      expect(named(wrapper, 'Settings')!.attributes('aria-pressed')).toBe('true')
+    })
+  })
+
   describe('the Read toggle', () => {
     const readToggle = (wrapper: ReturnType<typeof mount>) =>
-      wrapper.findAll('button').find((b) => b.text() === 'Read' || b.text() === 'Edit')!
+      wrapper.findAll('button').find((b) => nameOf(b) === 'Read' || nameOf(b) === 'Edit')!
 
     it('swaps the editor for the rendered prose, and back', async () => {
       vi.mocked(filesManagerService.getDocument).mockResolvedValue({
@@ -1336,12 +1421,12 @@ describe('Text.vue', () => {
       await flushPromises()
 
       expect(wrapper.find('[contenteditable]').exists()).toBe(true)
-      expect(readToggle(wrapper).text()).toBe('Read')
+      expect(nameOf(readToggle(wrapper))).toBe('Read')
 
       await readToggle(wrapper).trigger('click')
       expect(wrapper.find('[contenteditable]').exists()).toBe(false)
       expect(wrapper.find('.rendered-prose h1').text()).toBe('A Title')
-      expect(readToggle(wrapper).text()).toBe('Edit')
+      expect(nameOf(readToggle(wrapper))).toBe('Edit')
 
       await readToggle(wrapper).trigger('click')
       expect(wrapper.find('[contenteditable]').exists()).toBe(true)
@@ -1379,12 +1464,12 @@ describe('Text.vue', () => {
       selectedFile.value = OPEN
       await flushPromises()
       await readToggle(wrapper).trigger('click')
-      expect(readToggle(wrapper).text()).toBe('Edit')
+      expect(nameOf(readToggle(wrapper))).toBe('Edit')
 
       selectedFile.value = { space: 'notes', id: '0f1e2d3c4b5a6978' }
       await flushPromises()
 
-      expect(readToggle(wrapper).text()).toBe('Read')
+      expect(nameOf(readToggle(wrapper))).toBe('Read')
       expect(wrapper.find('[contenteditable]').exists()).toBe(true)
     })
   })

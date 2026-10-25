@@ -1,6 +1,6 @@
 /// <reference types="node" />
-import { readFileSync, existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { ICONS } from './icons'
 
@@ -11,6 +11,22 @@ import { ICONS } from './icons'
 const root = process.cwd()
 const chart = readFileSync(resolve(root, 'docs/icons.md'), 'utf8')
 const names = Object.keys(ICONS) as (keyof typeof ICONS)[]
+
+/** Every source file in `src/` that could draw an icon: it mentions `Icon` or `IconName`. */
+const sourceFiles = (dir = resolve(root, 'src')): string[] =>
+  readdirSync(dir).flatMap((entry) => {
+    const path = join(dir, entry)
+    if (statSync(path).isDirectory()) return sourceFiles(path)
+    const isSource = /\.(vue|ts)$/.test(entry) && !entry.includes('.spec.') && entry !== 'icons.ts'
+    return isSource && /\bIcon(Name)?\b/.test(readFileSync(path, 'utf8')) ? [path] : []
+  })
+
+/** The files that name `icon` as a string, in a file that draws icons. */
+const usersOf = (icon: string): string[] =>
+  sourceFiles()
+    .filter((path) => new RegExp(`['"]${icon}['"]`).test(readFileSync(path, 'utf8')))
+    .map((path) => basename(path))
+    .sort()
 
 describe('icons.ts', () => {
   it('gives every icon a Unicode codepoint, a viewBox and an outline', () => {
@@ -37,6 +53,14 @@ describe('docs/icons.md', () => {
     }
   })
 
+  it('lists the files that use each icon', () => {
+    for (const name of names) {
+      const row = chart.split('\n').find((line) => line.includes(`| \`${name}\` |`))!
+      const listed = row.split('|').slice(-2, -1)[0]!.trim()
+      expect(listed, name).toBe(usersOf(name).join(', '))
+    }
+  })
+
   it('has no row for an icon that icons.ts no longer defines', () => {
     const rows = [...chart.matchAll(/^\| !\[\]\(icons\/[^)]+\) \| `([^`]+)` \|/gm)].map((m) => m[1]!)
     for (const name of rows) {
@@ -50,6 +74,14 @@ describe('docs/icons.md', () => {
       expect(chart).toContain(`icons/${name}.svg`)
       expect(existsSync(resolve(root, file)), file).toBe(true)
       expect(readFileSync(resolve(root, file), 'utf8'), file).toContain(`d="${ICONS[name].d}"`)
+    }
+  })
+})
+
+describe('icon use', () => {
+  it('has no icon that nothing draws', () => {
+    for (const name of names) {
+      expect(usersOf(name), `${name} is defined but not used`).not.toHaveLength(0)
     }
   })
 })

@@ -379,6 +379,11 @@ const tryIdleCompletion = async () => {
 }
 
 const isGenerating = ref(false)
+
+/** What the primary button does right now, as its tooltip and accessible name: it has no words. */
+const generateLabel = computed(() =>
+  isGenerating.value ? 'Generating…' : hasSelection.value ? 'Rewrite' : 'Generate'
+)
 let generation: AbortController | null = null
 
 /**
@@ -786,30 +791,70 @@ onUnmounted(() => {
         </div>
 
         <div class="actions">
-          <button @click="toggleReadMode" :disabled="!currentFile">
-            {{ readMode ? 'Edit' : 'Read' }}
-          </button>
-          <button @click="save" :disabled="!currentFile">Save</button>
-          <button v-if="isGenerating" @click="handleStopGenerating">Stop</button>
           <button
+            class="icon-only"
+            @click="toggleReadMode"
+            :disabled="!currentFile"
+            :title="readMode ? 'Edit' : 'Read'"
+            :aria-label="readMode ? 'Edit' : 'Read'"
+          >
+            <Icon :name="readMode ? 'pencil' : 'book'" />
+          </button>
+          <button
+            class="icon-only"
+            @click="save"
+            :disabled="!currentFile"
+            title="Save"
+            aria-label="Save"
+          >
+            <Icon name="save" />
+          </button>
+          <button
+            v-if="isGenerating"
+            class="icon-only"
+            @click="handleStopGenerating"
+            title="Stop"
+            aria-label="Stop"
+          >
+            <Icon name="stop" />
+          </button>
+          <button
+            class="icon-only"
             @click="handleDiscard"
             :disabled="!currentFile || isGenerating || !genRunAtCaret"
             title="Delete the generated text at the caret. Ctrl+Z puts it back."
+            aria-label="Discard"
           >
-            Discard
+            <Icon name="trash" />
           </button>
           <button
+            class="icon-only"
             @click="handleReroll"
             :disabled="!currentFile || isGenerating || !genRunAtCaret"
             title="Put the caret in text a model wrote"
+            aria-label="Reroll"
           >
-            Reroll
+            <Icon name="reroll" />
           </button>
-          <button class="primary" @click="handleGenerate" :disabled="!currentFile || isGenerating" :class="{ generating: isGenerating }">
-            {{ isGenerating ? 'Generating…' : hasSelection ? 'Rewrite' : 'Generate' }}
+          <button
+            class="primary icon-only"
+            @click="handleGenerate"
+            :disabled="!currentFile || isGenerating"
+            :class="{ generating: isGenerating, rewrite: hasSelection && !isGenerating }"
+            :title="generateLabel"
+            :aria-label="generateLabel"
+          >
+            <Icon name="sparkles" />
           </button>
-          <button @click="settingsOpen = !settingsOpen" :class="{ active: settingsOpen }">
-            Settings
+          <button
+            class="icon-only"
+            @click="settingsOpen = !settingsOpen"
+            :class="{ active: settingsOpen }"
+            :aria-pressed="settingsOpen"
+            title="Settings"
+            aria-label="Settings"
+          >
+            <Icon name="gear" />
           </button>
         </div>
       </div>
@@ -926,7 +971,8 @@ onUnmounted(() => {
 .actions {
   display: flex;
   justify-content: center;
-  gap: 2rem;
+  align-items: center;
+  gap: 1rem;
   margin-top: 1.25rem;
 }
 
@@ -960,6 +1006,32 @@ button.primary {
   background-color: var(--color-primary);
   color: white;
   border: none;
+}
+
+/* A selection is live, so the button will replace it rather than add to it: outlined, not
+   filled, in place of the word "Rewrite" it no longer carries. */
+button.primary.rewrite {
+  background-color: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+button.primary.rewrite:hover:not(:disabled) {
+  background-color: var(--color-primary-soft);
+}
+
+/* The row's secondary buttons show an icon, named by their `aria-label`, so they are narrower
+   than a button with a word on it. */
+button.icon-only {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+button.primary.icon-only {
+  padding: 10px 22px;
 }
 
 button.primary:hover:not(:disabled) {
