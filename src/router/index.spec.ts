@@ -1,3 +1,6 @@
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { router } from './index'
 
@@ -73,5 +76,38 @@ describe('the routes', () => {
 
     await router.push(`/story/${DIR}/timeline`)
     expect(router.currentRoute.value.name).toBe('timeline')
+  })
+})
+
+describe('docs/routes.md', () => {
+  // Vitest runs from the project root (vitest.config.ts sets `root`).
+  const doc = readFileSync(resolve(process.cwd(), 'docs/routes.md'), 'utf8')
+
+  /** A route's path as the document writes it: without the pattern that restricts a parameter. */
+  const written = (path: string) => path.replace(/\((?:[^()]|\([^()]*\))*\)/g, '')
+
+  const documentedPaths = [...doc.matchAll(/^\| `(\/[^`]*)` \|/gm)].map((m) => m[1]!)
+
+  it('has a row for every route', () => {
+    for (const route of router.getRoutes()) {
+      expect(documentedPaths, `${route.path} is missing from the table`).toContain(
+        written(route.path)
+      )
+    }
+  })
+
+  it('has no row for a route that does not exist', () => {
+    const paths = router.getRoutes().map((route) => written(route.path))
+    for (const documented of documentedPaths) {
+      expect(paths, `${documented} is in the table but is not a route`).toContain(documented)
+    }
+  })
+
+  it('gives the name of each named route', () => {
+    for (const route of router.getRoutes()) {
+      if (typeof route.name === 'string') {
+        expect(doc).toContain(`| \`${route.name}\` |`)
+      }
+    }
   })
 })
