@@ -712,6 +712,63 @@ describe('Tree.vue', () => {
         })
     })
 
+    describe('the homepage', () => {
+        it('goes to the homepage from the INKSPIRE title and clears the selection', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
+            useSharedFiles().setSelectedFile('notes', 'f1f1f1f1f1f1f1f1')
+            const wrapper = mountTree()
+            await flushPromises()
+
+            await wrapper.find('.title-bar .title').trigger('click')
+
+            expect(mockPush).toHaveBeenCalledWith({ name: 'home' })
+            expect(useSharedFiles().selectedFile.value).toBeNull()
+        })
+
+        it('tells the homepage when a file is created, in either space', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({ dirs: [], files: [] })
+            vi.mocked(filesManagerService.addFile).mockResolvedValue({
+                id: 'note-1', name: 'a-note.txt', dir: null,
+            })
+            const heard = vi.fn()
+            window.addEventListener('tree:changed', heard)
+            const wrapper = mountTree()
+            await flushPromises()
+            await openTab(wrapper, 'Notes')
+
+            await rootMenuItem(wrapper, 'New File')?.trigger('click')
+            const modal = wrapper.findComponent(Modal)
+            await modal.find('input').setValue('a-note.txt')
+            await modal.vm.$emit('confirm')
+            await flushPromises()
+            window.removeEventListener('tree:changed', heard)
+
+            expect(heard).toHaveBeenCalledTimes(1)
+        })
+
+        it('tells the homepage when a file is deleted', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [],
+                files: [{ id: 'loose-1', name: 'Loose', status: '' }]
+            })
+            vi.mocked(filesManagerService.delFile).mockResolvedValue(null)
+            const heard = vi.fn()
+            window.addEventListener('tree:changed', heard)
+            const wrapper = mountTree()
+            await flushPromises()
+            const file = wrapper.findAllComponents(TreeItem).find(item => item.props('node').name === 'Loose')
+            await file?.find('.node-actions-trigger').trigger('click')
+            await file?.findAll('.context-menu div').find(d => d.text() === 'Delete')?.trigger('click')
+
+            const confirmModal = wrapper.findAllComponents(Modal).find(m => m.props('title') === 'Confirm Action')
+            await confirmModal?.vm.$emit('confirm')
+            await flushPromises()
+            window.removeEventListener('tree:changed', heard)
+
+            expect(heard).toHaveBeenCalledTimes(1)
+        })
+    })
+
     describe('renaming a file', () => {
         /** Opens the rename dialog on the one file in the notes tree. */
         async function openRenameOn(wrapper: ReturnType<typeof mountTree>) {

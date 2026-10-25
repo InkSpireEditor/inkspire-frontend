@@ -15,7 +15,7 @@ under `notes`.
 
 | Path | Name | Renders | Shows |
 |---|---|---|---|
-| `/` | `home` | `Text.vue` | The editor with nothing selected, until the homepage replaces it (frontend#46) |
+| `/` | `home` | `HomeView.vue` | The homepage |
 | `/:space/:id` | `dashboard` | `DashboardView.vue` | A story's page, or a notes folder's page |
 | `/:space/:id/write/:fileId` | `write` | `EditorRoute.vue` | A chapter, or a note in a folder |
 | `/:space/write/:fileId` | `write-root` | `EditorRoute.vue` | A one-shot, or a note at the notes root |
@@ -29,6 +29,8 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
 
 ## What each page reads from the URL
 
+- `HomeView.vue` reads nothing from the URL. It fetches both `tree` responses and shows how many
+  stories, chapters, one-shots, notes folders and notes there are.
 - `DashboardView.vue` reads `space` and `id`. It fetches `GET /api/<space>/dir/{id}` and draws the
   name, the synopsis or context (called a synopsis in `stories`, a context in `notes`), and the
   files with a word count each. It edits that text, and deletes the directory. A story also has
@@ -54,6 +56,8 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
   directory's page and one outside any goes to `/`.
 - **Deleting a directory.** It is deleted from its own page, which then goes to `/`. The sidebar's
   menu offers no Delete on a directory.
+- **Home.** The "INKSPIRE" title at the top of the sidebar goes to `/` and clears the selection, and
+  so does logging in.
 - **Back to a story.** The reading, timeline and lorebook views link back to the story's page
   (`BackLink.vue`).
 
@@ -64,10 +68,12 @@ change it. A change made in one is announced to the other with the `stories:chan
 Its `detail` is `{storyId?, space?}`: `storyId` is the directory whose page should reload (not
 named when the change is a directory's deletion), and `space` says which tree the sidebar fetches
 again. `space` defaults to `stories`. The name is the one the event had before the notes had pages.
+The homepage listens to `tree:changed` instead, which carries nothing and is sent after any create,
+rename or delete in either root, since a count can change without any directory page being open.
 
 ## The selection is not the route
 
 The shared selection decides which file the editor shows. `write` and `write-root` set it from the
-URL, and nothing else needs to: opening a file always goes through one of them. `/` keeps whatever
-was selected before it, which is why deleting an open file clears the selection as well as moving
-the route.
+URL, and nothing else needs to: opening a file always goes through one of them. Leaving a file for
+`/` does not clear it by itself, so the places that move off a file (the "INKSPIRE" title, deleting
+the open file) clear the selection too.

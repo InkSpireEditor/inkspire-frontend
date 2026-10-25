@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { isLoggedIn } from './services/api'
 import Login from './components/Login.vue'
 import Tree from './components/Tree.vue'
 import Icon from './components/Icon.vue'
 
+const router = useRouter()
 const isAuthenticated = ref(false)
 const isSidebarOpen = ref(true)
 
@@ -43,6 +45,7 @@ onUnmounted(() => {
 
 const handleLoginSuccess = () => {
   isAuthenticated.value = true
+  router.push({ name: 'home' }).catch(() => {})
 }
 </script>
 

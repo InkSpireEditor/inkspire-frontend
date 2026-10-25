@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Text from '../components/Text.vue'
+import HomeView from '../views/HomeView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import EditorRoute from '../views/EditorRoute.vue'
 import ReadingView from '../views/ReadingView.vue'
@@ -23,7 +23,7 @@ const SPACE = 'stories|notes'
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'home', component: Text },
+    { path: '/', name: 'home', component: HomeView },
     { path: `/:space(${SPACE})/:id(${ID})`, name: 'dashboard', component: DashboardView },
     {
       path: `/:space(${SPACE})/:id(${ID})/write/:fileId(${ID})`,

@@ -45,6 +45,15 @@ const notifyDashboard = (storyId: string | null | undefined, space: Space) => {
     }
 }
 
+/**
+ * Tells the homepage, if it is open, that something in either tree was created, renamed or
+ * deleted, so its counts follow. Unlike `notifyDashboard` it carries no id and fires for
+ * every change, in either space.
+ */
+const notifyHome = () => {
+    window.dispatchEvent(new Event('tree:changed'))
+}
+
 /** Which tab was open last time, so a reload comes back where it was left. */
 const ACTIVE_SPACE_KEY = 'activeSpace'
 
@@ -380,6 +389,7 @@ const submitModal = async () => {
         
         showModal.value = false
         fetchTree(space, { silent: true }) // Refresh tree without folding it
+        notifyHome()
         if (space === 'stories') refreshGitStatusQuietly()
         const storyId =
             modalType.value === 'create-file'
@@ -426,6 +436,7 @@ const confirmDelete = async () => {
         await filesManagerService.delFile(space, deletedNode.id)
         showConfirm.value = false
         fetchTree(space, { silent: true })
+        notifyHome()
         if (space === 'stories') refreshGitStatusQuietly()
         notifyDashboard(deletedNode.parentId, space)
     } catch (e) {
@@ -433,6 +444,12 @@ const confirmDelete = async () => {
         showError.value = true
         console.error(e)
     }
+}
+
+/** The "INKSPIRE" title: back to the homepage, with no file selected in the tree. */
+const goHome = () => {
+    clearSelectedFile()
+    router.push({ name: 'home' }).catch(() => {})
 }
 
 /**
@@ -476,7 +493,7 @@ onUnmounted(() => {
 <template>
   <div class="file-system-container">
     <div class="title-bar">
-      <span>INKSPIRE</span>
+      <a class="title" href="/" @click.prevent="goHome">INKSPIRE</a>
       <div class="actions">
         <button class="icon-btn" @click="toggleTheme" title="Toggle Theme" aria-label="Toggle Theme">
           <Icon :name="isDarkMode() ? 'sun' : 'moon'" />
@@ -648,12 +665,19 @@ onUnmounted(() => {
   position: relative;
 }
 
-.title-bar span {
+.title-bar .title {
   color: var(--color-text);
   font-weight: var(--font-weight-bold);
+  text-decoration: none;
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
+  border-radius: var(--radius-sm);
+}
+
+.title-bar .title:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .actions {
