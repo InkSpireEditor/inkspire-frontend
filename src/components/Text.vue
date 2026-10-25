@@ -891,7 +891,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  color: var(--color-heading);
+  color: var(--color-text);
 }
 
 .file-title {

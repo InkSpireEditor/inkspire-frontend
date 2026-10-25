@@ -188,7 +188,7 @@ const onNumCtxInput = (raw: string) => {
 }
 
 .field-label output {
-  color: var(--color-heading);
+  color: var(--color-text);
   font-weight: var(--font-weight-medium);
 }
 

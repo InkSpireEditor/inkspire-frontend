@@ -6,8 +6,7 @@ Every colour the interface uses, as a swatch, with what reads it. The tokens are
 so edit both together.
 
 "Used by" lists the files that read the token with `var(...)`. It does not list the other
-tokens in `base.css` that read it: `--focus-ring` reads `--color-primary-soft`, and in dark
-theme `--selected-border` reads `--color-primary`.
+tokens in `base.css` that read it: `--focus-ring` reads `--color-primary-soft`.
 
 ## Base colours
 
@@ -23,10 +22,10 @@ Named by hue and step. Components do not read these; the semantic tokens below d
 | `--ink-c-black-panel` | ![](colors/ink-c-black-panel.svg) | `#1a1a1a` | `--color-panel` |
 | `--ink-c-black-soft` | ![](colors/ink-c-black-soft.svg) | `#1e1e1e` | `--color-background-soft` |
 | `--ink-c-black-mute` | ![](colors/ink-c-black-mute.svg) | `#2a2a2a` | `--color-background-mute`, `--color-divider` |
-| `--ink-c-grey-dark` | ![](colors/ink-c-grey-dark.svg) | `#212121` | `--color-heading`, `--color-text` |
-| `--ink-c-grey-light` | ![](colors/ink-c-grey-light.svg) | `#e0e0e0` | `--color-heading`, `--color-text` |
-| `--ink-c-grey-medium` | ![](colors/ink-c-grey-medium.svg) | `#bdbdbd` | `--color-border-hover`, `--icon-color` |
-| `--ink-c-blue` | ![](colors/ink-c-blue.svg) | `#2196f3` | `--color-primary`, `--color-primary-hover`, `--selected-border` |
+| `--ink-c-grey-dark` | ![](colors/ink-c-grey-dark.svg) | `#212121` | `--color-text` |
+| `--ink-c-grey-light` | ![](colors/ink-c-grey-light.svg) | `#e0e0e0` | `--color-text` |
+| `--ink-c-grey-medium` | ![](colors/ink-c-grey-medium.svg) | `#bdbdbd` | `--color-border-hover` |
+| `--ink-c-blue` | ![](colors/ink-c-blue.svg) | `#2196f3` | `--color-primary`, `--color-primary-hover` |
 | `--ink-c-blue-dark` | ![](colors/ink-c-blue-dark.svg) | `#1976d2` | `--color-primary-hover` |
 | `--ink-c-blue-light` | ![](colors/ink-c-blue-light.svg) | `#1186e3` | `--color-primary` |
 | `--ink-c-red` | ![](colors/ink-c-red.svg) | `#f44336` | `--color-danger` |
@@ -46,14 +45,11 @@ What components read. Each one is a base colour or a literal value, per theme.
 | `--color-border` | ![](colors/color-border-light.svg) `#e0e0e0` | ![](colors/color-border-dark.svg) `#424242` | DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
 | `--color-border-hover` | ![](colors/color-border-hover-light.svg) `#bdbdbd` | ![](colors/color-border-hover-dark.svg) `#555555` | GenerationSettings.vue, ModelSelector.vue, Text.vue, Tree.vue |
 | `--color-divider` | ![](colors/color-divider-light.svg) `#e0e0e0` | ![](colors/color-divider-dark.svg) `#2a2a2a` | App.vue, ModelSelector.vue, SidePanel.vue, Tree.vue |
-| `--color-heading` | ![](colors/color-heading-light.svg) `#212121` | ![](colors/color-heading-dark.svg) `#e0e0e0` | DashboardView.vue, GenerationSettings.vue, GitPanel.vue, Login.vue, LoreView.vue, Modal.vue, ReadingView.vue, RenderedProse.vue, SidePanel.vue, Text.vue, TimelineView.vue, Tree.vue |
 | `--color-text` | ![](colors/color-text-light.svg) `#212121` | ![](colors/color-text-dark.svg) `#e0e0e0` | App.vue, BackLink.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, Login.vue, LoreView.vue, MarkdownEditor.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, RenderedProse.vue, SidePanel.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
 | `--color-primary` | ![](colors/color-primary-light.svg) `#2196f3` | ![](colors/color-primary-dark.svg) `#1186e3` | DashboardView.vue, Login.vue, Modal.vue, ModelSelector.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue, main.css |
 | `--color-primary-hover` | ![](colors/color-primary-hover-light.svg) `#1976d2` | ![](colors/color-primary-hover-dark.svg) `#2196f3` | Login.vue, Modal.vue, Text.vue |
 | `--color-primary-soft` | ![](colors/color-primary-soft-light.svg) `rgba(33, 150, 243, 0.1)` | ![](colors/color-primary-soft-dark.svg) `rgba(17, 134, 227, 0.2)` | Text.vue, TreeItem.vue, main.css |
 | `--color-danger` | ![](colors/color-danger-light.svg) `#f44336` | ![](colors/color-danger-dark.svg) `#f44336` | DashboardView.vue, GenerationSettings.vue, GitPanel.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, TimelineView.vue |
-| `--selected-border` | ![](colors/selected-border-light.svg) `#2196f3` | ![](colors/selected-border-dark.svg) `#1186e3` | *nothing* |
-| `--icon-color` | ![](colors/icon-color-light.svg) `#555` | ![](colors/icon-color-dark.svg) `#bdbdbd` | *nothing* |
 
 ## Colours outside `base.css`
 
@@ -84,7 +80,6 @@ Not colours of their own, so no swatch.
 
 | Token | Read by |
 |---|---|
-| `--shadow-normal` | *nothing* |
 | `--shadow-strong` | Modal.vue, TreeItem.vue (context menu), Tree.vue (root menu) |
 | `--shadow-card` | Login.vue |
 | `--focus-ring` | 11 uses across components; it is `0 0 0 3px var(--color-primary-soft)` |
@@ -93,11 +88,9 @@ Not colours of their own, so no swatch.
 
 Listed so the next passes remove them.
 
-- **Unused:** `--icon-color`, `--selected-border`, `--shadow-normal`. Nothing in `src/` reads
-  them. Deleting them is frontend#38.
 - **Same value, two names:** `--ink-c-grey-light` and `--ink-c-divider-light` are both
-  `#e0e0e0`. `--color-heading` and `--color-text` resolve to the same colour in both themes.
+  `#e0e0e0`.
 - **Literal values inside the semantic block** instead of a base colour:
-  `--color-border-hover` in dark theme (`#555555`), `--icon-color` in light theme (`#555`).
+  `--color-border-hover` in dark theme (`#555555`).
 - **The dark theme was tuned separately from the light one:** the semantic tokens above do not
   step by the same amount between themes. This is no longer a goal (frontend#38).

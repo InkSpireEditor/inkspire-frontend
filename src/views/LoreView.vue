@@ -514,7 +514,7 @@ watch(
 }
 
 h1 {
-  color: var(--color-heading);
+  color: var(--color-text);
   font-weight: var(--font-weight-bold);
   margin: 0;
 }
@@ -649,7 +649,7 @@ h1 {
 
 .entity-name {
   margin: 0;
-  color: var(--color-heading);
+  color: var(--color-text);
   font-weight: var(--font-weight-bold);
 }
 
@@ -686,7 +686,7 @@ h1 {
 h4 {
   margin: var(--space-3) 0 var(--space-1) 0;
   font-size: 0.9rem;
-  color: var(--color-heading);
+  color: var(--color-text);
 }
 
 .entity-prose {

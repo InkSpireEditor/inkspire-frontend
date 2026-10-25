@@ -397,7 +397,7 @@ const eventBoxes = computed<EventBox[]>(() =>
 }
 
 h1 {
-  color: var(--color-heading);
+  color: var(--color-text);
   font-weight: var(--font-weight-bold);
 }
 
@@ -545,7 +545,7 @@ h1 {
 }
 
 .event-description {
-  fill: var(--color-heading);
+  fill: var(--color-text);
   font-size: 13px;
   text-anchor: middle;
 }
@@ -568,7 +568,7 @@ h1 {
 }
 
 .arc-label {
-  fill: var(--color-heading);
+  fill: var(--color-text);
   font-size: 11px;
   font-weight: var(--font-weight-bold);
   text-anchor: middle;

@@ -162,7 +162,7 @@ h3 {
   margin-top: 0;
   margin-bottom: 0.5rem;
   font-size: 1.1rem;
-  color: var(--color-heading);
+  color: var(--color-text);
   font-weight: var(--font-weight-bold);
 }
 

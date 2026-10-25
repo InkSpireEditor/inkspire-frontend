@@ -41,7 +41,7 @@ const html = computed(() => renderMarkdown(props.text))
 .prose :deep(h4),
 .prose :deep(h5),
 .prose :deep(h6) {
-  color: var(--color-heading);
+  color: var(--color-text);
   font-weight: var(--font-weight-bold);
   margin: var(--space-6) 0 var(--space-3) 0;
 }

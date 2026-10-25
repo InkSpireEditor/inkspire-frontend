@@ -58,7 +58,7 @@ defineEmits<{ close: [] }>()
 .side-panel-header h2 {
   margin: 0;
   font-size: 1rem;
-  color: var(--color-heading);
+  color: var(--color-text);
   font-weight: var(--font-weight-bold);
 }
 

@@ -665,7 +665,7 @@ onUnmounted(() => {
 }
 
 .title-bar span {
-  color: var(--color-heading);
+  color: var(--color-text);
   font-weight: var(--font-weight-bold);
   position: absolute;
   left: 50%;
