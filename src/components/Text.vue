@@ -11,6 +11,7 @@ import {
 import { llmService } from '../services/llm'
 import { cursorFromOffset, rangeFromOffsets, type Cursor, type CursorRange } from '../services/cursor'
 import RenderedProse from './RenderedProse.vue'
+import Icon from './Icon.vue'
 import { useRename } from '../services/rename'
 import { useSharedFeatures } from '../services/sharedFeatures'
 import { useSharedFiles, type FileSelection } from '../services/sharedFiles'
@@ -765,7 +766,7 @@ onUnmounted(() => {
         title="Propose a title"
         aria-label="Propose a title"
       >
-        🎲
+        <Icon name="dice" />
       </button>
     </div>
 

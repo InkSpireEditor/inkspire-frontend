@@ -5,12 +5,14 @@
  * The sidebar can get there by clicking the story again, but a reader looking at
  * the timeline or the lorebook is looking at the centre panel, not the tree.
  */
+import Icon from './Icon.vue'
+
 defineProps<{ storyId: string }>()
 </script>
 
 <template>
   <router-link :to="{ name: 'dashboard', params: { id: storyId } }" class="back-link">
-    ← Back to the dashboard
+    <Icon name="arrow-left" /> Back to the dashboard
   </router-link>
 </template>
 

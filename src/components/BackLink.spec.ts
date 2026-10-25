@@ -25,6 +25,13 @@ describe('BackLink.vue', () => {
     expect(wrapper.find('a').attributes('href')).toBe('/story/a1b2c3d4e5f60718')
   })
 
+  it('draws its arrow as an icon, with the words beside it', async () => {
+    const { wrapper } = await mounted('a1b2c3d4e5f60718')
+
+    expect(wrapper.find('svg').attributes('data-icon')).toBe('arrow-left')
+    expect(wrapper.text()).toBe('Back to the dashboard')
+  })
+
   it('navigates to the dashboard when clicked', async () => {
     const { wrapper, router } = await mounted('a1b2c3d4e5f60718')
 

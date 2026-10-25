@@ -6,6 +6,8 @@ import { useSharedFiles } from '../services/sharedFiles'
 import { DIR_ICONS, type Space } from '../services/spaces'
 // Explicitly import TreeItem for recursion, though often handled by filename
 import TreeItem from './TreeItem.vue'
+import Icon from './Icon.vue'
+import type { IconName } from '../icons'
 
 // Props define the inputs this component accepts from its parent.
 const props = defineProps<{
@@ -57,8 +59,8 @@ const isStoryDirectory = computed(() => isFolder.value && context.space?.value =
  * A directory reads differently in each space: a story is a book, and a directory in
  * the other root is a folder. Files look the same in both, because they are.
  */
-const icon = computed(() => {
-  if (!isFolder.value) return '📄'
+const icon = computed<IconName>(() => {
+  if (!isFolder.value) return 'page'
   return DIR_ICONS[context.space?.value ?? 'stories']
 })
 
@@ -148,14 +150,16 @@ const closeMenu = () => {
         class="toggle-icon"
         :class="{ open: isOpen }"
         @click.stop="toggle"
-      ></span>
+      >
+        <Icon name="triangle" />
+      </span>
       <span v-else class="spacer"></span>
-      
-      <span class="icon">{{ icon }}</span>
+
+      <Icon :name="icon" class="icon" />
       <span class="node-name">{{ node.name }}</span>
       
-      <div class="node-actions-trigger" @click.stop="showMenu = !showMenu">
-        ⋮
+      <div class="node-actions-trigger" title="Actions" @click.stop="showMenu = !showMenu">
+        <Icon name="more" />
         <!-- Apply v-click-outside only when menu is shown -->
         <div v-if="showMenu" class="context-menu" v-click-outside="closeMenu">
             <!-- Directory Actions -->
@@ -222,32 +226,29 @@ li {
 }
 
 /*
- * Drawn with a border rather than the text characters ▶/▼: a dingbat glyph is placed by
- * whichever font the browser substitutes, and most UI fonts do not centre it the way they
- * centre prose -- it sits closer to cap-height, visibly off the row's centre. A shape drawn
- * here is centred by its own box, not by font metrics, so this cannot drift with the font.
- * One triangle rotated between the two states, rather than two different glyphs, is also
- * what keeps the open and closed arrow the same size and the same optical weight -- ▶ and ▼
- * are not the same shape top-to-bottom, so swapping between them visibly shifted the arrow
- * even when its box did not move.
+ * One triangle, pointing up in its own outline, rotated between the two states rather than two
+ * different glyphs swapped: that keeps the open and closed arrow the same size and the same
+ * optical weight. The icon is centred by its own box, not by font metrics, so it cannot drift
+ * with the font. A quarter turn points it right (closed), a half turn down (open).
  */
-.toggle-icon::before {
-  content: '';
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 4px 0 4px 6px;
-  border-color: transparent transparent transparent var(--color-text);
+.toggle-icon {
+  font-size: 10px;
+  color: var(--color-text);
+}
+
+.toggle-icon .icon-svg {
+  transform: rotate(90deg);
   transition: transform 0.15s ease;
 }
 
-.toggle-icon.open::before {
-  transform: rotate(90deg);
+.toggle-icon.open .icon-svg {
+  transform: rotate(180deg);
 }
 
 .icon {
   display: flex;
   align-items: center;
+  font-size: 16px;
 }
 
 .node-name {

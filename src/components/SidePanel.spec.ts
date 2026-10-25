@@ -13,6 +13,15 @@ describe('SidePanel.vue', () => {
     expect(wrapper.text()).toContain('Steady.')
   })
 
+  it('names its close button, which shows an icon rather than a character', () => {
+    const wrapper = mount(SidePanel, { props: { title: 'Entity' } })
+
+    const close = wrapper.find('button.close')
+    expect(close.attributes('aria-label')).toBe('Close')
+    expect(close.find('svg').attributes('data-icon')).toBe('close')
+    expect(close.text()).toBe('')
+  })
+
   it('emits close when the close button is clicked', async () => {
     const wrapper = mount(SidePanel, { props: { title: 'Entity' } })
 

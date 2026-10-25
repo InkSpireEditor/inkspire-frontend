@@ -1,3 +1,5 @@
+import type { IconName } from '../icons'
+
 /**
  * The two roots the API serves.
  *
@@ -15,9 +17,9 @@ export const SPACE_LABELS: Record<Space, string> = {
 }
 
 /** A directory under the stories is a story; one in the other root is a plain folder. */
-export const DIR_ICONS: Record<Space, string> = {
-  stories: '📖',
-  notes: '🗁',
+export const DIR_ICONS: Record<Space, IconName> = {
+  stories: 'book',
+  notes: 'folder',
 }
 
 /**

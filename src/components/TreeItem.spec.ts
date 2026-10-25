@@ -58,7 +58,7 @@ describe('TreeItem.vue', () => {
   it('renders a file node correctly', () => {
     const wrapper = mountTreeItem(fileNode)
     expect(wrapper.text()).toContain('test-file.txt')
-    expect(wrapper.find('.icon').text()).toBe('📄')
+    expect(wrapper.find('.icon').attributes('data-icon')).toBe('page')
     expect(wrapper.find('.toggle-icon').exists()).toBe(false)
   })
 
@@ -69,17 +69,31 @@ describe('TreeItem.vue', () => {
     expect(wrapper.find('.toggle-icon').classes()).not.toContain('open')
   })
 
+  it('draws a directory\'s disclosure arrow as one triangle icon, open or closed', async () => {
+    const wrapper = mountTreeItem(folderNode)
+    const arrow = () => wrapper.find('.toggle-icon')
+
+    expect(arrow().find('svg').attributes('data-icon')).toBe('triangle')
+    expect(arrow().classes()).not.toContain('open')
+
+    await arrow().trigger('click')
+
+    // The same icon rotated by CSS, not a second one swapped in.
+    expect(arrow().find('svg').attributes('data-icon')).toBe('triangle')
+    expect(arrow().classes()).toContain('open')
+  })
+
   it('marks a directory as a story or as a plain folder, by space', () => {
     space.value = 'stories'
-    expect(mountTreeItem(folderNode).find('.icon').text()).toBe('📖')
+    expect(mountTreeItem(folderNode).find('.icon').attributes('data-icon')).toBe('book')
 
     space.value = 'notes'
-    expect(mountTreeItem(folderNode).find('.icon').text()).toBe('🗁')
+    expect(mountTreeItem(folderNode).find('.icon').attributes('data-icon')).toBe('folder')
   })
 
   it('shows a file the same way in either space', () => {
     space.value = 'notes'
-    expect(mountTreeItem(fileNode).find('.icon').text()).toBe('📄')
+    expect(mountTreeItem(fileNode).find('.icon').attributes('data-icon')).toBe('page')
   })
 
   it('calls onSelect when a file node is clicked', async () => {

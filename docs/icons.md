@@ -40,6 +40,8 @@ codepoints.net page of each character shows as SVG. Noto Emoji is published by G
 SIL Open Font License, Version 1.1 (<https://github.com/googlefonts/noto-emoji>). The outlines
 here are re-based to their own bounding box and flipped the right way up, and are otherwise as
 published.
+The one exception is `book`: its pages have lines of text on them in the font, which turn to
+noise at the sizes the icon is used at (16 to 20px), so those are removed and the pages are blank.
 
 ## Adding an icon
 

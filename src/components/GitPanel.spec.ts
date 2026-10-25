@@ -37,6 +37,19 @@ const clickButton = async (wrapper: ReturnType<typeof mountPanel>, label: string
 }
 
 describe('GitPanel.vue', () => {
+  it('shows commits ahead and behind as arrow icons beside their counts', async () => {
+    vi.mocked(gitService.status).mockResolvedValue({ ...CLEAN, ahead: 2, behind: 3 })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const counts = wrapper.find('.ahead-behind')
+    expect(counts.findAll('svg').map((s) => s.attributes('data-icon'))).toEqual([
+      'arrow-up',
+      'arrow-down',
+    ])
+    expect(counts.text().replace(/\s+/g, '')).toBe('23')
+  })
+
   beforeEach(() => {
     document.cookie = 'auth_status=1; Path=/'
     vi.spyOn(console, 'error').mockImplementation(() => {})

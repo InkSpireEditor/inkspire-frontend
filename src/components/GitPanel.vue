@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import Modal from './Modal.vue'
+import Icon from './Icon.vue'
 import { gitService } from '../services/git'
 import { useSharedGit } from '../services/sharedGit'
 import { isLoggedIn } from '../services/api'
@@ -98,8 +99,12 @@ onMounted(async () => {
     <div v-if="gitStatus" class="git-summary">
       <span class="branch">{{ gitStatus.branch }}</span>
       <span v-if="gitStatus.upstream" class="ahead-behind">
-        <template v-if="gitStatus.ahead">↑{{ gitStatus.ahead }}</template>
-        <template v-if="gitStatus.behind">↓{{ gitStatus.behind }}</template>
+        <span v-if="gitStatus.ahead" :title="`${gitStatus.ahead} ahead of the upstream`">
+          <Icon name="arrow-up" />{{ gitStatus.ahead }}
+        </span>
+        <span v-if="gitStatus.behind" :title="`${gitStatus.behind} behind the upstream`">
+          <Icon name="arrow-down" />{{ gitStatus.behind }}
+        </span>
       </span>
       <span class="changes" :class="{ clean: committableCount === 0 }">
         {{ committableCount === 0 ? 'Nothing to commit' : `${committableCount} to commit` }}

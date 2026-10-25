@@ -335,10 +335,12 @@ describe('Tree.vue', () => {
         const wrapper = mountTree()
         const themeBtn = wrapper.find('.icon-btn[title="Toggle Theme"]')
 
-        const initialIcon = themeBtn.text()
+        const icon = () => themeBtn.find('svg').attributes('data-icon')
+        const initialIcon = icon()
         await themeBtn.trigger('click')
 
-        expect(themeBtn.text()).not.toBe(initialIcon)
+        expect(icon()).not.toBe(initialIcon)
+        expect(['sun', 'moon']).toContain(icon())
     })
 
     it('revokes the session and dispatches auth:expired on logout', async () => {

@@ -10,6 +10,8 @@
  * to fill the freed width smoothly rather than snapping the moment the panel's
  * content disappears.
  */
+import Icon from './Icon.vue'
+
 withDefaults(defineProps<{ title: string; open?: boolean }>(), { open: true })
 defineEmits<{ close: [] }>()
 </script>
@@ -18,7 +20,9 @@ defineEmits<{ close: [] }>()
   <div class="side-panel" :class="{ collapsed: !open }">
     <div class="side-panel-header">
       <h2>{{ title }}</h2>
-      <button class="close" @click="$emit('close')" aria-label="Close">×</button>
+      <button class="close" @click="$emit('close')" aria-label="Close" title="Close">
+        <Icon name="close" />
+      </button>
     </div>
     <div class="side-panel-body"><slot /></div>
   </div>

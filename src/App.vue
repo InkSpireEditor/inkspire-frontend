@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { isLoggedIn } from './services/api'
 import Login from './components/Login.vue'
 import Tree from './components/Tree.vue'
+import Icon from './components/Icon.vue'
 
 const isAuthenticated = ref(false)
 const isSidebarOpen = ref(true)
@@ -54,7 +55,7 @@ const handleLoginSuccess = () => {
       :aria-label="isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'"
       :aria-expanded="isSidebarOpen"
     >
-      {{ isSidebarOpen ? '«' : '☰' }}
+      <Icon :name="isSidebarOpen ? 'chevron-left' : 'menu'" />
     </button>
 
     <aside :class="{ collapsed: !isSidebarOpen }">

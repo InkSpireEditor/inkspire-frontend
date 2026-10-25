@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
+import Icon from './Icon.vue'
 import { filesManagerService, type FileSystemNode } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import { useTheme } from '../services/theme'
@@ -493,12 +494,19 @@ onUnmounted(() => {
     <div class="title-bar">
       <span>INKSPIRE</span>
       <div class="actions">
-        <button class="icon-btn" @click="toggleTheme" title="Toggle Theme">
-          {{ isDarkMode() ? '☀️' : '🌙' }}
-        </button> 
+        <button class="icon-btn" @click="toggleTheme" title="Toggle Theme" aria-label="Toggle Theme">
+          <Icon :name="isDarkMode() ? 'sun' : 'moon'" />
+        </button>
         <!-- Root Menu -->
         <div class="root-menu-trigger">
-            <button class="icon-btn" @click.stop="showRootMenu = !showRootMenu">⋮</button>
+            <button
+              class="icon-btn"
+              title="Menu"
+              aria-label="Menu"
+              @click.stop="showRootMenu = !showRootMenu"
+            >
+              <Icon name="more" />
+            </button>
             <div class="root-menu" v-show="showRootMenu">
                 <!-- A chapter belongs to a story, so a generic "New File" has no
                      meaning at the root of that space -- a one-shot is what a loose
@@ -571,7 +579,7 @@ onUnmounted(() => {
           :disabled="generatingTitle"
           @click="generateTitle"
         >
-          {{ generatingTitle ? 'Asking…' : '🎲 Generate' }}
+          <Icon name="dice" /> {{ generatingTitle ? 'Asking…' : 'Generate' }}
         </button>
       </div>
     </Modal>

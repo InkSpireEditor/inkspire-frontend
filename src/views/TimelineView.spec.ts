@@ -82,7 +82,7 @@ describe('TimelineView.vue', () => {
     expect(boxes[2]?.attributes('transform')).toBe('translate(420, 120)')
     expect(boxes[2]!.find('rect').attributes('width')).toBe('132')
 
-    const svg = wrapper.find('svg')
+    const svg = wrapper.find('.timeline-scroll > svg')
     expect(svg.attributes('width')).toBe('600') // (11.5 + widthStep 1) * 48
     // The arcs sit above the events, in a band of their own: the curve peaks 3 units (144px)
     // above the top row, plus 8px of padding, ahead of the events' 8.0 * 48 = 384.
@@ -172,10 +172,10 @@ describe('TimelineView.vue', () => {
 
     // The drawing is shifted down by the band, so the curve's peak (-48 + (-240 - -48) / 2 =
     // -144, as a quadratic reaches half the way to its control point) lands inside the SVG.
-    const band = Number(wrapper.find('svg > g').attributes('transform')!.match(/, ([\d.]+)\)/)![1])
+    const band = Number(wrapper.find('.timeline-scroll > svg > g').attributes('transform')!.match(/, ([\d.]+)\)/)![1])
     expect(band).toBeGreaterThan(144)
     expect(band + Number(wrapper.find('.arc-label').attributes('y'))).toBeGreaterThan(0)
-    expect(Number(wrapper.find('svg').attributes('height'))).toBe(band + 384)
+    expect(Number(wrapper.find('.timeline-scroll > svg').attributes('height'))).toBe(band + 384)
   })
 
   it('keeps the events-only height for a timeline with no arcs', async () => {
@@ -185,8 +185,8 @@ describe('TimelineView.vue', () => {
     const wrapper = mount(TimelineView, { global: { plugins: [router] } })
     await flushPromises()
 
-    expect(wrapper.find('svg').attributes('height')).toBe('384') // maxHeight 8.0 * 48
-    expect(wrapper.find('svg > g').attributes('transform')).toBe('translate(0, 0)')
+    expect(wrapper.find('.timeline-scroll > svg').attributes('height')).toBe('384') // maxHeight 8.0 * 48
+    expect(wrapper.find('.timeline-scroll > svg > g').attributes('transform')).toBe('translate(0, 0)')
   })
 
   it('lists each character in the legend with its authored colour', async () => {
@@ -334,7 +334,7 @@ describe('TimelineView.vue', () => {
       return { wrapper, router }
     }
     const size = (wrapper: ReturnType<typeof mount>) => {
-      const svg = wrapper.find('svg')
+      const svg = wrapper.find('.timeline-scroll > svg')
       return [svg.attributes('width'), svg.attributes('height'), svg.attributes('viewBox')]
     }
 
@@ -461,7 +461,7 @@ describe('TimelineView.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('No events yet.')
-    expect(wrapper.find('svg').exists()).toBe(false)
+    expect(wrapper.find('.timeline-scroll > svg').exists()).toBe(false)
   })
 
   it('shows an error when the timeline fails to load', async () => {
