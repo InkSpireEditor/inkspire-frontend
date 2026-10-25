@@ -962,8 +962,7 @@ watch(
   font-family: var(--font-mono);
   font-size: 1rem;
   line-height: 1.7;
-  color: var(--color-text);
-  opacity: 0.45;
+  color: var(--color-text-faint);
   pointer-events: none;
   user-select: none;
 }
@@ -1018,7 +1017,6 @@ watch(
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  color: var(--color-text);
-  opacity: 0.45;
+  color: var(--color-text-faint);
 }
 </style>

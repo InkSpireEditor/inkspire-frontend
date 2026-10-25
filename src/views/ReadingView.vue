@@ -84,8 +84,7 @@ h1 {
 }
 
 .empty {
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
 }
 
 /* A chapter's heading is set apart by a rule under it. The prose component itself styles every

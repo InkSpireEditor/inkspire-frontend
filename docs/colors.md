@@ -22,6 +22,8 @@ semantic tokens below do.
 | `--ink-c-grey-89` | ![](colors/ink-c-grey-89.svg) | `#e4e4e4` | `--color-background-mute` |
 | `--ink-c-grey-88` | ![](colors/ink-c-grey-88.svg) | `#e0e0e0` | `--color-border`, `--color-divider`, `--color-text` |
 | `--ink-c-grey-74` | ![](colors/ink-c-grey-74.svg) | `#bdbdbd` | `--color-border-hover` |
+| `--ink-c-grey-62` | ![](colors/ink-c-grey-62.svg) | `#9e9e9e` | `--color-text-faint`, `--color-text-muted` |
+| `--ink-c-grey-40` | ![](colors/ink-c-grey-40.svg) | `#666666` | `--color-text-faint`, `--color-text-muted` |
 | `--ink-c-grey-33` | ![](colors/ink-c-grey-33.svg) | `#555555` | `--color-border-hover` |
 | `--ink-c-grey-26` | ![](colors/ink-c-grey-26.svg) | `#424242` | `--color-border` |
 | `--ink-c-grey-16` | ![](colors/ink-c-grey-16.svg) | `#2a2a2a` | `--color-background-mute`, `--color-divider` |
@@ -52,6 +54,8 @@ What components read. Each one is a base colour or a literal value, per theme.
 | `--color-primary-hover` | ![](colors/color-primary-hover-light.svg) `#1976d2` | ![](colors/color-primary-hover-dark.svg) `#2196f3` | Login.vue, Modal.vue, Text.vue |
 | `--color-primary-soft` | ![](colors/color-primary-soft-light.svg) `rgba(33, 150, 243, 0.1)` | ![](colors/color-primary-soft-dark.svg) `rgba(17, 134, 227, 0.2)` | Text.vue, TreeItem.vue, main.css |
 | `--color-danger` | ![](colors/color-danger-light.svg) `#f44336` | ![](colors/color-danger-dark.svg) `#f44336` | DashboardView.vue, GenerationSettings.vue, GitPanel.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, TimelineView.vue |
+| `--color-text-muted` | ![](colors/color-text-muted-light.svg) `#666666` | ![](colors/color-text-muted-dark.svg) `#9e9e9e` | BackLink.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, LoreView.vue, ReadingView.vue, SidePanel.vue, TimelineView.vue |
+| `--color-text-faint` | ![](colors/color-text-faint-light.svg) `#9e9e9e` | ![](colors/color-text-faint-dark.svg) `#666666` | MarkdownEditor.vue, Text.vue |
 | `--color-text-on-fill` | ![](colors/color-text-on-fill-light.svg) `#ffffff` | ![](colors/color-text-on-fill-dark.svg) `#ffffff` | DashboardView.vue, Login.vue, Modal.vue, Text.vue |
 | `--color-backdrop` | ![](colors/color-backdrop-light.svg) `rgba(0, 0, 0, 0.5)` | ![](colors/color-backdrop-dark.svg) `rgba(0, 0, 0, 0.5)` | Modal.vue |
 
@@ -61,7 +65,6 @@ What components read. Each one is a base colour or a literal value, per theme.
 |---|---|---|
 | `components/MarkdownEditor.vue`, `::highlight(ink-gen)` | `rgba(111, 209, 139, 0.22)` | Tint behind text a model wrote |
 | `components/MarkdownEditor.vue`, `::highlight(ink-fix)` | `rgba(255, 180, 84, 0.26)` | Tint behind text the writer corrected in a model's run |
-| `views/LoreView.vue` | `#999` | Fallback for a link or node with no entry in the type/predicate palette |
 
 The provenance tints are literal on purpose: they must stay distinct from the primary and
 danger colours.

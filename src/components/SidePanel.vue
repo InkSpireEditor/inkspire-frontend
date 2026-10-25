@@ -65,16 +65,15 @@ defineEmits<{ close: [] }>()
 .close {
   background: none;
   border: none;
-  color: var(--color-text);
   font-size: 1.2rem;
   line-height: 1;
   cursor: pointer;
-  opacity: 0.7;
+  color: var(--color-text-muted);
   padding: 0 var(--space-1);
 }
 
 .close:hover {
-  opacity: 1;
+  color: var(--color-text);
 }
 
 .side-panel-body {

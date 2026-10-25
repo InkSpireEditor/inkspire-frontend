@@ -116,9 +116,11 @@ const highlighted = computed(() => {
   return matchingNodeIds(graphData.nodes, term)
 })
 
-/** The app's own background token, whichever theme is active. */
-const backgroundColor = (): string =>
-  getComputedStyle(document.body).getPropertyValue('--color-background').trim()
+/** A colour token's value in whichever theme is active: the canvas cannot read `var(...)`. */
+const tokenColor = (token: string): string =>
+  getComputedStyle(document.body).getPropertyValue(token).trim()
+
+const backgroundColor = (): string => tokenColor('--color-background')
 
 const mountGraph = () => {
   if (!container.value || !graphData) return
@@ -162,7 +164,7 @@ const mountGraph = () => {
       ctx.textBaseline = 'top'
       ctx.fillText(node.label, node.x ?? 0, (node.y ?? 0) + radius + 1)
     })
-    .linkColor((link) => colorByPred.value[link.label] ?? '#999')
+    .linkColor((link) => colorByPred.value[link.label] ?? tokenColor('--color-text-muted'))
     .linkLabel((link) => esc(link.label))
     .linkDirectionalArrowLength(3.5)
     .linkDirectionalArrowRelPos(1)
@@ -196,7 +198,7 @@ const mountGraph = () => {
  * and this node is not one of the matches.
  */
 const nodeColor = (node: PositionedNode): string => {
-  const color = colorByType.value[node.type] ?? '#999'
+  const color = colorByType.value[node.type] ?? tokenColor('--color-text-muted')
   const matches = highlighted.value
   return matches && !matches.has(node.id) ? faded(color) : color
 }
@@ -527,13 +529,11 @@ h1 {
 }
 
 .empty {
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
 }
 
 .counts {
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   margin: 0;
 }
@@ -631,7 +631,7 @@ h1 {
 
 .legend-count {
   font-variant-numeric: tabular-nums;
-  opacity: 0.7;
+  color: var(--color-text-muted);
 }
 
 .graph-canvas {
@@ -653,8 +653,7 @@ h1 {
 
 .entity-types {
   margin: 0 0 var(--space-3) 0;
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
 
@@ -663,8 +662,7 @@ h1 {
 }
 
 .entity-fields dt {
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
   font-size: 0.75rem;
   text-transform: uppercase;
   margin-top: var(--space-2);
@@ -676,8 +674,7 @@ h1 {
 }
 
 .entity-aka {
-  color: var(--color-text);
-  opacity: 0.8;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
 

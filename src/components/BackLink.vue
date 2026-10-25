@@ -19,15 +19,14 @@ defineProps<{ storyId: string }>()
 <style scoped>
 .back-link {
   align-self: flex-start;
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
   text-decoration: none;
   font-size: 0.85rem;
-  transition: opacity var(--transition);
+  transition: color var(--transition);
 }
 
 .back-link:hover {
-  opacity: 1;
+  color: var(--color-text);
   text-decoration: underline;
 }
 </style>

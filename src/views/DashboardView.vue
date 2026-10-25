@@ -377,13 +377,11 @@ h1 {
 .word-count,
 .status {
   font-size: 0.8rem;
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
 }
 
 .empty {
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
   padding: var(--space-2) var(--space-3);
 }
 

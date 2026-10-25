@@ -406,8 +406,7 @@ h1 {
 }
 
 .empty {
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
 }
 
 .toolbar {
@@ -447,7 +446,7 @@ h1 {
 }
 
 .zoom button:disabled {
-  opacity: 0.4;
+  opacity: var(--opacity-disabled);
   cursor: default;
 }
 
@@ -505,8 +504,7 @@ h1 {
 }
 
 .caption {
-  color: var(--color-text);
-  opacity: 0.7;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   margin: 0;
 }

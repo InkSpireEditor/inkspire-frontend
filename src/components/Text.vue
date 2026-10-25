@@ -923,8 +923,7 @@ onUnmounted(() => {
 
 .file-title.empty {
   font-weight: var(--font-weight-medium);
-  color: var(--color-text);
-  opacity: 0.45;
+  color: var(--color-text-faint);
 }
 
 /* Holds the editor and the settings panel side by side. `overflow: hidden` keeps the
@@ -964,8 +963,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 1.25rem 1.5rem;
-  color: var(--color-text);
-  opacity: 0.45;
+  color: var(--color-text-faint);
 }
 
 .actions {
@@ -1039,7 +1037,7 @@ button.primary:hover:not(:disabled) {
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 

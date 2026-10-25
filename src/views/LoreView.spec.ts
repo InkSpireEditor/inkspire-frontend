@@ -223,7 +223,10 @@ describe('LoreView.vue', () => {
 
     const linkColor = fake.config.linkColor as (link: { label: string }) => string
     expect(linkColor({ label: 'memberOf' })).toBe('hsl(0, 62%, 55%)')
-    expect(linkColor({ label: 'unknownPredicate' })).toBe('#999')
+    // base.css is not loaded here, so the muted-text token is set by hand.
+    document.body.style.setProperty('--color-text-muted', '#9e9e9e')
+    expect(linkColor({ label: 'unknownPredicate' })).toBe('#9e9e9e')
+    document.body.style.removeProperty('--color-text-muted')
   })
 
   it('escapes a link label, which force-graph inserts as innerHTML', async () => {

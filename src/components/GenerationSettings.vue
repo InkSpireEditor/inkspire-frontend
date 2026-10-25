@@ -194,7 +194,7 @@ const onNumCtxInput = (raw: string) => {
 
 .field-hint {
   font-size: 0.75rem;
-  opacity: 0.7;
+  color: var(--color-text-muted);
 }
 
 .field-checkbox {
