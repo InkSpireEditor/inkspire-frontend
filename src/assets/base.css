@@ -1,45 +1,45 @@
-/* color palette from old project */
+/* Base colours. Components never read these; the semantic tokens below do.
+   A grey or a blue is named by its lightness in percent (--ink-c-grey-88 is 88% light), so a
+   name says how light it is and a new step goes between two others without renaming them. */
 :root {
-  --ink-c-white: #ffffff;
-  --ink-c-white-soft: #f5f5f5;
-  --ink-c-white-panel: #ececec;
-  --ink-c-white-mute: #e4e4e4;
-  --ink-c-black: #121212;
-  --ink-c-black-panel: #1a1a1a;
-  --ink-c-black-soft: #1e1e1e;
-  --ink-c-black-mute: #2a2a2a;
-  
-  --ink-c-grey-dark: #212121;
-  --ink-c-grey-light: #e0e0e0;
-  --ink-c-grey-medium: #bdbdbd;
-  
-  --ink-c-blue: #2196f3;
-  --ink-c-blue-dark: #1976d2;
-  --ink-c-blue-light: #1186e3;
-  
-  --ink-c-red: #f44336;
+  --ink-c-grey-100: #ffffff;
+  --ink-c-grey-96: #f5f5f5;
+  --ink-c-grey-93: #ececec;
+  --ink-c-grey-89: #e4e4e4;
+  --ink-c-grey-88: #e0e0e0;
+  --ink-c-grey-74: #bdbdbd;
+  --ink-c-grey-33: #555555;
+  --ink-c-grey-26: #424242;
+  --ink-c-grey-16: #2a2a2a;
+  --ink-c-grey-13: #212121;
+  --ink-c-grey-12: #1e1e1e;
+  --ink-c-grey-10: #1a1a1a;
+  --ink-c-grey-7: #121212;
 
-  --ink-c-divider-light: #e0e0e0;
-  --ink-c-divider-dark: #424242;
+  --ink-c-blue-54: #2196f3;
+  --ink-c-blue-48: #1186e3;
+  --ink-c-blue-46: #1976d2;
+
+  --ink-c-red: #f44336;
 }
 
 /* semantic color variables for this project */
 :root {
-  --color-background: var(--ink-c-white-soft);
-  --color-background-soft: var(--ink-c-white);
-  --color-background-mute: var(--ink-c-white-mute);
+  --color-background: var(--ink-c-grey-96);
+  --color-background-soft: var(--ink-c-grey-100);
+  --color-background-mute: var(--ink-c-grey-89);
   /* The tree and the side panel: a plane one step off the canvas. */
-  --color-panel: var(--ink-c-white-panel);
+  --color-panel: var(--ink-c-grey-93);
 
-  --color-border: var(--ink-c-divider-light);
-  --color-border-hover: var(--ink-c-grey-medium);
+  --color-border: var(--ink-c-grey-88);
+  --color-border-hover: var(--ink-c-grey-74);
   /* The line between major regions, as opposed to --color-border on a small control. */
-  --color-divider: var(--ink-c-divider-light);
+  --color-divider: var(--ink-c-grey-88);
 
-  --color-text: var(--ink-c-grey-dark);
+  --color-text: var(--ink-c-grey-13);
 
-  --color-primary: var(--ink-c-blue);
-  --color-primary-hover: var(--ink-c-blue-dark);
+  --color-primary: var(--ink-c-blue-54);
+  --color-primary-hover: var(--ink-c-blue-46);
   --color-primary-soft: rgba(33, 150, 243, 0.1);
   --color-danger: var(--ink-c-red);
 
@@ -79,19 +79,19 @@
 }
 
 body.dark-theme {
-  --color-background: var(--ink-c-black);
-  --color-background-soft: var(--ink-c-black-soft);
-  --color-background-mute: var(--ink-c-black-mute);
-  --color-panel: var(--ink-c-black-panel);
+  --color-background: var(--ink-c-grey-7);
+  --color-background-soft: var(--ink-c-grey-12);
+  --color-background-mute: var(--ink-c-grey-16);
+  --color-panel: var(--ink-c-grey-10);
 
-  --color-border: var(--ink-c-divider-dark);
-  --color-border-hover: #555555;
-  --color-divider: var(--ink-c-black-mute);
+  --color-border: var(--ink-c-grey-26);
+  --color-border-hover: var(--ink-c-grey-33);
+  --color-divider: var(--ink-c-grey-16);
 
-  --color-text: var(--ink-c-grey-light);
+  --color-text: var(--ink-c-grey-88);
 
-  --color-primary: var(--ink-c-blue-light);
-  --color-primary-hover: var(--ink-c-blue);
+  --color-primary: var(--ink-c-blue-48);
+  --color-primary-hover: var(--ink-c-blue-54);
   --color-primary-soft: rgba(17, 134, 227, 0.2);
 
   --shadow-strong: 0 2px 4px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.6);

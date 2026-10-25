@@ -10,27 +10,29 @@ tokens in `base.css` that read it: `--focus-ring` reads `--color-primary-soft`.
 
 ## Base colours
 
-Named by hue and step. Components do not read these; the semantic tokens below do.
+Named by lightness in percent: `--ink-c-grey-88` is 88% light, `--ink-c-blue-48` is 48% light. A
+new step goes between two others without renaming them. Components do not read these; the
+semantic tokens below do.
 
 | Token | Swatch | Value | Read by |
 |---|---|---|---|
-| `--ink-c-white` | ![](colors/ink-c-white.svg) | `#ffffff` | `--color-background-soft` |
-| `--ink-c-white-soft` | ![](colors/ink-c-white-soft.svg) | `#f5f5f5` | `--color-background` |
-| `--ink-c-white-panel` | ![](colors/ink-c-white-panel.svg) | `#ececec` | `--color-panel` |
-| `--ink-c-white-mute` | ![](colors/ink-c-white-mute.svg) | `#e4e4e4` | `--color-background-mute` |
-| `--ink-c-black` | ![](colors/ink-c-black.svg) | `#121212` | `--color-background` |
-| `--ink-c-black-panel` | ![](colors/ink-c-black-panel.svg) | `#1a1a1a` | `--color-panel` |
-| `--ink-c-black-soft` | ![](colors/ink-c-black-soft.svg) | `#1e1e1e` | `--color-background-soft` |
-| `--ink-c-black-mute` | ![](colors/ink-c-black-mute.svg) | `#2a2a2a` | `--color-background-mute`, `--color-divider` |
-| `--ink-c-grey-dark` | ![](colors/ink-c-grey-dark.svg) | `#212121` | `--color-text` |
-| `--ink-c-grey-light` | ![](colors/ink-c-grey-light.svg) | `#e0e0e0` | `--color-text` |
-| `--ink-c-grey-medium` | ![](colors/ink-c-grey-medium.svg) | `#bdbdbd` | `--color-border-hover` |
-| `--ink-c-blue` | ![](colors/ink-c-blue.svg) | `#2196f3` | `--color-primary`, `--color-primary-hover` |
-| `--ink-c-blue-dark` | ![](colors/ink-c-blue-dark.svg) | `#1976d2` | `--color-primary-hover` |
-| `--ink-c-blue-light` | ![](colors/ink-c-blue-light.svg) | `#1186e3` | `--color-primary` |
+| `--ink-c-grey-100` | ![](colors/ink-c-grey-100.svg) | `#ffffff` | `--color-background-soft` |
+| `--ink-c-grey-96` | ![](colors/ink-c-grey-96.svg) | `#f5f5f5` | `--color-background` |
+| `--ink-c-grey-93` | ![](colors/ink-c-grey-93.svg) | `#ececec` | `--color-panel` |
+| `--ink-c-grey-89` | ![](colors/ink-c-grey-89.svg) | `#e4e4e4` | `--color-background-mute` |
+| `--ink-c-grey-88` | ![](colors/ink-c-grey-88.svg) | `#e0e0e0` | `--color-border`, `--color-divider`, `--color-text` |
+| `--ink-c-grey-74` | ![](colors/ink-c-grey-74.svg) | `#bdbdbd` | `--color-border-hover` |
+| `--ink-c-grey-33` | ![](colors/ink-c-grey-33.svg) | `#555555` | `--color-border-hover` |
+| `--ink-c-grey-26` | ![](colors/ink-c-grey-26.svg) | `#424242` | `--color-border` |
+| `--ink-c-grey-16` | ![](colors/ink-c-grey-16.svg) | `#2a2a2a` | `--color-background-mute`, `--color-divider` |
+| `--ink-c-grey-13` | ![](colors/ink-c-grey-13.svg) | `#212121` | `--color-text` |
+| `--ink-c-grey-12` | ![](colors/ink-c-grey-12.svg) | `#1e1e1e` | `--color-background-soft` |
+| `--ink-c-grey-10` | ![](colors/ink-c-grey-10.svg) | `#1a1a1a` | `--color-panel` |
+| `--ink-c-grey-7` | ![](colors/ink-c-grey-7.svg) | `#121212` | `--color-background` |
+| `--ink-c-blue-54` | ![](colors/ink-c-blue-54.svg) | `#2196f3` | `--color-primary`, `--color-primary-hover` |
+| `--ink-c-blue-48` | ![](colors/ink-c-blue-48.svg) | `#1186e3` | `--color-primary` |
+| `--ink-c-blue-46` | ![](colors/ink-c-blue-46.svg) | `#1976d2` | `--color-primary-hover` |
 | `--ink-c-red` | ![](colors/ink-c-red.svg) | `#f44336` | `--color-danger` |
-| `--ink-c-divider-light` | ![](colors/ink-c-divider-light.svg) | `#e0e0e0` | `--color-border`, `--color-divider` |
-| `--ink-c-divider-dark` | ![](colors/ink-c-divider-dark.svg) | `#424242` | `--color-border` |
 
 ## Semantic tokens
 
@@ -88,9 +90,5 @@ Not colours of their own, so no swatch.
 
 Listed so the next passes remove them.
 
-- **Same value, two names:** `--ink-c-grey-light` and `--ink-c-divider-light` are both
-  `#e0e0e0`.
-- **Literal values inside the semantic block** instead of a base colour:
-  `--color-border-hover` in dark theme (`#555555`).
 - **The dark theme was tuned separately from the light one:** the semantic tokens above do not
   step by the same amount between themes. This is no longer a goal (frontend#38).
