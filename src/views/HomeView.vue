@@ -15,8 +15,12 @@ import {
   type RecentFile
 } from '../services/homeStats'
 import { timeAgo } from '../services/time'
+import { todayIso } from '../services/activityGrid'
 import { countWords } from '../services/words'
+import { activityService, type ActivityDay } from '../services/activity'
+import { gitService } from '../services/git'
 import BarChart from '../components/BarChart.vue'
+import ActivityGrid from '../components/ActivityGrid.vue'
 import { loadRecent, saveRecent } from '../services/recentFiles'
 import type { RouteLocationRaw } from 'vue-router'
 
@@ -27,6 +31,18 @@ const statuses = ref<Bar[]>([])
 const storyWords = ref<Bar[]>([])
 /** Set while the prose is being fetched to count it, which takes a request per file. */
 const countingWords = ref(false)
+const activity = ref<ActivityDay[] | null>(null)
+const activityFailed = ref(false)
+/** How many changes are not committed, from the git panel's own state; null when unknown. */
+const uncommitted = ref<number | null>(null)
+
+/** What is said under the grid: that only committed work counts, and what is not yet. */
+const uncommittedLine = computed(() => {
+  const count = uncommitted.value
+  if (!count) return 'Only committed work is counted.'
+  if (count === 1) return '1 change is not committed and is not counted.'
+  return `${numbers.format(count)} changes are not committed and are not counted.`
+})
 
 /** How many bars a chart draws before the rest are folded into one. */
 const MAX_BARS = 8
@@ -62,6 +78,8 @@ const whereIs = (file: RecentFile): string =>
 
 /** The clock the "ago" times are read against, set again each time the page loads. */
 const now = ref(Date.now())
+/** The grid's today, set again each time the page loads. */
+const today = ref(todayIso())
 
 /**
  * The recorded files that are still in a tree. The others are dropped from storage as well,
@@ -113,6 +131,10 @@ const loadWords = async (stories: TreeApiResponse) => {
  */
 const load = async ({ silent = false } = {}) => {
   now.value = Date.now()
+  today.value = todayIso()
+  // Not waited on, and not after the trees: a failure here leaves the rest of the page as
+  // it is, the uncommitted note simply omitted.
+  loadUncommitted()
   if (!silent) loading.value = true
   error.value = null
   try {
@@ -131,11 +153,35 @@ const load = async ({ silent = false } = {}) => {
   }
 }
 
+/**
+ * The words written per day. Read once when the page opens and not again when the sidebar
+ * changes a tree: a commit is what changes it, and the page is not told about commits. A
+ * failure leaves the rest of the page as it is, with one line saying so.
+ */
+const loadActivity = async () => {
+  activityFailed.value = false
+  try {
+    activity.value = await activityService.get()
+  } catch {
+    activityFailed.value = true
+  }
+}
+
+const loadUncommitted = async () => {
+  try {
+    const status = await gitService.status()
+    uncommitted.value = status.changes.filter((change) => change.committable).length
+  } catch {
+    uncommitted.value = null
+  }
+}
+
 const reload = () => load({ silent: true })
 
 // Dispatched by Tree.vue after it creates, renames or deletes anything, in either space.
 onMounted(() => {
   load()
+  loadActivity()
   window.addEventListener('tree:changed', reload)
 })
 onUnmounted(() => window.removeEventListener('tree:changed', reload))
@@ -174,6 +220,12 @@ onUnmounted(() => window.removeEventListener('tree:changed', reload))
           <dt>{{ entry.label }}</dt>
         </div>
       </dl>
+
+      <template v-if="activity">
+        <ActivityGrid :days="activity" :today="today" />
+        <p class="uncommitted">{{ uncommittedLine }}</p>
+      </template>
+      <p v-else-if="activityFailed" class="uncommitted">Activity could not be loaded.</p>
 
       <BarChart
         v-if="shownStatuses.length"
@@ -269,6 +321,11 @@ h2 {
   color: var(--color-text-muted);
   font-size: 0.85rem;
   flex-shrink: 0;
+}
+
+.uncommitted {
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-5);
 }
 
 .file-list {

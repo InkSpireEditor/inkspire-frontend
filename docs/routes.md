@@ -36,6 +36,13 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
   to; a file no longer in its tree is left out and forgotten.
   Under it is "Last edited", the five files of either tree changed most recently (inkspire-api#29's
   `modified`), each a link with how long ago it changed.
+  Under the counts is the activity grid (`components/ActivityGrid.vue`): the words written per day
+  over the last 52 weeks, from `GET /api/stories/activity` (`services/activity.ts`), brighter for
+  bigger days, with a table twin behind a Table/Grid toggle. Under it, one muted line says only
+  committed work is counted and how many committable changes are not (`services/git.ts`'s status);
+  a failed activity load leaves a single "Activity could not be loaded." line and the rest of the
+  page as it is. The activity is read when the page opens, and the git status again whenever the
+  sidebar changes a tree. The grid's caption and table count only the days the grid draws.
   Under them are two bar charts (`components/BarChart.vue`, each with a table twin): how many
   chapters and one-shots have each status, and the words in each story, counted from every
   file's prose with one request per file.

@@ -43,18 +43,18 @@ What components read. Each one is a base colour or a literal value, per theme.
 | Token | Light | Dark | Used by |
 |---|---|---|---|
 | `--color-background` | ![](colors/color-background-light.svg) `#f5f5f5` | ![](colors/color-background-dark.svg) `#121212` | App.vue, Login.vue, MarkdownEditor.vue, Modal.vue, Tree.vue, TreeItem.vue |
-| `--color-background-soft` | ![](colors/color-background-soft-light.svg) `#ffffff` | ![](colors/color-background-soft-dark.svg) `#1e1e1e` | BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, Text.vue, TimelineView.vue, Tree.vue |
-| `--color-background-mute` | ![](colors/color-background-mute-light.svg) `#e4e4e4` | ![](colors/color-background-mute-dark.svg) `#2a2a2a` | App.vue, DashboardView.vue, GitPanel.vue, Modal.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
+| `--color-background-soft` | ![](colors/color-background-soft-light.svg) `#ffffff` | ![](colors/color-background-soft-dark.svg) `#1e1e1e` | ActivityGrid.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, Text.vue, TimelineView.vue, Tree.vue |
+| `--color-background-mute` | ![](colors/color-background-mute-light.svg) `#e4e4e4` | ![](colors/color-background-mute-dark.svg) `#2a2a2a` | ActivityGrid.vue, App.vue, DashboardView.vue, GitPanel.vue, Modal.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
 | `--color-panel` | ![](colors/color-panel-light.svg) `#ececec` | ![](colors/color-panel-dark.svg) `#1a1a1a` | App.vue, ModelSelector.vue, SidePanel.vue, Tree.vue |
-| `--color-border` | ![](colors/color-border-light.svg) `#e0e0e0` | ![](colors/color-border-dark.svg) `#424242` | BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
-| `--color-border-hover` | ![](colors/color-border-hover-light.svg) `#bdbdbd` | ![](colors/color-border-hover-dark.svg) `#555555` | BarChart.vue, DashboardView.vue, GenerationSettings.vue, ModelSelector.vue, Text.vue, Tree.vue |
+| `--color-border` | ![](colors/color-border-light.svg) `#e0e0e0` | ![](colors/color-border-dark.svg) `#424242` | ActivityGrid.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
+| `--color-border-hover` | ![](colors/color-border-hover-light.svg) `#bdbdbd` | ![](colors/color-border-hover-dark.svg) `#555555` | ActivityGrid.vue, BarChart.vue, DashboardView.vue, GenerationSettings.vue, ModelSelector.vue, Text.vue, Tree.vue |
 | `--color-divider` | ![](colors/color-divider-light.svg) `#e0e0e0` | ![](colors/color-divider-dark.svg) `#2a2a2a` | App.vue, ModelSelector.vue, SidePanel.vue, Tree.vue |
-| `--color-text` | ![](colors/color-text-light.svg) `#212121` | ![](colors/color-text-dark.svg) `#e0e0e0` | App.vue, BackLink.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, MarkdownEditor.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, RenderedProse.vue, SidePanel.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
-| `--color-primary` | ![](colors/color-primary-light.svg) `#2196f3` | ![](colors/color-primary-dark.svg) `#1186e3` | BarChart.vue, DashboardView.vue, HomeView.vue, Login.vue, Modal.vue, ModelSelector.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue, main.css |
+| `--color-text` | ![](colors/color-text-light.svg) `#212121` | ![](colors/color-text-dark.svg) `#e0e0e0` | ActivityGrid.vue, App.vue, BackLink.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, MarkdownEditor.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, RenderedProse.vue, SidePanel.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
+| `--color-primary` | ![](colors/color-primary-light.svg) `#2196f3` | ![](colors/color-primary-dark.svg) `#1186e3` | ActivityGrid.vue, BarChart.vue, DashboardView.vue, HomeView.vue, Login.vue, Modal.vue, ModelSelector.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue, main.css |
 | `--color-primary-hover` | ![](colors/color-primary-hover-light.svg) `#1976d2` | ![](colors/color-primary-hover-dark.svg) `#2196f3` | BarChart.vue, Login.vue, Modal.vue, Text.vue |
 | `--color-primary-soft` | ![](colors/color-primary-soft-light.svg) `rgba(33, 150, 243, 0.1)` | ![](colors/color-primary-soft-dark.svg) `rgba(17, 134, 227, 0.2)` | Text.vue, TreeItem.vue, main.css |
 | `--color-danger` | ![](colors/color-danger-light.svg) `#f44336` | ![](colors/color-danger-dark.svg) `#f44336` | DashboardView.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, TimelineView.vue |
-| `--color-text-muted` | ![](colors/color-text-muted-light.svg) `#666666` | ![](colors/color-text-muted-dark.svg) `#9e9e9e` | BackLink.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, HomeView.vue, LoreView.vue, ReadingView.vue, SidePanel.vue, TimelineView.vue |
+| `--color-text-muted` | ![](colors/color-text-muted-light.svg) `#666666` | ![](colors/color-text-muted-dark.svg) `#9e9e9e` | ActivityGrid.vue, BackLink.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, HomeView.vue, LoreView.vue, ReadingView.vue, SidePanel.vue, TimelineView.vue |
 | `--color-text-faint` | ![](colors/color-text-faint-light.svg) `#9e9e9e` | ![](colors/color-text-faint-dark.svg) `#666666` | MarkdownEditor.vue, Text.vue |
 | `--color-text-on-fill` | ![](colors/color-text-on-fill-light.svg) `#ffffff` | ![](colors/color-text-on-fill-dark.svg) `#ffffff` | DashboardView.vue, Login.vue, Modal.vue, Text.vue |
 | `--color-backdrop` | ![](colors/color-backdrop-light.svg) `rgba(0, 0, 0, 0.5)` | ![](colors/color-backdrop-dark.svg) `rgba(0, 0, 0, 0.5)` | Modal.vue |
@@ -85,6 +85,6 @@ Not colours of their own, so no swatch.
 
 | Token | Read by |
 |---|---|
-| `--shadow-strong` | Modal.vue, TreeItem.vue (context menu), Tree.vue (root menu) |
+| `--shadow-strong` | ActivityGrid.vue, BarChart.vue (their tooltips), Modal.vue, TreeItem.vue (context menu), Tree.vue (root menu) |
 | `--shadow-card` | Login.vue |
-| `--focus-ring` | 11 uses across components; it is `0 0 0 3px var(--color-primary-soft)` |
+| `--focus-ring` | 18 uses across components; it is `0 0 0 3px var(--color-primary-soft)` |

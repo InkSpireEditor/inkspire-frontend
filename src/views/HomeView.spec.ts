@@ -2,9 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import HomeView from './HomeView.vue'
 import BarChart from '../components/BarChart.vue'
+import ActivityGrid from '../components/ActivityGrid.vue'
 import { filesManagerService } from '../services/filesManager'
 import type { TreeApiResponse } from '../services/filesManager'
 import { saveRecent, loadRecent } from '../services/recentFiles'
+import { activityService, type ActivityDay } from '../services/activity'
+import { gitService, type GitStatus } from '../services/git'
 
 vi.mock('../services/filesManager', async () => {
   const actual = await vi.importActual<typeof import('../services/filesManager')>(
@@ -12,6 +15,35 @@ vi.mock('../services/filesManager', async () => {
   )
   return { ...actual, filesManagerService: { getTree: vi.fn(), getFileContent: vi.fn() } }
 })
+
+vi.mock('../services/activity', async () => {
+  const actual = await vi.importActual<typeof import('../services/activity')>('../services/activity')
+  return { ...actual, activityService: { get: vi.fn() } }
+})
+
+vi.mock('../services/git', async () => {
+  const actual = await vi.importActual<typeof import('../services/git')>('../services/git')
+  return { ...actual, gitService: { status: vi.fn() } }
+})
+
+const ACTIVITY: ActivityDay[] = [
+  { date: '2026-10-26', words: 100 },
+  { date: '2026-10-27', words: 400 },
+]
+
+const GIT_STATUS: GitStatus = {
+  branch: 'main',
+  upstream: 'origin/main',
+  ahead: 0,
+  behind: 0,
+  fetched: false,
+  clean: false,
+  changes: [
+    { path: 'stories/foo/chapters/one.ink', state: 'modified', staged: false, dir: 'x', committable: true },
+    { path: 'stories/foo/story.yaml', state: 'modified', staged: false, dir: 'x', committable: true },
+    { path: 'stories/foo/timeline.yaml', state: 'modified', staged: false, dir: 'x', committable: false }
+  ]
+}
 
 const STORIES: TreeApiResponse = {
   dirs: [
@@ -71,6 +103,10 @@ describe('HomeView.vue', () => {
     vi.mocked(filesManagerService.getTree).mockImplementation(async (space) =>
       space === 'stories' ? STORIES : NOTES
     )
+    vi.mocked(activityService.get).mockReset()
+    vi.mocked(activityService.get).mockResolvedValue(ACTIVITY)
+    vi.mocked(gitService.status).mockReset()
+    vi.mocked(gitService.status).mockResolvedValue(GIT_STATUS)
   })
 
   it('shows what is in both trees', async () => {
@@ -303,6 +339,97 @@ describe('HomeView.vue', () => {
       await flushPromises()
 
       expect(wrapper.findAllComponents(BarChart)).toHaveLength(0)
+    })
+  })
+
+  describe('the activity grid', () => {
+    it('renders the grid with the days the service answered', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.findComponent(ActivityGrid).exists()).toBe(true)
+      expect(wrapper.findComponent(ActivityGrid).props('days')).toEqual(ACTIVITY)
+      expect(wrapper.findAll('.uncommitted')).toHaveLength(1)
+    })
+
+    it('says how many changes are not committed, and that they are not counted', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.uncommitted').text()).toBe(
+        '2 changes are not committed and are not counted.'
+      )
+    })
+
+    it('says only the plain line when nothing is uncommitted', async () => {
+      vi.mocked(gitService.status).mockResolvedValue({
+        ...GIT_STATUS,
+        changes: []
+      })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.uncommitted').text()).toBe('Only committed work is counted.')
+    })
+
+    it('says so of one uncommitted change', async () => {
+      vi.mocked(gitService.status).mockResolvedValue({
+        ...GIT_STATUS,
+        changes: GIT_STATUS.changes.filter((change) => change.committable).slice(0, 1)
+      })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.uncommitted').text()).toBe(
+        '1 change is not committed and is not counted.'
+      )
+    })
+
+    it('leaves the counts and the charts in place when the activity fails', async () => {
+      vi.mocked(activityService.get).mockRejectedValue(new Error('Failed to load'))
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.uncommitted').text()).toBe('Activity could not be loaded.')
+      expect(countOf(wrapper, 'stories')).toBe('1')
+      expect(wrapper.findAllComponents(BarChart).length).toBeGreaterThan(0)
+      expect(wrapper.findComponent(ActivityGrid).exists()).toBe(false)
+    })
+
+    it('leaves the grid in place when the git status fails', async () => {
+      vi.mocked(gitService.status).mockRejectedValue(new Error('Failed'))
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.findComponent(ActivityGrid).exists()).toBe(true)
+      expect(wrapper.find('.uncommitted').text()).toBe('Only committed work is counted.')
+    })
+
+    it('asks for the activity and the git status without waiting for the trees', async () => {
+      vi.mocked(filesManagerService.getTree).mockReturnValue(new Promise(() => {}))
+      mountHome()
+      await flushPromises()
+
+      expect(activityService.get).toHaveBeenCalledTimes(1)
+      expect(gitService.status).toHaveBeenCalledTimes(1)
+    })
+
+    it('reads the git status again but not the activity when the sidebar changes a tree', async () => {
+      mountHome()
+      await flushPromises()
+
+      window.dispatchEvent(new Event('tree:changed'))
+      await flushPromises()
+
+      expect(activityService.get).toHaveBeenCalledTimes(1)
+      expect(gitService.status).toHaveBeenCalledTimes(2)
+    })
+
+    it('draws the grid against the day the page loaded', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.findComponent(ActivityGrid).props('today')).toBe('2026-10-28')
     })
   })
 })
