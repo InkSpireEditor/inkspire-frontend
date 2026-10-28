@@ -35,6 +35,49 @@ export interface RecentFile {
   dir: { id: string; name: string } | null
 }
 
+/** A file shown under "Last edited": a recently opened file, plus when it last changed. */
+export interface EditedFile extends RecentFile {
+  /** ISO 8601 UTC string, the server's own modification time (inkspire-api#29). */
+  modified: string
+}
+
+/**
+ * Every file of both trees (chapters, one-shots, notes, notes in folders) that has a
+ * `modified`, newest first (ties by name), at most `limit`. Files without one (an older
+ * server) are left out, and no directory is ever listed: "Last edited" is about files.
+ */
+export const lastEdited = (
+  stories: TreeApiResponse,
+  notes: TreeApiResponse,
+  limit = 5
+): EditedFile[] => {
+  const edited: EditedFile[] = []
+  for (const space of ['stories', 'notes'] as const) {
+    const tree = space === 'stories' ? stories : notes
+    for (const file of tree.files) {
+      if (file.modified) {
+        edited.push({ space, id: file.id, name: file.name, dir: null, modified: file.modified })
+      }
+    }
+    for (const dir of tree.dirs) {
+      for (const file of dir.files) {
+        if (file.modified) {
+          edited.push({
+            space,
+            id: file.id,
+            name: file.name,
+            dir: { id: dir.id, name: dir.name },
+            modified: file.modified
+          })
+        }
+      }
+    }
+  }
+  return edited
+    .sort((a, b) => b.modified.localeCompare(a.modified) || a.name.localeCompare(b.name))
+    .slice(0, limit)
+}
+
 /**
  * Each recorded file that is still in its tree, in the order recorded. One that is not
  * (deleted, or renamed, which changes its id) is left out.

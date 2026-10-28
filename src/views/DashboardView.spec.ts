@@ -203,6 +203,28 @@ describe('DashboardView.vue', () => {
     expect(wrapper.find('.word-count').exists()).toBe(false)
   })
 
+  it('shows how long ago each chapter changed, with the ISO time as its title', async () => {
+    vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+      id: 'a1b2c3d4e5f60718',
+      name: 'Example Story',
+      summary: '',
+      files: [
+        { id: 'c1c1c1c1c1c1c1c1', name: 'First Chapter', status: '', modified: '2020-01-01T00:00:00Z' },
+        { id: 'c2c2c2c2c2c2c2c2', name: 'Second Chapter', status: '' }
+      ]
+    })
+    const router = await routerAt('a1b2c3d4e5f60718')
+
+    const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+    await flushPromises()
+
+    const chapters = wrapper.findAll('.chapter')
+    expect(chapters[0]?.find('.modified').exists()).toBe(true)
+    expect(chapters[0]?.find('.modified').attributes('title')).toBe('2020-01-01T00:00:00Z')
+    expect(chapters[0]?.find('.modified').text()).toMatch(/years? ago/)
+    expect(chapters[1]?.find('.modified').exists()).toBe(false)
+  })
+
   it('says so when a story has no chapters yet', async () => {
     vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
       id: 'a1b2c3d4e5f60718',

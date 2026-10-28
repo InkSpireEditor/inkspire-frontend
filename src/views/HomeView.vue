@@ -4,14 +4,17 @@ import { filesManagerService, type TreeApiResponse } from '../services/filesMana
 import {
   countEntries,
   foldTail,
+  lastEdited,
   resolveRecent,
   statusBars,
   sumBars,
   wordBars,
   type Bar,
   type Counts,
+  type EditedFile,
   type RecentFile
 } from '../services/homeStats'
+import { timeAgo } from '../services/time'
 import { countWords } from '../services/words'
 import BarChart from '../components/BarChart.vue'
 import { loadRecent, saveRecent } from '../services/recentFiles'
@@ -19,6 +22,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 const counts = ref<Counts | null>(null)
 const recent = ref<RecentFile[]>([])
+const edited = ref<EditedFile[]>([])
 const statuses = ref<Bar[]>([])
 const storyWords = ref<Bar[]>([])
 /** Set while the prose is being fetched to count it, which takes a request per file. */
@@ -56,6 +60,9 @@ const routeTo = (file: RecentFile): RouteLocationRaw =>
 const whereIs = (file: RecentFile): string =>
   file.dir ? file.dir.name : file.space === 'stories' ? 'One-shot' : 'Note'
 
+/** The clock the "ago" times are read against, set again each time the page loads. */
+const now = ref(Date.now())
+
 /**
  * The recorded files that are still in a tree. The others are dropped from storage as well,
  * so a deleted or renamed file does not take up one of the places in the list.
@@ -67,6 +74,7 @@ const showRecent = (stories: TreeApiResponse, notes: TreeApiResponse) => {
     saveRecent(found.map(({ space, id }) => ({ space, id })))
   }
   recent.value = found
+  edited.value = lastEdited(stories, notes)
 }
 
 /**
@@ -104,6 +112,7 @@ const loadWords = async (stories: TreeApiResponse) => {
  * screen while a reload is under way, so a change made in the sidebar does not flash "Loading…".
  */
 const load = async ({ silent = false } = {}) => {
+  now.value = Date.now()
   if (!silent) loading.value = true
   error.value = null
   try {
@@ -138,12 +147,23 @@ onUnmounted(() => window.removeEventListener('tree:changed', reload))
     <p v-if="loading">Loading…</p>
     <p v-else-if="error" class="error">{{ error }}</p>
     <template v-else-if="counts">
-      <section v-if="recent.length" class="recent">
+      <section v-if="recent.length" class="recent file-list">
         <h2>Recently opened</h2>
         <ul>
           <li v-for="file in recent" :key="`${file.space}/${file.id}`">
             <router-link :to="routeTo(file)">{{ file.name }}</router-link>
             <span class="where">{{ whereIs(file) }}</span>
+          </li>
+        </ul>
+      </section>
+
+      <section v-if="edited.length" class="file-list">
+        <h2>Last edited</h2>
+        <ul>
+          <li v-for="file in edited" :key="`${file.space}/${file.id}`">
+            <router-link :to="routeTo(file)" :title="file.modified">{{ file.name }}</router-link>
+            <span class="where">{{ whereIs(file) }}</span>
+            <span class="modified" :title="file.modified">{{ timeAgo(file.modified, now) }}</span>
           </li>
         </ul>
       </section>
@@ -201,15 +221,11 @@ h2 {
   margin-bottom: var(--space-5);
 }
 
-.counts {
-  margin-bottom: var(--space-5);
-}
-
 .counting {
   color: var(--color-text-muted);
 }
 
-.recent ul {
+.file-list ul {
   list-style: none;
   padding: 0;
   display: flex;
@@ -217,7 +233,7 @@ h2 {
   gap: var(--space-1);
 }
 
-.recent li {
+.file-list li {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -228,17 +244,17 @@ h2 {
   border-radius: var(--radius-sm);
 }
 
-.recent a {
+.file-list a {
   color: var(--color-text);
   text-decoration: none;
   font-weight: var(--font-weight-medium);
 }
 
-.recent a:hover {
+.file-list a:hover {
   color: var(--color-primary);
 }
 
-.recent a:focus-visible {
+.file-list a:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
   border-radius: var(--radius-sm);
@@ -249,7 +265,18 @@ h2 {
   font-size: 0.85rem;
 }
 
+.modified {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.file-list {
+  margin-bottom: var(--space-5);
+}
+
 .counts {
+  margin-bottom: var(--space-5);
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: var(--space-3);

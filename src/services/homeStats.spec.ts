@@ -1,8 +1,22 @@
 import { describe, it, expect } from 'vitest'
-import { countEntries, foldTail, NO_STATUS, resolveRecent, statusBars, sumBars, wordBars } from './homeStats'
+import {
+  countEntries,
+  foldTail,
+  lastEdited,
+  NO_STATUS,
+  resolveRecent,
+  statusBars,
+  sumBars,
+  wordBars
+} from './homeStats'
 import type { DirEntry, FileEntry, TreeApiResponse } from './filesManager'
 
-const file = (id: string, status = ''): FileEntry => ({ id, name: id, status })
+const file = (id: string, status = '', modified?: string): FileEntry => ({
+  id,
+  name: id,
+  status,
+  ...(modified ? { modified } : {})
+})
 const dir = (id: string, files: FileEntry[]): DirEntry => ({ id, name: id, summary: '', files })
 const tree = (dirs: DirEntry[], files: FileEntry[] = []): TreeApiResponse => ({ dirs, files })
 
@@ -130,6 +144,73 @@ describe('wordBars', () => {
   it('counts a chapter whose prose could not be fetched as nothing', () => {
     const bars = wordBars(tree([dir('s1', [file('a'), file('missing')])]), words)
     expect(bars[0]?.value).toBe(100)
+  })
+})
+
+describe('lastEdited', () => {
+  it('lists the files of both trees, newest first', () => {
+    const stories = tree(
+      [dir('s1', [file('c1', '', '2026-10-01T09:00:00Z'), file('c2', '', '2026-10-03T09:00:00Z')])],
+      [file('o1', '', '2026-10-05T09:00:00Z')]
+    )
+    const notes = tree([dir('f1', [file('n1', '', '2026-10-02T09:00:00Z')])], [
+      file('n2', '', '2026-10-04T09:00:00Z')
+    ])
+    expect(lastEdited(stories, notes).map((one) => one.id)).toEqual([
+      'o1',
+      'n2',
+      'c2',
+      'n1',
+      'c1'
+    ])
+  })
+
+  it('carries the space, the name and the directory beside the time', () => {
+    const stories = tree([dir('s1', [file('c1', '', '2026-10-01T09:00:00Z')])])
+    const notes = tree([dir('f1', [file('n1', '', '2026-10-02T09:00:00Z')])])
+    expect(lastEdited(stories, notes)).toEqual([
+      {
+        space: 'notes',
+        id: 'n1',
+        name: 'n1',
+        dir: { id: 'f1', name: 'f1' },
+        modified: '2026-10-02T09:00:00Z'
+      },
+      {
+        space: 'stories',
+        id: 'c1',
+        name: 'c1',
+        dir: { id: 's1', name: 's1' },
+        modified: '2026-10-01T09:00:00Z'
+      }
+    ])
+  })
+
+  it('keeps at most five', () => {
+    const stories = tree(
+      [dir('s1', ['a', 'b', 'c'].map((id, i) => file(id, '', `2026-10-0${i + 1}T09:00:00Z`)))],
+      ['d', 'e', 'f', 'g'].map((id, i) => file(id, '', `2026-10-1${i}T09:00:00Z`))
+    )
+    expect(lastEdited(stories, tree([]))).toHaveLength(5)
+  })
+
+  it('breaks a tie by name', () => {
+    const stories = tree([
+      dir('s1', [file('b', '', '2026-10-01T09:00:00Z'), file('a', '', '2026-10-01T09:00:00Z')])
+    ])
+    expect(lastEdited(stories, tree([])).map((one) => one.id)).toEqual(['a', 'b'])
+  })
+
+  it('leaves out a file without a modified, and a directory is never listed', () => {
+    const stories = tree([dir('s1', [file('c1')])], [file('o1', '', '2026-10-01T09:00:00Z')])
+    const notes = tree([dir('f1', [file('n1')])], [])
+    const edited = lastEdited(stories, notes)
+    expect(edited.map((one) => one.id)).toEqual(['o1'])
+    expect(edited.map((one) => one.dir)).toEqual([null])
+  })
+
+  it('lists nothing for two trees without a modified', () => {
+    expect(lastEdited(tree([dir('s1', [file('c1')])]), tree([]))).toEqual([])
   })
 })
 

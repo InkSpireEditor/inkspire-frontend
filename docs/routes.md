@@ -34,12 +34,15 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
   in this browser, each a link to its `write` or `write-root` route. The list is kept in
   `localStorage` by `services/recentFiles.ts`, which records every file the shared selection moves
   to; a file no longer in its tree is left out and forgotten.
+  Under it is "Last edited", the five files of either tree changed most recently (inkspire-api#29's
+  `modified`), each a link with how long ago it changed.
   Under them are two bar charts (`components/BarChart.vue`, each with a table twin): how many
   chapters and one-shots have each status, and the words in each story, counted from every
   file's prose with one request per file.
 - `DashboardView.vue` reads `space` and `id`. It fetches `GET /api/<space>/dir/{id}` and draws the
   name, the synopsis or context (called a synopsis in `stories`, a context in `notes`), and the
-  files with a word count each. It edits that text, and deletes the directory. A story also has
+  files with a word count each and, where the server sends one, how long ago each changed. It edits
+  that text, and deletes the directory. A story also has
   drag-to-reorder, links to the three story views, the git panel, and a forced delete when the
   directory holds more than its chapters. A folder has none of these.
 - `EditorRoute.vue` reads `space` and `fileId` and nothing else. It sets the shared file selection

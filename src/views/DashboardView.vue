@@ -21,6 +21,7 @@ import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
 import { asSpace, type Space } from '../services/spaces'
 import { countWords } from '../services/words'
+import { timeAgo } from '../services/time'
 import Modal from '../components/Modal.vue'
 import GitPanel from '../components/GitPanel.vue'
 import Icon from '../components/Icon.vue'
@@ -33,6 +34,8 @@ const dir = ref<DirApiResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const wordCounts = ref<Record<string, number>>({})
+/** The clock every row's "ago" time is read against, set again each time the page loads. */
+const now = ref(Date.now())
 
 /** Which root the directory is in, read from the URL: it decides what the page offers. */
 const space = computed(() => asSpace(typeof route.params.space === 'string' ? route.params.space : null))
@@ -67,6 +70,7 @@ const load = async () => {
   const id = route.params.id
   if (typeof id !== 'string') return
 
+  now.value = Date.now()
   loading.value = true
   error.value = null
   wordCounts.value = {}
@@ -309,6 +313,11 @@ const confirmForceDelete = async () => {
               {{ wordCounts[file.id] }} words
             </span>
             <span v-if="file.status" class="status">{{ file.status }}</span>
+            <span
+              v-if="file.modified"
+              class="modified"
+              :title="file.modified"
+            >{{ timeAgo(file.modified, now) }}</span>
           </span>
         </li>
         <li v-if="dir.files.length === 0" class="empty">No {{ fileLabel }} yet.</li>
@@ -537,7 +546,8 @@ h1 {
 }
 
 .word-count,
-.status {
+.status,
+.modified {
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }

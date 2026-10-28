@@ -20,17 +20,24 @@ const STORIES: TreeApiResponse = {
       name: 'Foo',
       summary: '',
       files: [
-        { id: 'c1', name: 'One', status: 'draft' },
-        { id: 'c2', name: 'Two', status: '' }
+        { id: 'c1', name: 'One', status: 'draft', modified: '2026-10-01T09:00:00Z' },
+        { id: 'c2', name: 'Two', status: '', modified: '2026-10-03T09:00:00Z' }
       ]
     }
   ],
-  files: [{ id: 'o1', name: 'Solo', status: '' }]
+  files: [{ id: 'o1', name: 'Solo', status: '', modified: '2026-10-05T09:00:00Z' }]
 }
 
 const NOTES: TreeApiResponse = {
-  dirs: [{ id: 'f1', name: 'Bar', summary: '', files: [{ id: 'n1', name: 'Note', status: '' }] }],
-  files: [{ id: 'n2', name: 'Loose', status: '' }]
+  dirs: [
+    {
+      id: 'f1',
+      name: 'Bar',
+      summary: '',
+      files: [{ id: 'n1', name: 'Note', status: '', modified: '2026-10-02T09:00:00Z' }]
+    }
+  ],
+  files: [{ id: 'n2', name: 'Loose', status: '', modified: '2026-10-04T09:00:00Z' }]
 }
 
 const countOf = (wrapper: ReturnType<typeof mount>, key: string) =>
@@ -47,9 +54,14 @@ const mountHome = () => {
 describe('HomeView.vue', () => {
   afterEach(() => {
     mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+    vi.useRealTimers()
   })
 
   beforeEach(() => {
+    // Only `Date` is faked, so the relative times are the same on every day the suite runs
+    // and promises still settle on the real timers.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-28T12:00:00Z'))
     localStorage.clear()
     vi.mocked(filesManagerService.getTree).mockReset()
     vi.mocked(filesManagerService.getFileContent).mockReset()
@@ -120,7 +132,9 @@ describe('HomeView.vue', () => {
   })
 
   describe('recently opened', () => {
-    const links = (wrapper: ReturnType<typeof mount>) => wrapper.findAllComponents(RouterLinkStub)
+    /** Only the recently-opened list's links: "Last edited" renders links too. */
+    const recentLinks = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.recent li').map((item) => item.findComponent(RouterLinkStub))
 
     it('lists nothing, and no heading, when nothing was opened', async () => {
       const wrapper = mountHome()
@@ -135,7 +149,7 @@ describe('HomeView.vue', () => {
       await flushPromises()
 
       expect(wrapper.find('.recent h2').text()).toBe('Recently opened')
-      expect(links(wrapper)[0]?.props('to')).toEqual({
+      expect(recentLinks(wrapper)[0]?.props('to')).toEqual({
         name: 'write',
         params: { space: 'stories', id: 's1', fileId: 'c1' }
       })
@@ -151,7 +165,7 @@ describe('HomeView.vue', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(links(wrapper).map((link) => link.props('to'))).toEqual([
+      expect(recentLinks(wrapper).map((link) => link.props('to'))).toEqual([
         { name: 'write-root', params: { space: 'stories', fileId: 'o1' } },
         { name: 'write-root', params: { space: 'notes', fileId: 'n2' } }
       ])
@@ -169,8 +183,66 @@ describe('HomeView.vue', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(links(wrapper)).toHaveLength(1)
+      expect(recentLinks(wrapper)).toHaveLength(1)
       expect(loadRecent()).toEqual([{ space: 'stories', id: 'c1' }])
+    })
+  })
+
+  describe('last edited', () => {
+    /** Only "Last edited"'s own links, from its own list. */
+    const editedLinks = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.file-list li').map((item) => item.findComponent(RouterLinkStub))
+
+    it('lists the five most recently changed files, newest first, with how long ago', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.file-list h2').text()).toBe('Last edited')
+      const items = wrapper.findAll('.file-list li')
+      expect(items.map((item) => item.text())).toEqual([
+        'SoloOne-shot23 days ago',
+        'LooseNote24 days ago',
+        'TwoFoo25 days ago',
+        'NoteBar26 days ago',
+        'OneFoo27 days ago'
+      ])
+    })
+
+    it('links a chapter to its write route and a one-shot to the root write route', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(editedLinks(wrapper)[2]?.props('to')).toEqual({
+        name: 'write',
+        params: { space: 'stories', id: 's1', fileId: 'c2' }
+      })
+      expect(editedLinks(wrapper)[0]?.props('to')).toEqual({
+        name: 'write-root',
+        params: { space: 'stories', fileId: 'o1' }
+      })
+    })
+
+    it('sets the ISO time as the link and the ago-span title', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.file-list li a').attributes('title')).toBe('2026-10-05T09:00:00Z')
+      expect(wrapper.find('.file-list .modified').attributes('title')).toBe(
+        '2026-10-05T09:00:00Z'
+      )
+    })
+
+    it('is hidden when the server sends no modified', async () => {
+      vi.mocked(filesManagerService.getTree).mockImplementation(async (space) =>
+        space === 'stories'
+          ? { dirs: [{ id: 's1', name: 'Foo', summary: '', files: [{ id: 'c1', name: 'One', status: '' }] }], files: [] }
+          : { dirs: [], files: [] }
+      )
+      const wrapper = mountHome()
+      await flushPromises()
+
+      const sections = wrapper.findAll('.file-list h2').map((heading) => heading.text())
+      expect(sections).not.toContain('Last edited')
     })
   })
 

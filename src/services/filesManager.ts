@@ -51,6 +51,8 @@ export interface FileEntry {
     name: string;
     status: string;
     summary?: string;
+    /** ISO 8601 UTC string (inkspire-api#29); optional because an older server does not send it. */
+    modified?: string;
 }
 
 /**
@@ -63,6 +65,8 @@ export interface DirEntry {
     summary: string;
     timeline?: boolean;
     lorebook?: boolean;
+    /** ISO 8601 UTC string (inkspire-api#29); optional because an older server does not send it. */
+    modified?: string;
     files: FileEntry[];
 }
 
