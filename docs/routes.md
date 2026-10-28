@@ -29,13 +29,10 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
 
 ## What each page reads from the URL
 
-- `HomeView.vue` reads nothing from the URL. It fetches both `tree` responses and shows how many
-  stories, chapters, one-shots, notes folders and notes there are, and the last eight files opened
-  in this browser, each a link to its `write` or `write-root` route. The list is kept in
-  `localStorage` by `services/recentFiles.ts`, which records every file the shared selection moves
-  to; a file no longer in its tree is left out and forgotten.
-  Under it is "Last edited", the five files of either tree changed most recently (inkspire-api#29's
-  `modified`), each a link with how long ago it changed.
+- `HomeView.vue` reads nothing from the URL. It fetches both `tree` responses and shows "Last
+  edited", the five chapters, one-shots and notes of either tree changed most recently
+  (inkspire-api#29's `modified`), each a link to its `write` or `write-root` route with how long
+  ago it changed; and how many stories, chapters, one-shots, notes folders and notes there are.
   Under the counts is the activity grid (`components/ActivityGrid.vue`): the words written per day
   over the last 52 weeks, from `GET /api/stories/activity` (`services/activity.ts`), brighter for
   bigger days, with a table twin behind a Table/Grid toggle. Under it, one muted line says only

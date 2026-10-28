@@ -5,7 +5,6 @@ import BarChart from '../components/BarChart.vue'
 import ActivityGrid from '../components/ActivityGrid.vue'
 import { filesManagerService } from '../services/filesManager'
 import type { TreeApiResponse } from '../services/filesManager'
-import { saveRecent, loadRecent } from '../services/recentFiles'
 import { activityService, type ActivityDay } from '../services/activity'
 import { gitService, type GitStatus } from '../services/git'
 
@@ -94,7 +93,6 @@ describe('HomeView.vue', () => {
     // and promises still settle on the real timers.
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-28T12:00:00Z'))
-    localStorage.clear()
     vi.mocked(filesManagerService.getTree).mockReset()
     vi.mocked(filesManagerService.getFileContent).mockReset()
     vi.mocked(filesManagerService.getFileContent).mockImplementation(async (_space, id) =>
@@ -165,63 +163,6 @@ describe('HomeView.vue', () => {
     await flushPromises()
 
     expect(filesManagerService.getTree).not.toHaveBeenCalled()
-  })
-
-  describe('recently opened', () => {
-    /** Only the recently-opened list's links: "Last edited" renders links too. */
-    const recentLinks = (wrapper: ReturnType<typeof mount>) =>
-      wrapper.findAll('.recent li').map((item) => item.findComponent(RouterLinkStub))
-
-    it('lists nothing, and no heading, when nothing was opened', async () => {
-      const wrapper = mountHome()
-      await flushPromises()
-
-      expect(wrapper.find('.recent').exists()).toBe(false)
-    })
-
-    it('links a chapter to its write route, with its story named beside it', async () => {
-      saveRecent([{ space: 'stories', id: 'c1' }])
-      const wrapper = mountHome()
-      await flushPromises()
-
-      expect(wrapper.find('.recent h2').text()).toBe('Recently opened')
-      expect(recentLinks(wrapper)[0]?.props('to')).toEqual({
-        name: 'write',
-        params: { space: 'stories', id: 's1', fileId: 'c1' }
-      })
-      expect(wrapper.find('.recent li').text()).toContain('One')
-      expect(wrapper.find('.recent .where').text()).toBe('Foo')
-    })
-
-    it('links a one-shot and a note at the root to the root write route', async () => {
-      saveRecent([
-        { space: 'stories', id: 'o1' },
-        { space: 'notes', id: 'n2' }
-      ])
-      const wrapper = mountHome()
-      await flushPromises()
-
-      expect(recentLinks(wrapper).map((link) => link.props('to'))).toEqual([
-        { name: 'write-root', params: { space: 'stories', fileId: 'o1' } },
-        { name: 'write-root', params: { space: 'notes', fileId: 'n2' } }
-      ])
-      expect(wrapper.findAll('.recent .where').map((where) => where.text())).toEqual([
-        'One-shot',
-        'Note'
-      ])
-    })
-
-    it('drops a file that is gone from the list and from storage', async () => {
-      saveRecent([
-        { space: 'stories', id: 'gone' },
-        { space: 'stories', id: 'c1' }
-      ])
-      const wrapper = mountHome()
-      await flushPromises()
-
-      expect(recentLinks(wrapper)).toHaveLength(1)
-      expect(loadRecent()).toEqual([{ space: 'stories', id: 'c1' }])
-    })
   })
 
   describe('last edited', () => {

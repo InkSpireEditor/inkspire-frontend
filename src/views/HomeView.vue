@@ -5,14 +5,12 @@ import {
   countEntries,
   foldTail,
   lastEdited,
-  resolveRecent,
   statusBars,
   sumBars,
   wordBars,
   type Bar,
   type Counts,
-  type EditedFile,
-  type RecentFile
+  type EditedFile
 } from '../services/homeStats'
 import { timeAgo } from '../services/time'
 import { todayIso } from '../services/activityGrid'
@@ -21,11 +19,9 @@ import { activityService, type ActivityDay } from '../services/activity'
 import { gitService } from '../services/git'
 import BarChart from '../components/BarChart.vue'
 import ActivityGrid from '../components/ActivityGrid.vue'
-import { loadRecent, saveRecent } from '../services/recentFiles'
 import type { RouteLocationRaw } from 'vue-router'
 
 const counts = ref<Counts | null>(null)
-const recent = ref<RecentFile[]>([])
 const edited = ref<EditedFile[]>([])
 const statuses = ref<Bar[]>([])
 const storyWords = ref<Bar[]>([])
@@ -66,34 +62,20 @@ const entries = computed(() =>
   counts.value ? COUNT_LABELS.map(([key, label]) => ({ key, label, value: counts.value![key] })) : []
 )
 
-/** The route that opens a recent file: with its directory in the URL if it has one. */
-const routeTo = (file: RecentFile): RouteLocationRaw =>
+/** The route that opens a file: with its directory in the URL if it has one. */
+const routeTo = (file: EditedFile): RouteLocationRaw =>
   file.dir
     ? { name: 'write', params: { space: file.space, id: file.dir.id, fileId: file.id } }
     : { name: 'write-root', params: { space: file.space, fileId: file.id } }
 
-/** What is shown beside a recent file's name: where it is. */
-const whereIs = (file: RecentFile): string =>
+/** What is shown beside a file's name: where it is. */
+const whereIs = (file: EditedFile): string =>
   file.dir ? file.dir.name : file.space === 'stories' ? 'One-shot' : 'Note'
 
 /** The clock the "ago" times are read against, set again each time the page loads. */
 const now = ref(Date.now())
 /** The grid's today, set again each time the page loads. */
 const today = ref(todayIso())
-
-/**
- * The recorded files that are still in a tree. The others are dropped from storage as well,
- * so a deleted or renamed file does not take up one of the places in the list.
- */
-const showRecent = (stories: TreeApiResponse, notes: TreeApiResponse) => {
-  const recorded = loadRecent()
-  const found = resolveRecent(recorded, { stories, notes })
-  if (found.length < recorded.length) {
-    saveRecent(found.map(({ space, id }) => ({ space, id })))
-  }
-  recent.value = found
-  edited.value = lastEdited(stories, notes)
-}
 
 /**
  * Words in every file of the stories, counted from the prose, one request per file as the
@@ -143,7 +125,7 @@ const load = async ({ silent = false } = {}) => {
       filesManagerService.getTree('notes')
     ])
     counts.value = countEntries(stories, notes)
-    showRecent(stories, notes)
+    edited.value = lastEdited(stories, notes)
     statuses.value = statusBars(stories)
     loadWords(stories)
   } catch (e) {
@@ -193,16 +175,6 @@ onUnmounted(() => window.removeEventListener('tree:changed', reload))
     <p v-if="loading">Loading…</p>
     <p v-else-if="error" class="error">{{ error }}</p>
     <template v-else-if="counts">
-      <section v-if="recent.length" class="recent file-list">
-        <h2>Recently opened</h2>
-        <ul>
-          <li v-for="file in recent" :key="`${file.space}/${file.id}`">
-            <router-link :to="routeTo(file)">{{ file.name }}</router-link>
-            <span class="where">{{ whereIs(file) }}</span>
-          </li>
-        </ul>
-      </section>
-
       <section v-if="edited.length" class="file-list">
         <h2>Last edited</h2>
         <ul>
@@ -267,10 +239,6 @@ h2 {
   font-size: 1rem;
   font-weight: var(--font-weight-bold);
   margin-bottom: var(--space-2);
-}
-
-.recent {
-  margin-bottom: var(--space-5);
 }
 
 .counting {
