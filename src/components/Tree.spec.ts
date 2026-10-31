@@ -1206,4 +1206,154 @@ describe('Tree.vue', () => {
             expect(tagEditor(wrapper).props('tags')).toEqual(['other'])
         })
     })
+
+    describe('filtering by tags', () => {
+        const TREE: TreeApiResponse = {
+            dirs: [
+                {
+                    id: 'd1',
+                    name: 'DirA',
+                    summary: '',
+                    files: [
+                        { id: 'f1', name: 'Alpha', status: '', tags: ['perso', 'idea'] },
+                        { id: 'f2', name: 'Beta', status: '', tags: ['idea'] },
+                    ],
+                },
+                {
+                    id: 'd2',
+                    name: 'DirB',
+                    summary: '',
+                    files: [{ id: 'f3', name: 'Gamma', status: '' }],
+                },
+            ],
+            files: [{ id: 'f4', name: 'Solo', status: '', tags: ['perso'] }],
+        }
+
+        const names = (wrapper: ReturnType<typeof mountTree>) =>
+            wrapper.findAllComponents(TreeItem).map((item) => item.props('node').name)
+
+        const chip = (wrapper: ReturnType<typeof mountTree>, tag: string) =>
+            wrapper.findAll('.tag-chip').find((c) => c.text() === tag)!
+
+        const mountWith = async (tree: TreeApiResponse = TREE) => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue(tree)
+            const wrapper = mountTree()
+            await flushPromises()
+            return wrapper
+        }
+
+        it("offers the tags of the tab's own files, each once", async () => {
+            const wrapper = await mountWith()
+            expect(wrapper.findAll('.tag-chip').map((c) => c.text())).toEqual(['idea', 'perso'])
+        })
+
+        it('offers no filter while no file has a tag', async () => {
+            const wrapper = await mountWith({ dirs: [], files: [{ id: 'x', name: 'X', status: '' }] })
+            expect(wrapper.find('.tag-filter').exists()).toBe(false)
+        })
+
+        it('shows everything while no tag is chosen', async () => {
+            const wrapper = await mountWith()
+            expect(names(wrapper)).toEqual(['DirA', 'DirB', 'Solo'])
+        })
+
+        it('shows only the files with the chosen tag, and the directories holding one', async () => {
+            const wrapper = await mountWith()
+
+            await chip(wrapper, 'idea').trigger('click')
+
+            expect(chip(wrapper, 'idea').attributes('aria-pressed')).toBe('true')
+            expect(names(wrapper)).toEqual(['DirA', 'Alpha', 'Beta'])
+        })
+
+        it('needs every chosen tag on one file', async () => {
+            const wrapper = await mountWith()
+
+            await chip(wrapper, 'idea').trigger('click')
+            await chip(wrapper, 'perso').trigger('click')
+
+            expect(names(wrapper)).toEqual(['DirA', 'Alpha'])
+        })
+
+        it('keeps a file at the root that has the tag', async () => {
+            const wrapper = await mountWith()
+            await chip(wrapper, 'perso').trigger('click')
+            expect(names(wrapper)).toEqual(['DirA', 'Alpha', 'Solo'])
+        })
+
+        it("keeps each tab's choice to itself", async () => {
+            const wrapper = await mountWith()
+            await chip(wrapper, 'idea').trigger('click')
+
+            await openTab(wrapper, 'Notes')
+            expect(wrapper.find('.tag-clear').exists()).toBe(false)
+
+            await openTab(wrapper, 'Stories')
+            expect(chip(wrapper, 'idea').attributes('aria-pressed')).toBe('true')
+        })
+
+        it('shows everything again on a second click of the same tag', async () => {
+            const wrapper = await mountWith()
+
+            await chip(wrapper, 'idea').trigger('click')
+            await chip(wrapper, 'idea').trigger('click')
+
+            expect(names(wrapper)).toEqual(['DirA', 'DirB', 'Solo'])
+            expect(wrapper.find('.tag-clear').exists()).toBe(false)
+        })
+
+        it('shows everything again on Clear', async () => {
+            const wrapper = await mountWith()
+            await chip(wrapper, 'idea').trigger('click')
+            await chip(wrapper, 'perso').trigger('click')
+
+            await wrapper.find('.tag-clear').trigger('click')
+
+            expect(names(wrapper)).toEqual(['DirA', 'DirB', 'Solo'])
+            expect(wrapper.findAll('.tag-chip').every((c) => c.attributes('aria-pressed') === 'false')).toBe(true)
+        })
+
+        it('says so when nothing carries every chosen tag', async () => {
+            const wrapper = await mountWith({
+                dirs: [],
+                files: [
+                    { id: 'a', name: 'A', status: '', tags: ['x'] },
+                    { id: 'b', name: 'B', status: '', tags: ['y'] },
+                ],
+            })
+
+            await chip(wrapper, 'x').trigger('click')
+            await chip(wrapper, 'y').trigger('click')
+
+            expect(names(wrapper)).toEqual([])
+            expect(wrapper.find('.tree-empty').text()).toContain('No file carries all of these tags')
+        })
+
+        it('drops a chosen tag that no file has any more after the tree is read again', async () => {
+            const wrapper = await mountWith()
+            await chip(wrapper, 'perso').trigger('click')
+
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: TREE.dirs.map((d) => ({
+                    ...d,
+                    files: d.files.map((f) => ({ ...f, tags: (f.tags ?? []).filter((t) => t !== 'perso') })),
+                })),
+                files: [{ id: 'f4', name: 'Solo', status: '', tags: [] }],
+            })
+            window.dispatchEvent(new CustomEvent('stories:changed', { detail: { space: 'stories' } }))
+            await flushPromises()
+
+            expect(wrapper.find('.tag-clear').exists()).toBe(false)
+            expect(names(wrapper)).toContain('DirB')
+        })
+
+        it('opens the directories it keeps, and lets them close again afterwards', async () => {
+            const wrapper = await mountWith()
+            await chip(wrapper, 'idea').trigger('click')
+            expect(wrapper.findAll('.tree-children').length).toBe(1)
+
+            await chip(wrapper, 'idea').trigger('click')
+            expect(wrapper.findAll('.tree-children').length).toBe(0)
+        })
+    })
 })

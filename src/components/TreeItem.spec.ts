@@ -90,6 +90,43 @@ describe('TreeItem.vue', () => {
     expect(mountTreeItem(fileNode).find('.icon').attributes('data-icon')).toBe('page')
   })
 
+  describe('while a tag filter is on', () => {
+    const mountFiltering = (filtering: ReturnType<typeof ref<boolean>>) =>
+      mount(TreeItem, {
+        props: { node: folderNode, level: 0 },
+        global: { provide: { treeContext: { space, filtering, onAction: mockOnAction } } }
+      })
+
+    it('draws a directory open and shows what is in it, without being clicked', () => {
+      const wrapper = mountFiltering(ref(true))
+      expect(wrapper.find('.toggle-icon').classes()).toContain('open')
+      expect(wrapper.find('.tree-children').exists()).toBe(true)
+    })
+
+    it('draws it closed again once the filter is off', async () => {
+      const filtering = ref(true)
+      const wrapper = mountFiltering(filtering)
+      filtering.value = false
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.tree-children').exists()).toBe(false)
+    })
+
+    it('keeps a directory the writer opened open after the filter is off', async () => {
+      const filtering = ref(false)
+      const wrapper = mountFiltering(filtering)
+      await wrapper.find('.toggle-icon').trigger('click')
+      filtering.value = true
+      await wrapper.vm.$nextTick()
+      filtering.value = false
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.tree-children').exists()).toBe(true)
+    })
+
+    it('leaves a directory closed when no filter is provided at all', () => {
+      expect(mountTreeItem(folderNode).find('.tree-children').exists()).toBe(false)
+    })
+  })
+
   it('toggles folder expansion when the disclosure triangle is clicked', async () => {
     const wrapper = mountTreeItem(folderNode)
     const toggle = wrapper.find('.toggle-icon')

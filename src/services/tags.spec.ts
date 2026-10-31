@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { allTags, MAX_TAG_LENGTH, normaliseTag, withoutTag, withTag } from './tags'
-import type { TreeApiResponse } from './filesManager'
+import {
+  allTags,
+  filterNodes,
+  hasAllTags,
+  MAX_TAG_LENGTH,
+  normaliseTag,
+  tagsOfNodes,
+  withoutTag,
+  withTag
+} from './tags'
+import type { FileSystemNode, TreeApiResponse } from './filesManager'
 
 describe('normaliseTag', () => {
   it('trims and lowercases', () => {
@@ -65,5 +74,73 @@ describe('allTags', () => {
   it('lists none for trees whose files carry none, or for no tree', () => {
     expect(allTags({ dirs: [], files: [{ id: 'x', name: 'X', status: '' }] } as TreeApiResponse)).toEqual([])
     expect(allTags()).toEqual([])
+  })
+})
+
+describe('hasAllTags', () => {
+  it('needs every wanted tag', () => {
+    expect(hasAllTags(['a', 'b', 'c'], ['a', 'c'])).toBe(true)
+    expect(hasAllTags(['a', 'b'], ['a', 'c'])).toBe(false)
+  })
+
+  it('is satisfied by anything when nothing is wanted, and by nothing without tags otherwise', () => {
+    expect(hasAllTags(undefined, [])).toBe(true)
+    expect(hasAllTags(undefined, ['a'])).toBe(false)
+    expect(hasAllTags([], ['a'])).toBe(false)
+  })
+})
+
+describe('tags of a tree and filtering it', () => {
+  const file = (id: string, tags?: string[]): FileSystemNode => ({ id, name: id, type: 'F', tags })
+  const story = (id: string, children: FileSystemNode[]): FileSystemNode => ({
+    id,
+    name: id,
+    type: 'D',
+    children
+  })
+  const nodes: FileSystemNode[] = [
+    story('s1', [file('a', ['perso', 'idea']), file('b', ['idea']), file('c')]),
+    story('s2', [file('d')]),
+    story('s3', []),
+    file('solo', ['perso'])
+  ]
+
+  it('lists the tags of every file, in a directory or at the root, once and in order', () => {
+    expect(tagsOfNodes(nodes)).toEqual(['idea', 'perso'])
+  })
+
+  it('lists none for a tree with no tag', () => {
+    expect(tagsOfNodes([story('s', [file('a')])])).toEqual([])
+    expect(tagsOfNodes([])).toEqual([])
+  })
+
+  it('keeps everything when no tag is wanted', () => {
+    expect(filterNodes(nodes, [])).toEqual(nodes)
+  })
+
+  it('keeps the files with the tag, and only the directories that hold one', () => {
+    const kept = filterNodes(nodes, ['idea'])
+    expect(kept.map((node) => node.id)).toEqual(['s1'])
+    expect(kept[0]!.children!.map((child) => child.id)).toEqual(['a', 'b'])
+  })
+
+  it('needs all of several tags on one file', () => {
+    const kept = filterNodes(nodes, ['perso', 'idea'])
+    expect(kept.map((node) => node.id)).toEqual(['s1'])
+    expect(kept[0]!.children!.map((child) => child.id)).toEqual(['a'])
+  })
+
+  it('keeps a file at the root that has the tag', () => {
+    expect(filterNodes(nodes, ['perso']).map((node) => node.id)).toEqual(['s1', 'solo'])
+  })
+
+  it('leaves nothing for a tag no file has', () => {
+    expect(filterNodes(nodes, ['absent'])).toEqual([])
+  })
+
+  it('does not change the tree it is given', () => {
+    const before = JSON.stringify(nodes)
+    filterNodes(nodes, ['idea'])
+    expect(JSON.stringify(nodes)).toBe(before)
   })
 })

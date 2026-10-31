@@ -6,15 +6,17 @@ import {
   NO_STATUS,
   statusBars,
   sumBars,
+  tagBars,
   wordBars
 } from './homeStats'
 import type { DirEntry, FileEntry, TreeApiResponse } from './filesManager'
 
-const file = (id: string, status = '', modified?: string): FileEntry => ({
+const file = (id: string, status = '', modified?: string, tags?: string[]): FileEntry => ({
   id,
   name: id,
   status,
-  ...(modified ? { modified } : {})
+  ...(modified ? { modified } : {}),
+  ...(tags ? { tags } : {})
 })
 const dir = (id: string, files: FileEntry[]): DirEntry => ({ id, name: id, summary: '', files })
 const tree = (dirs: DirEntry[], files: FileEntry[] = []): TreeApiResponse => ({ dirs, files })
@@ -49,6 +51,43 @@ describe('countEntries', () => {
     const counts = countEntries(tree([]), notes)
     expect(counts.notesFolders).toBe(2)
     expect(counts.notes).toBe(3)
+  })
+})
+
+describe('tagBars', () => {
+  it('counts the chapters and one-shots under each tag, the most common first', () => {
+    const stories = tree(
+      [
+        dir('s1', [
+          file('a', '', undefined, ['perso', 'priority']),
+          file('b', '', undefined, ['priority']),
+          file('c', '', undefined, ['priority'])
+        ])
+      ],
+      [file('o', '', undefined, ['perso'])]
+    )
+    expect(tagBars(stories)).toEqual([
+      { label: 'priority', value: 3 },
+      { label: 'perso', value: 2 }
+    ])
+  })
+
+  it('counts a file with several tags under each of them', () => {
+    const bars = tagBars(tree([dir('s1', [file('a', '', undefined, ['x', 'y', 'z'])])]))
+    expect(bars.map((bar) => bar.value)).toEqual([1, 1, 1])
+  })
+
+  it('puts a file with no tags, or an older server that sends none, in no bar', () => {
+    expect(tagBars(tree([dir('s1', [file('a'), file('b', '', undefined, [])])]))).toEqual([])
+  })
+
+  it('breaks a tie by name', () => {
+    const bars = tagBars(tree([dir('s1', [file('a', '', undefined, ['zeta', 'alpha'])])]))
+    expect(bars.map((bar) => bar.label)).toEqual(['alpha', 'zeta'])
+  })
+
+  it('counts nothing for an empty tree', () => {
+    expect(tagBars(tree([]))).toEqual([])
   })
 })
 

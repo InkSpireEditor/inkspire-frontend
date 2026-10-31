@@ -4,7 +4,7 @@
  * applies (`inkspire_api/ink.py`, `normalise_tag`). It is checked here only so an input can
  * refuse a tag before sending it; the API refuses one regardless.
  */
-import type { TreeApiResponse } from './filesManager'
+import type { FileSystemNode, TreeApiResponse } from './filesManager'
 
 export const MAX_TAG_LENGTH = 32
 
@@ -36,4 +36,42 @@ export const allTags = (...trees: TreeApiResponse[]): string[] => {
     }
   }
   return [...found].sort()
+}
+
+/** Whether `tags` holds every one of `wanted`. Nothing wanted is satisfied by any file. */
+export const hasAllTags = (tags: readonly string[] | undefined, wanted: readonly string[]): boolean =>
+  wanted.every((tag) => (tags ?? []).includes(tag))
+
+/** Every tag on any file among `nodes` (a tree's root nodes), each once, alphabetically. */
+export const tagsOfNodes = (nodes: readonly FileSystemNode[]): string[] => {
+  const found = new Set<string>()
+  const visit = (node: FileSystemNode) => {
+    if (node.type === 'F') node.tags?.forEach((tag) => found.add(tag))
+    node.children?.forEach(visit)
+  }
+  nodes.forEach(visit)
+  return [...found].sort()
+}
+
+/**
+ * The part of a tree that holds files carrying all of `wanted`: those files, and the
+ * directories holding at least one of them, each with only those files in it. With nothing
+ * wanted the nodes come back as they are. Nodes are not changed; a directory that stays is
+ * a copy with fewer children.
+ */
+export const filterNodes = (
+  nodes: readonly FileSystemNode[],
+  wanted: readonly string[]
+): FileSystemNode[] => {
+  if (wanted.length === 0) return [...nodes]
+  const kept: FileSystemNode[] = []
+  for (const node of nodes) {
+    if (node.type === 'F') {
+      if (hasAllTags(node.tags, wanted)) kept.push(node)
+      continue
+    }
+    const children = filterNodes(node.children ?? [], wanted)
+    if (children.length > 0) kept.push({ ...node, children })
+  }
+  return kept
 }

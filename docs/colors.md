@@ -52,9 +52,9 @@ What components read. Each one is a base colour or a literal value, per theme.
 | `--color-text` | ![](colors/color-text-light.svg) `#212121` | ![](colors/color-text-dark.svg) `#e0e0e0` | ActivityGrid.vue, App.vue, BackLink.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, MarkdownEditor.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, RenderedProse.vue, SidePanel.vue, TagEditor.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue |
 | `--color-primary` | ![](colors/color-primary-light.svg) `#2196f3` | ![](colors/color-primary-dark.svg) `#1186e3` | ActivityGrid.vue, BarChart.vue, DashboardView.vue, HomeView.vue, Login.vue, Modal.vue, ModelSelector.vue, TagEditor.vue, Text.vue, TimelineView.vue, Tree.vue, TreeItem.vue, main.css |
 | `--color-primary-hover` | ![](colors/color-primary-hover-light.svg) `#1976d2` | ![](colors/color-primary-hover-dark.svg) `#2196f3` | BarChart.vue, Login.vue, Modal.vue, Text.vue |
-| `--color-primary-soft` | ![](colors/color-primary-soft-light.svg) `rgba(33, 150, 243, 0.1)` | ![](colors/color-primary-soft-dark.svg) `rgba(17, 134, 227, 0.2)` | Text.vue, TreeItem.vue, main.css |
+| `--color-primary-soft` | ![](colors/color-primary-soft-light.svg) `rgba(33, 150, 243, 0.1)` | ![](colors/color-primary-soft-dark.svg) `rgba(17, 134, 227, 0.2)` | Text.vue, Tree.vue, TreeItem.vue, main.css |
 | `--color-danger` | ![](colors/color-danger-light.svg) `#f44336` | ![](colors/color-danger-dark.svg) `#f44336` | DashboardView.vue, GenerationSettings.vue, GitPanel.vue, HomeView.vue, Login.vue, LoreView.vue, Modal.vue, ModelSelector.vue, ReadingView.vue, TagEditor.vue, TimelineView.vue |
-| `--color-text-muted` | ![](colors/color-text-muted-light.svg) `#666666` | ![](colors/color-text-muted-dark.svg) `#9e9e9e` | ActivityGrid.vue, BackLink.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, HomeView.vue, LoreView.vue, ReadingView.vue, SidePanel.vue, TagEditor.vue, TimelineView.vue |
+| `--color-text-muted` | ![](colors/color-text-muted-light.svg) `#666666` | ![](colors/color-text-muted-dark.svg) `#9e9e9e` | ActivityGrid.vue, BackLink.vue, BarChart.vue, DashboardView.vue, GenerationInstruction.vue, GenerationSettings.vue, HomeView.vue, LoreView.vue, ReadingView.vue, SidePanel.vue, TagEditor.vue, TimelineView.vue, Tree.vue |
 | `--color-text-faint` | ![](colors/color-text-faint-light.svg) `#9e9e9e` | ![](colors/color-text-faint-dark.svg) `#666666` | MarkdownEditor.vue, Text.vue |
 | `--color-text-on-fill` | ![](colors/color-text-on-fill-light.svg) `#ffffff` | ![](colors/color-text-on-fill-dark.svg) `#ffffff` | DashboardView.vue, Login.vue, Modal.vue, Text.vue |
 | `--color-backdrop` | ![](colors/color-backdrop-light.svg) `rgba(0, 0, 0, 0.5)` | ![](colors/color-backdrop-dark.svg) `rgba(0, 0, 0, 0.5)` | Modal.vue |
@@ -87,4 +87,4 @@ Not colours of their own, so no swatch.
 |---|---|
 | `--shadow-strong` | ActivityGrid.vue, BarChart.vue (their tooltips), Modal.vue, TreeItem.vue (context menu), Tree.vue (root menu) |
 | `--shadow-card` | Login.vue |
-| `--focus-ring` | 20 uses across components; it is `0 0 0 3px var(--color-primary-soft)` |
+| `--focus-ring` | 21 uses across components; it is `0 0 0 3px var(--color-primary-soft)` |

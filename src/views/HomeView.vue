@@ -7,6 +7,7 @@ import {
   lastEdited,
   statusBars,
   sumBars,
+  tagBars,
   wordBars,
   type Bar,
   type Counts,
@@ -24,6 +25,7 @@ import type { RouteLocationRaw } from 'vue-router'
 const counts = ref<Counts | null>(null)
 const edited = ref<EditedFile[]>([])
 const statuses = ref<Bar[]>([])
+const tags = ref<Bar[]>([])
 const storyWords = ref<Bar[]>([])
 /** Set while the prose is being fetched to count it, which takes a request per file. */
 const countingWords = ref(false)
@@ -45,6 +47,7 @@ const MAX_BARS = 8
 const numbers = new Intl.NumberFormat()
 
 const shownStatuses = computed(() => foldTail(statuses.value, MAX_BARS, 'Other statuses'))
+const shownTags = computed(() => foldTail(tags.value, MAX_BARS, 'Other tags'))
 const shownStoryWords = computed(() => foldTail(storyWords.value, MAX_BARS, 'Other stories'))
 const totalWords = computed(() => sumBars(storyWords.value))
 const loading = ref(false)
@@ -127,6 +130,7 @@ const load = async ({ silent = false } = {}) => {
     counts.value = countEntries(stories, notes)
     edited.value = lastEdited(stories, notes)
     statuses.value = statusBars(stories)
+    tags.value = tagBars(stories)
     loadWords(stories)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load the home page'
@@ -205,6 +209,13 @@ onUnmounted(() => window.removeEventListener('tree:changed', reload))
         unit="files"
         caption="Chapters and one-shots, by the status in their header"
         :bars="shownStatuses"
+      />
+      <BarChart
+        v-if="shownTags.length"
+        title="Tags"
+        unit="files"
+        caption="Chapters and one-shots, by tag. A file with several tags is counted under each."
+        :bars="shownTags"
       />
       <p v-if="countingWords && !shownStoryWords.length" class="counting">Counting words…</p>
       <BarChart

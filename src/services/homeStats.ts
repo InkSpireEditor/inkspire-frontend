@@ -100,6 +100,20 @@ export const statusBars = (stories: TreeApiResponse): Bar[] => {
 }
 
 /**
+ * How many chapters and one-shots carry each tag, the most common first. A file with several
+ * tags is counted under each of them, so the bars can add up to more than the number of files.
+ * A file with none is in no bar.
+ */
+export const tagBars = (stories: TreeApiResponse): Bar[] => {
+  const counts = new Map<string, number>()
+  const files = [...stories.dirs.flatMap((dir) => dir.files), ...stories.files]
+  for (const file of files) {
+    for (const tag of file.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+  }
+  return [...counts].map(([label, value]) => ({ label, value })).sort(byValueThenLabel)
+}
+
+/**
  * Words in each story, the most first. A story's words are its chapters', and a one-shot is its
  * own bar. A file whose prose is not in `words` (it could not be fetched) adds nothing.
  */

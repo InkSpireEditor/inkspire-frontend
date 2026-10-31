@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, provide, readonly } from 'vue'
+import { computed, ref, onMounted, onUnmounted, provide, readonly, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
@@ -13,6 +13,7 @@ import { useSharedFeatures } from '../services/sharedFeatures'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
 import { useKnownTags } from '../services/sharedTags'
+import { filterNodes, tagsOfNodes, withoutTag, withTag } from '../services/tags'
 import { useRename } from '../services/rename'
 import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../services/spaces'
 import { isLoggedIn, logout } from '../services/api'
@@ -75,6 +76,35 @@ const activeSpace = ref<Space>(asSpace(localStorage.getItem(ACTIVE_SPACE_KEY)))
 const trees = ref<Record<Space, FileSystemNode[]>>({ stories: [], notes: [] })
 const fetched = ref<Record<Space, boolean>>({ stories: false, notes: false })
 const fileSystem = computed(() => trees.value[activeSpace.value])
+
+/**
+ * The tags chosen to filter each tab's tree by. A file shows only if it carries all of them.
+ * Held per tab and not kept past a reload, so a filter is never something a writer finds
+ * still on and wonders where their files went.
+ */
+const chosenTags = ref<Record<Space, string[]>>({ stories: [], notes: [] })
+const activeChosen = computed(() => chosenTags.value[activeSpace.value])
+/** The tags on any file of the tab being shown: what the filter offers. */
+const availableTags = computed(() => tagsOfNodes(fileSystem.value))
+/** What the tab draws: the whole tree, or what holds files with every chosen tag. */
+const visibleNodes = computed(() => filterNodes(fileSystem.value, activeChosen.value))
+const filtering = computed(() => activeChosen.value.length > 0)
+
+const toggleTag = (tag: string) => {
+    const chosen = chosenTags.value[activeSpace.value]
+    chosenTags.value[activeSpace.value] = chosen.includes(tag) ? withoutTag(chosen, tag) : withTag(chosen, tag)
+}
+const clearTags = () => {
+    chosenTags.value[activeSpace.value] = []
+}
+
+// A tag that was chosen and is no longer on any file (it was removed, or the file was
+// deleted) is dropped, or the tree would stay empty under a filter nothing can satisfy.
+watch([activeSpace, availableTags], () => {
+    const chosen = chosenTags.value[activeSpace.value]
+    const kept = chosen.filter((tag) => availableTags.value.includes(tag))
+    if (kept.length !== chosen.length) chosenTags.value[activeSpace.value] = kept
+})
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -122,6 +152,7 @@ const showRootMenu = ref(false)
 // (like TreeItem) without having to pass props through every level of the tree.
 provide('treeContext', {
   space: readonly(activeSpace), // Which root the node is in, which decides its icon
+  filtering: readonly(filtering), // Whether a tag filter is on, which keeps directories open
   onAction: (action: string, node: FileSystemNode | null, parentId: string | null = null) => handleNodeAction(action, node, parentId)
 })
 
@@ -552,16 +583,32 @@ onUnmounted(() => {
       >{{ SPACE_LABELS[space] }}</button>
     </div>
 
+    <div v-if="availableTags.length > 0" class="tag-filter" role="group" aria-label="Filter by tags">
+      <button
+        v-for="tag in availableTags"
+        :key="tag"
+        type="button"
+        class="tag-chip"
+        :class="{ on: activeChosen.includes(tag) }"
+        :aria-pressed="activeChosen.includes(tag)"
+        @click="toggleTag(tag)"
+      >{{ tag }}</button>
+      <button v-if="filtering" type="button" class="tag-clear" @click="clearTags">Clear</button>
+    </div>
+
     <div class="tree-content" v-if="loading">Loading...</div>
     <div class="tree-content" v-else-if="error">{{ error }}</div>
     <ul class="tree-content" v-else>
       <!-- Recursively render the tree using TreeItem component -->
       <TreeItem
-        v-for="node in fileSystem"
+        v-for="node in visibleNodes"
         :key="node.id"
         :node="node"
         :level="0"
       />
+      <li v-if="filtering && visibleNodes.length === 0" class="tree-empty">
+        No file carries all of these tags.
+      </li>
     </ul>
 
     <!-- Unified Modal for Forms -->
@@ -761,6 +808,58 @@ onUnmounted(() => {
 }
 .root-menu div:hover {
     background-color: var(--color-background-mute);
+}
+
+.tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.tag-chip,
+.tag-clear {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-background-mute);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.tag-chip.on {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.tag-clear {
+  background: none;
+  border-style: dashed;
+  color: var(--color-text-muted);
+}
+
+.tag-chip:hover,
+.tag-clear:hover {
+  border-color: var(--color-border-hover);
+}
+
+.tag-chip:focus-visible,
+.tag-clear:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.tree-empty {
+  list-style: none;
+  padding: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
 }
 
 .tree-content {

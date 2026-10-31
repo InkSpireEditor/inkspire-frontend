@@ -51,12 +51,12 @@ const STORIES: TreeApiResponse = {
       name: 'Foo',
       summary: '',
       files: [
-        { id: 'c1', name: 'One', status: 'draft', modified: '2026-10-01T09:00:00Z' },
+        { id: 'c1', name: 'One', status: 'draft', tags: ['perso', 'priority'], modified: '2026-10-01T09:00:00Z' },
         { id: 'c2', name: 'Two', status: '', modified: '2026-10-03T09:00:00Z' }
       ]
     }
   ],
-  files: [{ id: 'o1', name: 'Solo', status: '', modified: '2026-10-05T09:00:00Z' }]
+  files: [{ id: 'o1', name: 'Solo', status: '', tags: ['perso'], modified: '2026-10-05T09:00:00Z' }]
 }
 
 const NOTES: TreeApiResponse = {
@@ -65,7 +65,7 @@ const NOTES: TreeApiResponse = {
       id: 'f1',
       name: 'Bar',
       summary: '',
-      files: [{ id: 'n1', name: 'Note', status: '', modified: '2026-10-02T09:00:00Z' }]
+      files: [{ id: 'n1', name: 'Note', status: '', tags: ['idea'], modified: '2026-10-02T09:00:00Z' }]
     }
   ],
   files: [{ id: 'n2', name: 'Loose', status: '', modified: '2026-10-04T09:00:00Z' }]
@@ -235,6 +235,31 @@ describe('HomeView.vue', () => {
         { label: 'No status', value: 2 },
         { label: 'draft', value: 1 }
       ])
+    })
+
+    it('counts the chapters and one-shots under each tag, and not the notes', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      const chart = chartNamed(wrapper, 'Tags')
+      expect(chart?.props('bars')).toEqual([
+        { label: 'perso', value: 2 },
+        { label: 'priority', value: 1 }
+      ])
+      expect(chart?.props('caption')).toContain('counted under each')
+    })
+
+    it('draws no tag chart while no chapter or one-shot has a tag', async () => {
+      vi.mocked(filesManagerService.getTree).mockImplementation(async (space) =>
+        space === 'stories'
+          ? { dirs: [{ id: 's1', name: 'Foo', summary: '', files: [{ id: 'c1', name: 'One', status: '' }] }], files: [] }
+          : NOTES
+      )
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(chartNamed(wrapper, 'Tags')).toBeUndefined()
+      expect(chartNamed(wrapper, 'Status')).toBeDefined()
     })
 
     it('counts the words of each story from its chapters\' prose, and totals them', async () => {

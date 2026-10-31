@@ -29,6 +29,8 @@ const BASE_PADDING_PX = 16
  */
 interface TreeContext {
   space?: Ref<Space>
+  /** Whether a tag filter is on, which shows every directory that is left open. */
+  filtering?: Ref<boolean>
   onAction: (action: string, node: FileSystemNode | null, parentId?: string | null) => void
 }
 
@@ -38,6 +40,11 @@ const { onAction } = context
 const router = useRouter()
 
 const isOpen = ref(false)
+/**
+ * What is drawn open: the writer's own choice, or any directory at all while a tag filter
+ * is on, since what it keeps is the files and a directory closed over them would hide them.
+ */
+const open = computed(() => isOpen.value || (context.filtering?.value ?? false))
 const showMenu = ref(false)
 
 // 'computed' properties are reactive variables derived from other state.
@@ -136,7 +143,7 @@ const closeMenu = () => {
       <span
         v-if="isFolder"
         class="toggle-icon"
-        :class="{ open: isOpen }"
+        :class="{ open }"
         @click.stop="toggle"
       >
         <Icon name="triangle" />
@@ -164,7 +171,7 @@ const closeMenu = () => {
       </div>
     </div>
 
-    <ul v-if="isFolder && isOpen" class="tree-children">
+    <ul v-if="isFolder && open" class="tree-children">
       <TreeItem
         v-for="child in node.children"
         :key="child.type + '-' + child.id"
