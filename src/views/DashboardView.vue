@@ -19,17 +19,20 @@ import {
 } from '../services/filesManager'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
+import { useKnownTags } from '../services/sharedTags'
 import { asSpace, type Space } from '../services/spaces'
 import { countWords } from '../services/words'
 import { timeAgo } from '../services/time'
 import Modal from '../components/Modal.vue'
 import GitPanel from '../components/GitPanel.vue'
 import Icon from '../components/Icon.vue'
+import TagEditor from '../components/TagEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { selectedFile, clearSelectedFile } = useSharedFiles()
 const { refresh: refreshGitStatus } = useSharedGit()
+const { knownTags, refreshKnownTags } = useKnownTags()
 const dir = ref<DirApiResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -81,6 +84,23 @@ const load = async () => {
     error.value = e instanceof Error ? e.message : `Failed to load the ${dirLabel.value}`
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * Writes one file's whole list of tags, then shows what the API answered. Tells the sidebar
+ * and the homepage the way a rename does, without naming this directory: the page already
+ * has the new list, and reloading it would only blank the word counts again.
+ */
+const setTags = async (file: FileEntry, tags: string[]) => {
+  try {
+    const answered = await filesManagerService.setFileTags(space.value, file.id, tags)
+    file.tags = answered.tags ?? tags
+    window.dispatchEvent(new Event('tree:changed'))
+    window.dispatchEvent(new CustomEvent('stories:changed', { detail: { space: space.value } }))
+    refreshKnownTags()
+  } catch (e) {
+    reorderError.value = e instanceof Error ? e.message : 'Failed to set the tags'
   }
 }
 
@@ -309,6 +329,15 @@ const confirmForceDelete = async () => {
             {{ file.name }}
           </router-link>
           <span class="chapter-meta">
+            <span class="tags" @focusin="refreshKnownTags">
+              <TagEditor
+                compact
+                :tags="file.tags ?? []"
+                :suggestions="knownTags"
+                :label="file.name"
+                @change="(tags) => setTags(file, tags)"
+              />
+            </span>
             <span v-if="wordCounts[file.id] !== undefined" class="word-count">
               {{ wordCounts[file.id] }} words
             </span>
@@ -541,7 +570,9 @@ h1 {
 
 .chapter-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-3);
 }
 

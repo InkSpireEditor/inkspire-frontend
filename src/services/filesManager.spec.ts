@@ -22,6 +22,53 @@ describe('filesManagerService', () => {
         vi.clearAllMocks()
     })
 
+    describe('tags', () => {
+        const okJson = (body: unknown) =>
+            ({ ok: true, json: async () => body }) as Response
+
+        it('setFileTags sends the whole list alone, and answers the file', async () => {
+            fetchSpy.mockResolvedValueOnce(okJson({ id: 'f1', tags: ['perso'] }))
+
+            const answer = await filesManagerService.setFileTags('notes', 'f1', ['perso'])
+
+            expect(answer).toEqual({ id: 'f1', tags: ['perso'] })
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/notes/file/f1`, {
+                method: 'PUT',
+                headers: jsonHeaders,
+                credentials: 'include',
+                body: JSON.stringify({ tags: ['perso'] }),
+            })
+        })
+
+        it('setFileTags sends an empty list as it is', async () => {
+            fetchSpy.mockResolvedValueOnce(okJson({ id: 'f1', tags: [] }))
+            await filesManagerService.setFileTags('stories', 'f1', [])
+            const [, init] = fetchSpy.mock.calls[0]!
+            expect(JSON.parse(init!.body as string)).toEqual({ tags: [] })
+        })
+
+        it('setFileTags throws when the API refuses', async () => {
+            fetchSpy.mockResolvedValueOnce({ ok: false, status: 400 } as Response)
+            await expect(filesManagerService.setFileTags('stories', 'f1', ['no way'])).rejects.toThrow(
+                'Failed to set the tags',
+            )
+        })
+
+        it('editFile sends the name alone when given no tags', async () => {
+            fetchSpy.mockResolvedValueOnce(okJson({ id: 'f1' }))
+            await filesManagerService.editFile('stories', 'f1', 'New')
+            const [, init] = fetchSpy.mock.calls[0]!
+            expect(JSON.parse(init!.body as string)).toEqual({ name: 'New' })
+        })
+
+        it('editFile sends the name and the tags together', async () => {
+            fetchSpy.mockResolvedValueOnce(okJson({ id: 'f2' }))
+            await filesManagerService.editFile('stories', 'f1', 'New', ['perso'])
+            const [, init] = fetchSpy.mock.calls[0]!
+            expect(JSON.parse(init!.body as string)).toEqual({ name: 'New', tags: ['perso'] })
+        })
+    })
+
     describe('getTree', () => {
         it('should send GET request with correct URL, headers and credentials', async () => {
             const mockResponse = {

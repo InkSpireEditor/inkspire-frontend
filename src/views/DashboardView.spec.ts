@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import DashboardView from './DashboardView.vue'
 import GitPanel from '../components/GitPanel.vue'
+import TagEditor from '../components/TagEditor.vue'
 import { filesManagerService, HoldsError } from '../services/filesManager'
 import { useSharedFiles } from '../services/sharedFiles'
 
@@ -18,7 +19,9 @@ vi.mock('../services/filesManager', async () => {
       getFileContent: vi.fn(),
       delDir: vi.fn(),
       editDir: vi.fn(),
-      reorderChapters: vi.fn()
+      reorderChapters: vi.fn(),
+      setFileTags: vi.fn(),
+      getTree: vi.fn()
     }
   }
 })
@@ -719,6 +722,82 @@ describe('DashboardView.vue', () => {
 
       expect(wrapper.text()).toContain('Failed to edit directory')
       expect(wrapper.find('textarea').exists()).toBe(true)
+    })
+  })
+
+  describe('tags', () => {
+    const ID = 'a1b2c3d4e5f60718'
+    const FIRST = 'c1c1c1c1c1c1c1c1'
+
+    async function mountWithTags(space: 'stories' | 'notes' = 'stories') {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue({
+        id: ID,
+        name: 'Example',
+        summary: '',
+        files: [
+          { id: FIRST, name: 'First Chapter', status: '', tags: ['perso'] },
+          { id: 'c2c2c2c2c2c2c2c2', name: 'Second Chapter', status: '' }
+        ]
+      })
+      const router = await routerAtSpace(space, ID)
+      const wrapper = mount(DashboardView, {
+        global: { plugins: [router], stubs: { teleport: true } }
+      })
+      await flushPromises()
+      return wrapper
+    }
+
+    const editors = (wrapper: ReturnType<typeof mount>) => wrapper.findAllComponents(TagEditor)
+
+    it("shows each file's tags on its own row", async () => {
+      const wrapper = await mountWithTags()
+      expect(editors(wrapper)).toHaveLength(2)
+      expect(editors(wrapper)[0]!.props('tags')).toEqual(['perso'])
+      expect(editors(wrapper)[1]!.props('tags')).toEqual([])
+      expect(editors(wrapper)[0]!.props('label')).toBe('First Chapter')
+    })
+
+    it('sends the whole new list for that file only, in the directory\'s own space', async () => {
+      vi.mocked(filesManagerService.setFileTags).mockResolvedValue({ tags: ['perso', 'idea'] })
+      const wrapper = await mountWithTags('notes')
+
+      editors(wrapper)[0]!.vm.$emit('change', ['perso', 'idea'])
+      await flushPromises()
+
+      expect(filesManagerService.setFileTags).toHaveBeenCalledTimes(1)
+      expect(filesManagerService.setFileTags).toHaveBeenCalledWith('notes', FIRST, ['perso', 'idea'])
+      expect(editors(wrapper)[0]!.props('tags')).toEqual(['perso', 'idea'])
+      expect(editors(wrapper)[1]!.props('tags')).toEqual([])
+    })
+
+    it('tells the homepage and the sidebar, without reloading its own page', async () => {
+      vi.mocked(filesManagerService.setFileTags).mockResolvedValue({ tags: [] })
+      const wrapper = await mountWithTags()
+      const home = vi.fn()
+      const changed = vi.fn()
+      window.addEventListener('tree:changed', home, { once: true })
+      window.addEventListener('stories:changed', changed, { once: true })
+      vi.mocked(filesManagerService.getDirContent).mockClear()
+
+      editors(wrapper)[0]!.vm.$emit('change', [])
+      await flushPromises()
+
+      expect(home).toHaveBeenCalledTimes(1)
+      expect(changed).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: { space: 'stories' } })
+      )
+      expect(filesManagerService.getDirContent).not.toHaveBeenCalled()
+    })
+
+    it('keeps the list and shows the error when the API refuses', async () => {
+      vi.mocked(filesManagerService.setFileTags).mockRejectedValue(new Error('Failed to set the tags'))
+      const wrapper = await mountWithTags()
+
+      editors(wrapper)[0]!.vm.$emit('change', ['perso', 'idea'])
+      await flushPromises()
+
+      expect(editors(wrapper)[0]!.props('tags')).toEqual(['perso'])
+      expect(wrapper.text()).toContain('Failed to set the tags')
     })
   })
 })

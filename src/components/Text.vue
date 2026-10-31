@@ -19,9 +19,11 @@ import { useSharedModel } from '../services/sharedModel'
 import { useSharedGit } from '../services/sharedGit'
 import { useSharedSettings } from '../services/sharedSettings'
 import { useSharedInstruction } from '../services/sharedInstruction'
+import { useKnownTags } from '../services/sharedTags'
 import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
+import TagEditor from './TagEditor.vue'
 import SidePanel from './SidePanel.vue'
 import GenerationSettings from './GenerationSettings.vue'
 
@@ -32,6 +34,7 @@ const { temperature, promptBudget, prefixShare, numCtx, sendSelection, autoCompl
   useSharedSettings()
 const { instruction, clearInstruction } = useSharedInstruction()
 const { title: titleFeatureEnabled, ensureLoaded: ensureFeaturesLoaded } = useSharedFeatures()
+const { knownTags, refreshKnownTags } = useKnownTags()
 const route = useRoute()
 const rename = useRename()
 
@@ -85,6 +88,8 @@ const text = computed(() => prose.value.text)
  */
 const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null)
 const fileName = ref('')
+/** The open file's tags, as its header has them. */
+const fileTags = ref<string[]>([])
 const currentFile = ref<FileSelection | null>(null)
 const isDirty = ref(false)
 /** Shows the current text rendered, in place of the editor, rather than a separate
@@ -147,6 +152,7 @@ const loadFile = async (file: FileSelection) => {
     ])
 
     fileName.value = info.name
+    fileTags.value = info.tags ?? []
     openProse(document.body, document.metadata)
     currentFile.value = file
     isDirty.value = false
@@ -654,10 +660,36 @@ const requestEditTitle = () => {
         space: file.space,
         id: file.id,
         name: fileName.value,
+        tags: fileTags.value,
         parentId: route.name === 'write' ? route.params.id : undefined,
       },
     }),
   )
+}
+
+/**
+ * Writes the file's whole list of tags to its header and tells the rest of the app, as a
+ * rename does: the sidebar's tree, the homepage's counts and the directory's page if open.
+ * Nothing is applied on screen until the API has answered, and a failure leaves the list as
+ * it was and says so. The file's id does not change.
+ */
+const handleTagsChange = async (tags: string[]) => {
+  const file = currentFile.value
+  if (!file) return
+  try {
+    const answered = await filesManagerService.setFileTags(file.space, file.id, tags)
+    fileTags.value = answered.tags ?? tags
+    window.dispatchEvent(new Event('tree:changed'))
+    window.dispatchEvent(
+      new CustomEvent('stories:changed', {
+        detail: { storyId: route.params.id, space: file.space },
+      }),
+    )
+    refreshKnownTags()
+  } catch (e) {
+    console.error('Error setting the tags:', e)
+    displayError(e instanceof Error ? e.message : 'Error setting the tags')
+  }
 }
 
 /** Stops a generation in progress, keeping whatever has arrived so far. */
@@ -699,6 +731,7 @@ watch(selectedFile, (file) => {
   } else {
     currentFile.value = null
     fileName.value = ''
+    fileTags.value = []
     openProse('', null)
     readMode.value = false
   }
@@ -775,6 +808,15 @@ onUnmounted(() => {
       >
         <Icon name="dice" />
       </button>
+    </div>
+
+    <div v-if="fileName" class="tags-row" @focusin="refreshKnownTags">
+      <TagEditor
+        :tags="fileTags"
+        :suggestions="knownTags"
+        :label="fileName"
+        @change="handleTagsChange"
+      />
     </div>
 
     <div class="editor-row">
@@ -921,6 +963,11 @@ onUnmounted(() => {
 
 .file-title:hover {
   color: var(--color-primary);
+}
+
+.tags-row {
+  display: flex;
+  justify-content: center;
 }
 
 .file-title.empty {

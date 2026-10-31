@@ -5,6 +5,7 @@ import { computed, ref, type Ref } from 'vue'
 import Text from './Text.vue'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
+import TagEditor from './TagEditor.vue'
 import { filesManagerService, NotFoundError } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import * as sharedFiles from '../services/sharedFiles'
@@ -27,7 +28,9 @@ vi.mock('../services/filesManager', async () => {
       getDocument: vi.fn(),
       putDocument: vi.fn(),
       getDirContent: vi.fn(),
-      editFile: vi.fn()
+      editFile: vi.fn(),
+      setFileTags: vi.fn(),
+      getTree: vi.fn()
     }
   }
 })
@@ -1274,6 +1277,117 @@ describe('Text.vue', () => {
     })
   })
 
+  describe('tags', () => {
+    const tagEditor = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findComponent(TagEditor)
+
+    it('shows the open file\'s tags under its title', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({
+        name: 'test.ink',
+        tags: ['perso', 'priority']
+      })
+      const wrapper = await mountWithFile()
+
+      expect(tagEditor(wrapper).props('tags')).toEqual(['perso', 'priority'])
+      expect(wrapper.findAll('.chip-text').map((chip) => chip.text())).toEqual([
+        'perso',
+        'priority'
+      ])
+    })
+
+    it('shows none for a file whose answer carries no tags (an older server)', async () => {
+      const wrapper = await mountWithFile()
+      expect(tagEditor(wrapper).props('tags')).toEqual([])
+    })
+
+    it('shows no editor with no file open', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      await flushPromises()
+      expect(tagEditor(wrapper).exists()).toBe(false)
+    })
+
+    it('sends the whole new list, shows what the API answers, and tells the rest of the app', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({
+        name: 'test.ink',
+        tags: ['perso']
+      })
+      vi.mocked(filesManagerService.setFileTags).mockResolvedValue({ tags: ['perso', 'priority'] })
+      const wrapper = await mountWithFile()
+      const home = vi.fn()
+      const changed = vi.fn()
+      window.addEventListener('tree:changed', home, { once: true })
+      window.addEventListener('stories:changed', changed, { once: true })
+
+      tagEditor(wrapper).vm.$emit('change', ['perso', 'Priority'])
+      await flushPromises()
+
+      expect(filesManagerService.setFileTags).toHaveBeenCalledWith(OPEN.space, OPEN.id, [
+        'perso',
+        'Priority'
+      ])
+      expect(tagEditor(wrapper).props('tags')).toEqual(['perso', 'priority'])
+      expect(home).toHaveBeenCalledTimes(1)
+      expect(changed).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: { storyId: undefined, space: OPEN.space } })
+      )
+    })
+
+    it('keeps the list and says so when the API refuses', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({
+        name: 'test.ink',
+        tags: ['perso']
+      })
+      vi.mocked(filesManagerService.setFileTags).mockRejectedValue(new Error('Nope'))
+      const wrapper = await mountWithFile()
+
+      tagEditor(wrapper).vm.$emit('change', ['perso', 'priority'])
+      await flushPromises()
+
+      expect(tagEditor(wrapper).props('tags')).toEqual(['perso'])
+      expect(wrapper.findComponent(Modal).props('show')).toBe(true)
+      expect(wrapper.text()).toContain('Nope')
+    })
+
+    it('does not touch the prose or schedule a save', async () => {
+      vi.mocked(filesManagerService.setFileTags).mockResolvedValue({ tags: ['perso'] })
+      const wrapper = await mountWithFile()
+
+      tagEditor(wrapper).vm.$emit('change', ['perso'])
+      await flushPromises()
+
+      expect(filesManagerService.putDocument).not.toHaveBeenCalled()
+    })
+
+    it('hands the tags to the edit modal along with the name', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({
+        name: 'test.ink',
+        tags: ['perso']
+      })
+      const wrapper = await mountWithFile()
+      const listener = vi.fn()
+      window.addEventListener('text:edit-title', listener, { once: true })
+
+      await wrapper.find('button.file-title').trigger('click')
+
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: expect.objectContaining({ tags: ['perso'] }) })
+      )
+    })
+
+    it('forgets them when the file is closed', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({
+        name: 'test.ink',
+        tags: ['perso']
+      })
+      const wrapper = await mountWithFile()
+
+      selectedFile.value = null
+      await flushPromises()
+
+      expect(tagEditor(wrapper).exists()).toBe(false)
+    })
+  })
+
   describe('clicking the title (frontend#30 follow-on)', () => {
     const titleButton = (wrapper: ReturnType<typeof mount>) =>
       wrapper.find('button.file-title')
@@ -1293,7 +1407,7 @@ describe('Text.vue', () => {
       expect(listener).toHaveBeenCalledTimes(1)
       expect(listener).toHaveBeenCalledWith(
         expect.objectContaining({
-          detail: { space: OPEN.space, id: OPEN.id, name: 'test.ink', parentId: undefined },
+          detail: { space: OPEN.space, id: OPEN.id, name: 'test.ink', tags: [], parentId: undefined },
         }),
       )
     })

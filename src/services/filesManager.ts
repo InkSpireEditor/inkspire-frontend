@@ -43,6 +43,8 @@ export interface FileSystemNode {
     status?: string;
     /** A story's synopsis, a folder's context, or a file's own summary. */
     summary?: string;
+    /** From the file's own header; only a file has any. */
+    tags?: string[];
 }
 
 /** One file in a listing. `summary` is sent by the per-directory route only. */
@@ -50,6 +52,8 @@ export interface FileEntry {
     id: string;
     name: string;
     status: string;
+    /** Lowercase words from the file's header; optional because an older server does not send them. */
+    tags?: string[];
     summary?: string;
     /** ISO 8601 UTC string (inkspire-api#29); optional because an older server does not send it. */
     modified?: string;
@@ -146,11 +150,12 @@ export const filesManagerService = {
         return response.json();
     },
 
-    async editFile(space: Space, id: string, name: string) {
+    /** Renames a file; `tags`, given, replaces its whole list in the same request. */
+    async editFile(space: Space, id: string, name: string, tags?: string[]) {
         const response = await apiFetch(`${API_URL}/${space}/file/${id}`, {
             method: "PUT",
             headers: jsonHeaders(),
-            body: JSON.stringify({ name }),
+            body: JSON.stringify(tags === undefined ? { name } : { name, tags }),
         });
         if (!response.ok) throw new Error("Failed to edit file");
         return response.json();
@@ -167,6 +172,20 @@ export const filesManagerService = {
             body: JSON.stringify({ status }),
         });
         if (!response.ok) throw new Error("Failed to set file status");
+        return response.json();
+    },
+
+    /**
+     * Replaces a file's whole list of tags; `[]` removes them. The id does not change.
+     * Answers the file as the API now has it, with the tags as it normalised them.
+     */
+    async setFileTags(space: Space, id: string, tags: string[]) {
+        const response = await apiFetch(`${API_URL}/${space}/file/${id}`, {
+            method: "PUT",
+            headers: jsonHeaders(),
+            body: JSON.stringify({ tags }),
+        });
+        if (!response.ok) throw new Error("Failed to set the tags");
         return response.json();
     },
 

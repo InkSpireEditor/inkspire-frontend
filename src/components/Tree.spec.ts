@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import Tree from './Tree.vue'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
+import TagEditor from './TagEditor.vue'
 import { filesManagerService, type FileSystemNode, type TreeApiResponse } from '../services/filesManager'
 import { llmService } from '../services/llm'
 import { modelService } from '../services/model'
@@ -1069,6 +1070,140 @@ describe('Tree.vue', () => {
             expect((wrapper.vm as any).modalInputName).toBe('Chapter One')
             expect((wrapper.vm as any).errorMessage).toBe('No small model is configured.')
             expect((wrapper.vm as any).showError).toBe(true)
+        })
+    })
+
+    describe('tags in the edit modal', () => {
+        const requestEdit = async (detail: Record<string, unknown>) => {
+            window.dispatchEvent(new CustomEvent('text:edit-title', { detail }))
+            await flushPromises()
+        }
+
+        const tagEditor = (wrapper: ReturnType<typeof mountTree>) => wrapper.findComponent(TagEditor)
+
+        const confirm = async (wrapper: ReturnType<typeof mountTree>) => {
+            await wrapper.findComponent(Modal).vm.$emit('confirm')
+            await flushPromises()
+        }
+
+        it("offers the file's tags beside its name", async () => {
+            const wrapper = mountTree()
+            await flushPromises()
+
+            await requestEdit({ space: 'stories', id: 'c1', name: 'One', tags: ['perso', 'idea'] })
+
+            expect(tagEditor(wrapper).exists()).toBe(true)
+            expect(tagEditor(wrapper).props('tags')).toEqual(['perso', 'idea'])
+        })
+
+        it('offers an empty editor for a file whose event carries no tags', async () => {
+            const wrapper = mountTree()
+            await flushPromises()
+
+            await requestEdit({ space: 'stories', id: 'c1', name: 'One' })
+
+            expect(tagEditor(wrapper).props('tags')).toEqual([])
+        })
+
+        it('offers no tags for a directory', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{ id: 'd1', name: 'DirA', summary: '', files: [] }],
+                files: [],
+            })
+            const wrapper = mountTree()
+            await flushPromises()
+            const item = wrapper.findComponent(TreeItem)
+            await item.find('.node-actions-trigger').trigger('click')
+            await item.findAll('.context-menu div').find((d) => d.text() === 'Edit')?.trigger('click')
+
+            expect(wrapper.findComponent(Modal).props('title')).toBe('Edit Directory')
+            expect(tagEditor(wrapper).exists()).toBe(false)
+        })
+
+        it('offers none while creating', async () => {
+            const wrapper = mountTree()
+            await flushPromises()
+            ;(wrapper.vm as any).openModal('create-file', null)
+            await flushPromises()
+
+            expect(tagEditor(wrapper).exists()).toBe(false)
+        })
+
+        it('reads the tags from the tree row it was opened on', async () => {
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [],
+                files: [{ id: 'f1', name: 'Solo', status: '', tags: ['perso'] }],
+            })
+            const wrapper = mountTree()
+            await flushPromises()
+            const item = wrapper.findComponent(TreeItem)
+            await item.find('.node-actions-trigger').trigger('click')
+            await item.findAll('.context-menu div').find((d) => d.text() === 'Edit')?.trigger('click')
+
+            expect(tagEditor(wrapper).props('tags')).toEqual(['perso'])
+        })
+
+        it('sends the new tags in the same request as the name', async () => {
+            vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'c1' })
+            const wrapper = mountTree()
+            await flushPromises()
+            await requestEdit({ space: 'stories', id: 'c1', name: 'One', tags: ['perso'] })
+
+            tagEditor(wrapper).vm.$emit('change', ['perso', 'idea'])
+            await wrapper.findComponent(Modal).find('input').setValue('Renamed')
+            await confirm(wrapper)
+
+            expect(filesManagerService.editFile).toHaveBeenCalledTimes(1)
+            expect(filesManagerService.editFile).toHaveBeenCalledWith('stories', 'c1', 'Renamed', [
+                'perso',
+                'idea',
+            ])
+        })
+
+        it('sends an empty list when the last tag was removed', async () => {
+            vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'c1' })
+            const wrapper = mountTree()
+            await flushPromises()
+            await requestEdit({ space: 'notes', id: 'n1', name: 'Note', tags: ['perso'] })
+
+            tagEditor(wrapper).vm.$emit('change', [])
+            await confirm(wrapper)
+
+            expect(filesManagerService.editFile).toHaveBeenCalledWith('notes', 'n1', 'Note', [])
+        })
+
+        it('sends the name alone when the tags were not changed', async () => {
+            vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'c1' })
+            const wrapper = mountTree()
+            await flushPromises()
+            await requestEdit({ space: 'stories', id: 'c1', name: 'One', tags: ['perso'] })
+
+            await wrapper.findComponent(Modal).find('input').setValue('Renamed')
+            await confirm(wrapper)
+
+            expect(filesManagerService.editFile).toHaveBeenCalledWith('stories', 'c1', 'Renamed')
+        })
+
+        it('changes nothing on the file when the modal is closed without confirming', async () => {
+            const wrapper = mountTree()
+            await flushPromises()
+            await requestEdit({ space: 'stories', id: 'c1', name: 'One', tags: ['perso'] })
+
+            tagEditor(wrapper).vm.$emit('change', [])
+            await wrapper.findComponent(Modal).vm.$emit('close')
+
+            expect(filesManagerService.editFile).not.toHaveBeenCalled()
+        })
+
+        it("starts the next file from its own tags, not the previous modal's", async () => {
+            const wrapper = mountTree()
+            await flushPromises()
+            await requestEdit({ space: 'stories', id: 'c1', name: 'One', tags: ['perso'] })
+            tagEditor(wrapper).vm.$emit('change', ['perso', 'idea'])
+
+            await requestEdit({ space: 'stories', id: 'c2', name: 'Two', tags: ['other'] })
+
+            expect(tagEditor(wrapper).props('tags')).toEqual(['other'])
         })
     })
 })

@@ -22,6 +22,9 @@ import type { Space } from './spaces'
  * context-menu action and `Text.vue`'s title-proposal button (frontend#30) -- rather than
  * two copies of the same follow-the-new-id logic.
  *
+ * `tags`, given, is the file's whole new list and goes in the same request as the name, so
+ * one write changes both.
+ *
  * Calls `useRoute`/`useRouter`/`useSharedFiles` itself, so a caller just invokes this in
  * `setup` and gets back one function to call on a rename. Answers the renamed id, or
  * `null` if the API gave back none.
@@ -31,8 +34,18 @@ export function useRename() {
   const route = useRoute()
   const router = useRouter()
 
-  return async (space: Space, id: string, name: string): Promise<string | null> => {
-    const renamed = await filesManagerService.editFile(space, id, name)
+  return async (
+    space: Space,
+    id: string,
+    name: string,
+    tags?: string[]
+  ): Promise<string | null> => {
+    const renamed = await filesManagerService.editFile(
+      space,
+      id,
+      name,
+      ...(tags === undefined ? [] : [tags])
+    )
     if (!renamed?.id) return null
 
     if (selectedFileId.value === id) {

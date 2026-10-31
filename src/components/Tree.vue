@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import TreeItem from './TreeItem.vue'
 import Modal from './Modal.vue'
 import ModelSelector from './ModelSelector.vue'
+import TagEditor from './TagEditor.vue'
 import Icon from './Icon.vue'
 import { filesManagerService, MAX_SUMMARY_LENGTH, type FileSystemNode } from '../services/filesManager'
 import { llmService } from '../services/llm'
@@ -11,6 +12,7 @@ import { useTheme } from '../services/theme'
 import { useSharedFeatures } from '../services/sharedFeatures'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
+import { useKnownTags } from '../services/sharedTags'
 import { useRename } from '../services/rename'
 import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../services/spaces'
 import { isLoggedIn, logout } from '../services/api'
@@ -22,6 +24,7 @@ const { refresh: refreshGitStatus } = useSharedGit()
 // ensureFeaturesLoaded() -- this component only ever reads it, for the
 // title-edit modal's own instruction+Generate section (frontend#30).
 const { title: titleFeatureEnabled } = useSharedFeatures()
+const { knownTags, refreshKnownTags } = useKnownTags()
 const route = useRoute()
 const router = useRouter()
 
@@ -100,6 +103,8 @@ const modalSpace = ref<Space>(activeSpace.value)
 const modalInstruction = ref('')
 /** Whether a title suggestion is in flight for the open modal's Generate button. */
 const generatingTitle = ref(false)
+/** The open edit modal's file's tags, which the tag editor changes; sent with the name. */
+const modalTags = ref<string[]>([])
 
 // Confirmation Dialog State Management
 const showConfirm = ref(false)
@@ -153,6 +158,7 @@ const fetchTree = async (space: Space, { silent = false }: { silent?: boolean } 
         name: file.name,
         type: 'F' as const,
         status: file.status,
+        tags: file.tags ?? [],
         parentId: dir.id,
       })),
     }))
@@ -162,6 +168,7 @@ const fetchTree = async (space: Space, { silent = false }: { silent?: boolean } 
       name: file.name,
       type: 'F',
       status: file.status,
+      tags: file.tags ?? [],
     }))
 
     trees.value[space] = [...dirs, ...rootFiles]
@@ -253,6 +260,7 @@ const openModal = (
     modalInputName.value = node ? node.name : ''
     modalInputContext.value = ''
     modalInstruction.value = ''
+    modalTags.value = node?.type === 'F' ? [...(node.tags ?? [])] : []
 
     if (type === 'create-file') {
         modalTitle.value = 'Create New File'
@@ -282,6 +290,9 @@ const openModal = (
  * a directory -- with the server's small model configured. The same
  * `titleFeatureEnabled` flag the dice button reads.
  */
+/** Whether the open modal edits a file, which is what has tags to change. */
+const showTagsField = computed(() => modalType.value === 'edit' && nodeToEdit.value?.type === 'F')
+
 const showTitleAssist = computed(
     () =>
         modalType.value === 'edit' &&
@@ -320,8 +331,8 @@ const generateTitle = async () => {
  * needed to find a "real" one.
  */
 const handleEditTitleRequest = (event: Event) => {
-    const { space, id, name, parentId } = (event as CustomEvent).detail
-    openModal('edit', id, { id, name, type: 'F', parentId }, space)
+    const { space, id, name, tags, parentId } = (event as CustomEvent).detail
+    openModal('edit', id, { id, name, type: 'F', tags, parentId }, space)
 }
 
 /**
@@ -330,8 +341,8 @@ const handleEditTitleRequest = (event: Event) => {
  * shares the same implementation rather than a second copy of it.
  */
 const rename = useRename()
-const renameFile = async (space: Space, node: FileSystemNode, name: string) => {
-    await rename(space, node.id, name)
+const renameFile = async (space: Space, node: FileSystemNode, name: string, tags?: string[]) => {
+    await rename(space, node.id, name, tags)
 }
 
 /**
@@ -383,7 +394,12 @@ const submitModal = async () => {
             if (nodeToEdit.value.type === 'D') {
                 await filesManagerService.editDir(space, nodeToEdit.value.id, name, modalInputContext.value)
             } else {
-                await renameFile(space, nodeToEdit.value, name)
+                // Tags go in the same request as the name, and only when they changed.
+                const before = nodeToEdit.value.tags ?? []
+                const changed =
+                    before.length !== modalTags.value.length ||
+                    before.some((tag, index) => tag !== modalTags.value[index])
+                await renameFile(space, nodeToEdit.value, name, changed ? modalTags.value : undefined)
             }
         }
         
@@ -563,6 +579,14 @@ onUnmounted(() => {
       <div v-if="modalContextVisible" class="form-group">
         <label>Context/Summary:</label>
         <textarea v-model="modalInputContext" placeholder="Enter context" rows="3"></textarea>
+      </div>
+      <div v-if="showTagsField" class="form-group" @focusin="refreshKnownTags">
+        <label>Tags:</label>
+        <TagEditor
+          :tags="modalTags"
+          :suggestions="knownTags"
+          @change="(tags) => (modalTags = tags)"
+        />
       </div>
       <!-- Instruction + Generate (frontend#30): only while editing a stories-space
            file, and only once the server has a small model configured. -->

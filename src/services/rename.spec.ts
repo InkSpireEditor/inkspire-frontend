@@ -33,6 +33,27 @@ describe('useRename', () => {
     expect(filesManagerService.editFile).toHaveBeenCalledWith('stories', 'old-id', 'New Name')
   })
 
+  it('sends the tags in the same request when it is given them', async () => {
+    vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
+    const rename = useRename()
+
+    await rename('stories', 'old-id', 'New Name', ['perso'])
+
+    expect(filesManagerService.editFile).toHaveBeenCalledTimes(1)
+    expect(filesManagerService.editFile).toHaveBeenCalledWith('stories', 'old-id', 'New Name', [
+      'perso',
+    ])
+  })
+
+  it('sends an empty list of tags, which removes them', async () => {
+    vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
+    const rename = useRename()
+
+    await rename('stories', 'old-id', 'New Name', [])
+
+    expect(filesManagerService.editFile).toHaveBeenCalledWith('stories', 'old-id', 'New Name', [])
+  })
+
   it("answers the renamed file's new id", async () => {
     vi.mocked(filesManagerService.editFile).mockResolvedValue({ id: 'new-id' })
     const rename = useRename()
