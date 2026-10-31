@@ -87,6 +87,9 @@ describe('Text.vue', () => {
    *  `sharedSettings`'s `autoComplete`. Off by default; a test in that block
    *  flips it. */
   let autoComplete: Ref<boolean>
+  /** The tags the selected model's provider refuses, as the sidebar's choice reports them. */
+  let modelRefusedTags: Ref<string[]>
+  const setSelectedTagsMock = vi.fn()
   /** The writer's own one-off steering for the next generation (api#19) --
    *  `sharedInstruction`'s `instruction`. Empty by default; a test in that block
    *  sets it directly, the same way `autoComplete` is flipped directly above. */
@@ -107,16 +110,21 @@ describe('Text.vue', () => {
     vi.spyOn(sharedFiles, 'useSharedFiles').mockReturnValue({
       selectedFile,
       selectedFileId: computed(() => selectedFile.value?.id ?? null),
+      selectedTags: ref<string[]>([]),
       setSelectedFile: vi.fn(),
+      setSelectedTags: setSelectedTagsMock,
       // Clears for real, so a test can see what the pane falls back to rather than
       // only that the call happened.
       clearSelectedFile: () => {
         selectedFile.value = null
       }
     })
+    // What the sidebar's model choice says its provider refuses; a test sets it.
+    modelRefusedTags = ref<string[]>([])
     vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
       selectedModelName: ref('llama3'),
       selectedModelProtocol: ref(null),
+      selectedModelRefusedTags: modelRefusedTags,
       thinkEnabled: ref(false),
       setSelectedModel: vi.fn(),
       setThinkEnabled: vi.fn()
@@ -1388,6 +1396,84 @@ describe('Text.vue', () => {
     })
   })
 
+  describe('a model whose provider refuses the file\'s tags (inkspire-api#33)', () => {
+    const REASON = '"llama3" is not used for files tagged "perso".'
+
+    const openTagged = async (tags: string[], refused: string[]) => {
+      vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({ name: 'test.ink', tags })
+      modelRefusedTags.value = refused
+      return mountWithFile()
+    }
+
+    const button = (wrapper: ReturnType<typeof mount>, label: string) =>
+      wrapper.findAll('button').find((b) => b.attributes('aria-label') === label)!
+
+    it('tells the rest of the app which tags the open file has', async () => {
+      await openTagged(['perso', 'idea'], [])
+      expect(setSelectedTagsMock).toHaveBeenLastCalledWith(['perso', 'idea'])
+    })
+
+    it('disables Generate and Reroll and gives the reason as their title', async () => {
+      const wrapper = await openTagged(['perso'], ['perso'])
+
+      expect(button(wrapper, 'Generate').attributes('disabled')).toBeDefined()
+      expect(button(wrapper, 'Generate').attributes('title')).toBe(REASON)
+      expect(button(wrapper, 'Reroll').attributes('title')).toBe(REASON)
+      expect(button(wrapper, 'Reroll').attributes('disabled')).toBeDefined()
+    })
+
+    it('leaves them as they were when the file does not carry a refused tag', async () => {
+      const wrapper = await openTagged(['idea'], ['perso'])
+
+      expect(button(wrapper, 'Generate').attributes('disabled')).toBeUndefined()
+      expect(button(wrapper, 'Generate').attributes('title')).toBe('Generate')
+    })
+
+    it('leaves them as they were when the model refuses nothing', async () => {
+      const wrapper = await openTagged(['perso'], [])
+      expect(button(wrapper, 'Generate').attributes('disabled')).toBeUndefined()
+    })
+
+    it('leaves Settings enabled', async () => {
+      const wrapper = await openTagged(['perso'], ['perso'])
+      expect(button(wrapper, 'Settings').attributes('disabled')).toBeUndefined()
+    })
+
+    it('says why on Ctrl+Enter and asks no model', async () => {
+      const wrapper = await openTagged(['perso'], ['perso'])
+
+      await wrapper.find('.text-page').trigger('keydown', { key: 'Enter', ctrlKey: true })
+      await flushPromises()
+
+      expect(llmService.generate).not.toHaveBeenCalled()
+      expect(wrapper.findComponent(Modal).props('show')).toBe(true)
+      expect(wrapper.text()).toContain(REASON)
+    })
+
+    it('allows them again once the tag is removed', async () => {
+      vi.mocked(filesManagerService.setFileTags).mockResolvedValue({ tags: [] })
+      const wrapper = await openTagged(['perso'], ['perso'])
+      expect(button(wrapper, 'Generate').attributes('disabled')).toBeDefined()
+
+      wrapper.findComponent(TagEditor).vm.$emit('change', [])
+      await flushPromises()
+
+      expect(button(wrapper, 'Generate').attributes('disabled')).toBeUndefined()
+      expect(setSelectedTagsMock).toHaveBeenLastCalledWith([])
+    })
+
+    it('refuses them when a tag is added', async () => {
+      vi.mocked(filesManagerService.setFileTags).mockResolvedValue({ tags: ['perso'] })
+      const wrapper = await openTagged([], ['perso'])
+      expect(button(wrapper, 'Generate').attributes('disabled')).toBeUndefined()
+
+      wrapper.findComponent(TagEditor).vm.$emit('change', ['perso'])
+      await flushPromises()
+
+      expect(button(wrapper, 'Generate').attributes('disabled')).toBeDefined()
+    })
+  })
+
   describe('clicking the title (frontend#30 follow-on)', () => {
     const titleButton = (wrapper: ReturnType<typeof mount>) =>
       wrapper.find('button.file-title')
@@ -1789,12 +1875,52 @@ describe('Text.vue', () => {
       expect(llmService.complete).not.toHaveBeenCalled()
     })
 
+    it('does nothing when the selected model\'s provider refuses a tag of the file (inkspire-api#33)', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({
+        name: 'test.ink',
+        tags: ['perso']
+      })
+      modelRefusedTags.value = ['perso']
+      const { wrapper, editorStub } = await mountIdle()
+      vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
+      editorStub.vm.offsets = { start: 22, end: 22 }
+      ;(wrapper.vm as any).handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(1000)
+      await flushPromises()
+      vi.advanceTimersByTime(5000)
+      await flushPromises()
+
+      expect(llmService.complete).not.toHaveBeenCalled()
+    })
+
+    it('still asks when the file carries a tag the provider does not refuse', async () => {
+      vi.mocked(filesManagerService.getFileInfo).mockResolvedValue({
+        name: 'test.ink',
+        tags: ['idea']
+      })
+      modelRefusedTags.value = ['perso']
+      vi.mocked(llmService.complete).mockResolvedValue(' open.')
+      const { wrapper, editorStub } = await mountIdle()
+      vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
+      editorStub.vm.offsets = { start: 22, end: 22 }
+      ;(wrapper.vm as any).handleProseChange(typed('The door creaked open.'))
+
+      vi.advanceTimersByTime(1000)
+      await flushPromises()
+      vi.advanceTimersByTime(1000)
+      await flushPromises()
+
+      expect(llmService.complete).toHaveBeenCalledTimes(1)
+    })
+
     it('does nothing with no model selected', async () => {
       const { wrapper } = await mountIdle()
       vi.mocked(filesManagerService.putDocument).mockResolvedValue({ ok: true })
       vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
         selectedModelName: ref(null),
         selectedModelProtocol: ref(null),
+        selectedModelRefusedTags: ref<string[]>([]),
         thinkEnabled: ref(false),
         setSelectedModel: vi.fn(),
         setThinkEnabled: vi.fn()
@@ -1907,12 +2033,15 @@ describe('Text.vue across the two spaces', () => {
     vi.spyOn(sharedFiles, 'useSharedFiles').mockReturnValue({
       selectedFile,
       selectedFileId: computed(() => selectedFile.value?.id ?? null),
+      selectedTags: ref<string[]>([]),
       setSelectedFile: vi.fn(),
+      setSelectedTags: vi.fn(),
       clearSelectedFile: vi.fn()
     })
     vi.spyOn(sharedModel, 'useSharedModel').mockReturnValue({
       selectedModelName: ref('llama3'),
       selectedModelProtocol: ref(null),
+      selectedModelRefusedTags: ref<string[]>([]),
       thinkEnabled: ref(false),
       setSelectedModel: vi.fn(),
       setThinkEnabled: vi.fn()

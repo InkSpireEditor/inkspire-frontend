@@ -20,6 +20,7 @@ import { useSharedGit } from '../services/sharedGit'
 import { useSharedSettings } from '../services/sharedSettings'
 import { useSharedInstruction } from '../services/sharedInstruction'
 import { useKnownTags } from '../services/sharedTags'
+import { refusalMessage, refusedBy } from '../services/tags'
 import { isLoggedIn } from '../services/api'
 import MarkdownEditor from './MarkdownEditor.vue'
 import Modal from './Modal.vue'
@@ -27,8 +28,9 @@ import TagEditor from './TagEditor.vue'
 import SidePanel from './SidePanel.vue'
 import GenerationSettings from './GenerationSettings.vue'
 
-const { selectedFile, clearSelectedFile } = useSharedFiles()
-const { selectedModelName, selectedModelProtocol, thinkEnabled } = useSharedModel()
+const { selectedFile, clearSelectedFile, setSelectedTags } = useSharedFiles()
+const { selectedModelName, selectedModelProtocol, selectedModelRefusedTags, thinkEnabled } =
+  useSharedModel()
 const { refresh: refreshGitStatus } = useSharedGit()
 const { temperature, promptBudget, prefixShare, numCtx, sendSelection, autoComplete } =
   useSharedSettings()
@@ -90,6 +92,19 @@ const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null)
 const fileName = ref('')
 /** The open file's tags, as its header has them. */
 const fileTags = ref<string[]>([])
+// Shared so the model list in the sidebar can mark the models the file may not use.
+watch(fileTags, (tags) => setSelectedTags(tags), { immediate: true })
+
+/**
+ * Why the selected model cannot be used for the open file, in the API's own words: its
+ * provider refuses one of the file's tags. Empty when it can. The API refuses regardless
+ * (403); this is what stops the buttons and the idle proposal before they ask.
+ */
+const refusal = computed(() => {
+  const name = selectedModelName.value
+  const tag = refusedBy(selectedModelRefusedTags.value, fileTags.value)
+  return name !== null && tag !== null ? refusalMessage(name, tag) : ''
+})
 const currentFile = ref<FileSelection | null>(null)
 const isDirty = ref(false)
 /** Shows the current text rendered, in place of the editor, rather than a separate
@@ -353,7 +368,7 @@ const isCaretAtEndOfText = () => {
  */
 const tryIdleCompletion = async () => {
   if (!autoComplete.value || isGenerating.value || completing || readMode.value) return
-  if (!selectedModelName.value) return
+  if (!selectedModelName.value || refusal.value) return
   const file = currentFile.value
   if (!file || !text.value) return
   if (!isCaretAtEndOfText()) return
@@ -487,6 +502,10 @@ const handleGenerate = async () => {
     displayError('No model selected')
     return
   }
+  if (refusal.value) {
+    displayError(refusal.value)
+    return
+  }
 
   if (!isLoggedIn() || !currentFile.value) return
 
@@ -531,6 +550,10 @@ const handleReroll = async () => {
   if (isGenerating.value) return
   if (!selectedModelName.value) {
     displayError('No model selected')
+    return
+  }
+  if (refusal.value) {
+    displayError(refusal.value)
     return
   }
   if (!isLoggedIn() || !currentFile.value || !genRunAtCaret.value) return
@@ -874,8 +897,8 @@ onUnmounted(() => {
           <button
             class="icon-only"
             @click="handleReroll"
-            :disabled="!currentFile || isGenerating || !genRunAtCaret"
-            title="Put the caret in text a model wrote"
+            :disabled="!currentFile || isGenerating || !genRunAtCaret || !!refusal"
+            :title="refusal || 'Put the caret in text a model wrote'"
             aria-label="Reroll"
           >
             <Icon name="reroll" />
@@ -883,9 +906,9 @@ onUnmounted(() => {
           <button
             class="primary icon-only"
             @click="handleGenerate"
-            :disabled="!currentFile || isGenerating"
+            :disabled="!currentFile || isGenerating || !!refusal"
             :class="{ generating: isGenerating, rewrite: hasSelection && !isGenerating }"
-            :title="generateLabel"
+            :title="refusal || generateLabel"
             :aria-label="generateLabel"
           >
             <Icon name="sparkles" />

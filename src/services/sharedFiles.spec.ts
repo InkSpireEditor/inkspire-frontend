@@ -22,4 +22,20 @@ describe('useSharedFiles', () => {
     expect(selectedFile.value).toBeNull()
     expect(selectedFileId.value).toBeNull()
   })
+
+  it("holds the selected file's tags until the selection changes or is cleared", () => {
+    const { selectedTags, setSelectedFile, setSelectedTags, clearSelectedFile } = useSharedFiles()
+    expect(selectedTags.value).toEqual([])
+
+    setSelectedFile('stories', 'fedcba9876543210')
+    setSelectedTags(['perso'])
+    expect(selectedTags.value).toEqual(['perso'])
+
+    setSelectedFile('stories', '0123456789abcdef')
+    expect(selectedTags.value).toEqual([])
+
+    setSelectedTags(['idea'])
+    clearSelectedFile()
+    expect(selectedTags.value).toEqual([])
+  })
 })

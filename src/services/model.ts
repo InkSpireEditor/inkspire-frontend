@@ -8,6 +8,9 @@ export interface Model {
   /** Only `ollama` can be asked to think or not -- the chat-completions path has no
    *  equivalent, native or otherwise, and ignores the field when sent. */
   protocol: ModelProtocol;
+  /** Tags of files this model's provider is never used for (inkspire-api#33); optional
+   *  because an older server does not send it. */
+  refused_tags?: string[];
 }
 
 export const modelService = {

@@ -5,6 +5,8 @@ import {
   hasAllTags,
   MAX_TAG_LENGTH,
   normaliseTag,
+  refusalMessage,
+  refusedBy,
   tagsOfNodes,
   withoutTag,
   withTag
@@ -142,5 +144,23 @@ describe('tags of a tree and filtering it', () => {
     const before = JSON.stringify(nodes)
     filterNodes(nodes, ['idea'])
     expect(JSON.stringify(nodes)).toBe(before)
+  })
+})
+
+describe('refusedBy', () => {
+  it('answers the first tag of the file that the provider refuses', () => {
+    expect(refusedBy(['perso', 'draft'], ['idea', 'draft', 'perso'])).toBe('draft')
+  })
+
+  it('answers null when none is refused, or nothing is', () => {
+    expect(refusedBy(['perso'], ['idea'])).toBeNull()
+    expect(refusedBy([], ['perso'])).toBeNull()
+    expect(refusedBy(['perso'], [])).toBeNull()
+  })
+})
+
+describe('refusalMessage', () => {
+  it("is the API's sentence, naming the provider and the tag", () => {
+    expect(refusalMessage('hosted/big', 'perso')).toBe('"hosted" is not used for files tagged "perso".')
   })
 })

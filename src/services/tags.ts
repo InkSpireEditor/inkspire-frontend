@@ -75,3 +75,15 @@ export const filterNodes = (
   }
   return kept
 }
+
+/**
+ * The first of a file's `tags` that a provider's `refused` list holds, or `null` when the
+ * provider can be used for the file. The API decides this too and refuses with a 403; this
+ * is what lets the interface say so before a request is made.
+ */
+export const refusedBy = (refused: readonly string[], tags: readonly string[]): string | null =>
+  tags.find((tag) => refused.includes(tag)) ?? null
+
+/** The sentence the API answers with, for a model whose provider refuses a tag of the file. */
+export const refusalMessage = (model: string, tag: string): string =>
+  `"${model.split('/')[0]}" is not used for files tagged "${tag}".`

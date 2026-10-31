@@ -2,9 +2,12 @@
 import { ref, onMounted } from 'vue'
 import { modelService, type Model } from '../services/model'
 import { useSharedModel } from '../services/sharedModel'
+import { useSharedFiles } from '../services/sharedFiles'
+import { refusedBy } from '../services/tags'
 import { isLoggedIn } from '../services/api'
 
 const { selectedModelName, setSelectedModel } = useSharedModel()
+const { selectedTags } = useSharedFiles()
 const models = ref<Model[]>([])
 const error = ref<string | null>(null)
 
@@ -20,7 +23,7 @@ const fetchModels = async () => {
     models.value = data
     const firstModel = models.value[0]
     if (firstModel && !selectedModelName.value) {
-      setSelectedModel(firstModel.name, firstModel.protocol)
+      setSelectedModel(firstModel.name, firstModel.protocol, firstModel.refused_tags ?? [])
     }
   } catch (e: any) {
     error.value = e.message
@@ -32,8 +35,15 @@ const fetchModels = async () => {
  *  up here and the two are set together, the same as the auto-selection above. */
 const onSelect = (name: string) => {
   const model = models.value.find((candidate) => candidate.name === name)
-  setSelectedModel(name, model?.protocol ?? null)
+  setSelectedModel(name, model?.protocol ?? null, model?.refused_tags ?? [])
 }
+
+/**
+ * The tag of the open file that keeps this model's provider away from it, or `null`. A
+ * model like that stays in the list but cannot be picked while the file is open: the API
+ * would refuse it, and saying so here saves the request.
+ */
+const refusal = (model: Model) => refusedBy(model.refused_tags ?? [], selectedTags.value)
 
 onMounted(() => {
   fetchModels()
@@ -48,8 +58,13 @@ onMounted(() => {
       title="Model"
       :value="selectedModelName"
       @change="onSelect(($event.target as HTMLSelectElement).value)">
-      <option v-for="model in models" :key="model.name" :value="model.name">
-        {{ model.name }}
+      <option
+        v-for="model in models"
+        :key="model.name"
+        :value="model.name"
+        :disabled="refusal(model) !== null"
+      >
+        {{ model.name }}{{ refusal(model) !== null ? ` (not for "${refusal(model)}")` : '' }}
       </option>
     </select>
   </div>

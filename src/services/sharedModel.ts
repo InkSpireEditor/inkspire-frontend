@@ -13,15 +13,25 @@ const selectedModelName = ref<string | null>(null)
  */
 const selectedModelProtocol = ref<ModelProtocol | null>(null)
 /**
+ * The tags the selected model's provider refuses, set alongside its name: a file carrying
+ * one of them cannot be sent to this model (`refusedBy`, `services/tags.ts`).
+ */
+const selectedModelRefusedTags = ref<string[]>([])
+/**
  * Whether to ask a reasoning model to think, for the next generation. Kept beside
  * the model selection, not the open file, so switching chapters does not reset it.
  */
 const thinkEnabled = ref(false)
 
-/** Sets the active model and its protocol together, or both to null to clear it. */
-export function setSelectedModel(name: string | null, protocol: ModelProtocol | null = null) {
+/** Sets the active model, its protocol and the tags its provider refuses together, or clears them. */
+export function setSelectedModel(
+  name: string | null,
+  protocol: ModelProtocol | null = null,
+  refusedTags: string[] = []
+) {
   selectedModelName.value = name
   selectedModelProtocol.value = protocol
+  selectedModelRefusedTags.value = refusedTags
 }
 
 export function setThinkEnabled(value: boolean) {
@@ -32,12 +42,14 @@ export function setThinkEnabled(value: boolean) {
 export function resetSharedModel() {
   selectedModelName.value = null
   selectedModelProtocol.value = null
+  selectedModelRefusedTags.value = []
   thinkEnabled.value = false
 }
 
 export const useSharedModel = () => ({
   selectedModelName,
   selectedModelProtocol,
+  selectedModelRefusedTags,
   thinkEnabled,
   setSelectedModel,
   setThinkEnabled
