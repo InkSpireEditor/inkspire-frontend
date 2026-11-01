@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import ModelSelector from './ModelSelector.vue'
 import { modelService, type Model } from '../services/model'
 import { resetSharedModel, useSharedModel } from '../services/sharedModel'
@@ -11,6 +11,15 @@ vi.mock('../services/model', () => ({
   }
 }))
 
+/** Every mounted selector, so each is unmounted after its test: a mounted one listens to the
+ *  window, and one left over from an earlier test would read the list again in a later one. */
+const mounted: VueWrapper[] = []
+const mountSelector = () => {
+  const wrapper = mount(ModelSelector)
+  mounted.push(wrapper)
+  return wrapper
+}
+
 describe('ModelSelector.vue', () => {
   beforeEach(() => {
     document.cookie = 'auth_status=1; Path=/'
@@ -18,13 +27,14 @@ describe('ModelSelector.vue', () => {
   })
 
   afterEach(() => {
+    mounted.splice(0).forEach((wrapper) => wrapper.unmount())
     document.cookie = 'auth_status=; Path=/; Max-Age=0'
     vi.clearAllMocks()
     resetSharedModel()
   })
 
   it('names the select for assistive technology, with no visible heading', () => {
-    const wrapper = mount(ModelSelector)
+    const wrapper = mountSelector()
     expect(wrapper.find('select').attributes('aria-label')).toBe('Model')
     expect(wrapper.find('h3').exists()).toBe(false)
   })
@@ -36,7 +46,7 @@ describe('ModelSelector.vue', () => {
     ]
     vi.mocked(modelService.getModels).mockResolvedValue(mockModels)
 
-    const wrapper = mount(ModelSelector)
+    const wrapper = mountSelector()
     await flushPromises()
 
     const options = wrapper.findAll('option')
@@ -51,7 +61,7 @@ describe('ModelSelector.vue', () => {
   it('displays error message when fetch fails', async () => {
     vi.mocked(modelService.getModels).mockRejectedValue(new Error('Network Error'))
 
-    const wrapper = mount(ModelSelector)
+    const wrapper = mountSelector()
     await flushPromises()
 
     expect(wrapper.find('.error').exists()).toBe(true)
@@ -60,7 +70,7 @@ describe('ModelSelector.vue', () => {
 
   it('does not fetch when there is no active session', async () => {
     document.cookie = 'auth_status=; Path=/; Max-Age=0'
-    mount(ModelSelector)
+    mountSelector()
     await flushPromises()
     expect(modelService.getModels).not.toHaveBeenCalled()
   })
@@ -75,7 +85,7 @@ describe('ModelSelector.vue', () => {
     const mountWith = async (tags: string[]) => {
       vi.mocked(modelService.getModels).mockResolvedValue(MODELS)
       useSharedFiles().setSelectedTags(tags)
-      const wrapper = mount(ModelSelector)
+      const wrapper = mountSelector()
       await flushPromises()
       return wrapper
     }
@@ -117,7 +127,7 @@ describe('ModelSelector.vue', () => {
 
     it('records the provider\'s refused tags with the model it selects', async () => {
       vi.mocked(modelService.getModels).mockResolvedValue([MODELS[1]!])
-      const wrapper = mount(ModelSelector)
+      const wrapper = mountSelector()
       await flushPromises()
 
       expect(useSharedModel().selectedModelName.value).toBe('hosted/big')
@@ -133,6 +143,141 @@ describe('ModelSelector.vue', () => {
 
       await wrapper.find('select').setValue('older/model')
       expect(useSharedModel().selectedModelRefusedTags.value).toEqual([])
+    })
+  })
+  describe('reading the list again (a provider that came on since the page loaded)', () => {
+    const LOCAL: Model = { name: 'local/llama3', protocol: 'ollama' }
+    const WORKSTATION: Model = { name: 'workstation/big', protocol: 'ollama' }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-11-01T10:00:00Z'))
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    const after = (ms: number) => vi.setSystemTime(Date.now() + ms)
+    const names = (wrapper: VueWrapper) => wrapper.findAll('option').map((option) => option.text())
+
+    it('offers a provider that has come on once the select gets focus', async () => {
+      vi.mocked(modelService.getModels).mockResolvedValueOnce([LOCAL])
+      const wrapper = mountSelector()
+      await flushPromises()
+      expect(names(wrapper)).toEqual(['local/llama3'])
+
+      after(11_000)
+      vi.mocked(modelService.getModels).mockResolvedValueOnce([LOCAL, WORKSTATION])
+      await wrapper.find('select').trigger('focus')
+      await flushPromises()
+
+      expect(names(wrapper)).toEqual(['local/llama3', 'workstation/big'])
+    })
+
+    it('does the same once the window gets focus', async () => {
+      vi.mocked(modelService.getModels).mockResolvedValueOnce([LOCAL])
+      const wrapper = mountSelector()
+      await flushPromises()
+
+      after(11_000)
+      vi.mocked(modelService.getModels).mockResolvedValueOnce([LOCAL, WORKSTATION])
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+
+      expect(names(wrapper)).toEqual(['local/llama3', 'workstation/big'])
+    })
+
+    it('does not read again within ten seconds of the last read', async () => {
+      vi.mocked(modelService.getModels).mockResolvedValue([LOCAL])
+      const wrapper = mountSelector()
+      await flushPromises()
+
+      after(9_000)
+      await wrapper.find('select').trigger('focus')
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+
+      expect(modelService.getModels).toHaveBeenCalledTimes(1)
+    })
+
+    it('reads again once ten seconds have passed', async () => {
+      vi.mocked(modelService.getModels).mockResolvedValue([LOCAL])
+      const wrapper = mountSelector()
+      await flushPromises()
+
+      after(10_000)
+      await wrapper.find('select').trigger('focus')
+      await flushPromises()
+
+      expect(modelService.getModels).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not start a second read while one is still running', async () => {
+      vi.mocked(modelService.getModels).mockReturnValue(new Promise(() => {}))
+      const wrapper = mountSelector()
+      await flushPromises()
+
+      after(60_000)
+      await wrapper.find('select').trigger('focus')
+
+      expect(modelService.getModels).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves the selection alone when the selected model has left the list', async () => {
+      vi.mocked(modelService.getModels).mockResolvedValueOnce([LOCAL, WORKSTATION])
+      const wrapper = mountSelector()
+      await flushPromises()
+      useSharedModel().setSelectedModel('workstation/big', 'ollama', [])
+
+      after(11_000)
+      vi.mocked(modelService.getModels).mockResolvedValueOnce([LOCAL])
+      await wrapper.find('select').trigger('focus')
+      await flushPromises()
+
+      expect(names(wrapper)).toEqual(['local/llama3'])
+      expect(useSharedModel().selectedModelName.value).toBe('workstation/big')
+    })
+
+    it('stops showing an earlier failure once a read works', async () => {
+      vi.mocked(modelService.getModels).mockRejectedValueOnce(new Error('Failed to load models'))
+      const wrapper = mountSelector()
+      await flushPromises()
+      expect(wrapper.find('.error').exists()).toBe(true)
+
+      after(11_000)
+      vi.mocked(modelService.getModels).mockResolvedValueOnce([LOCAL])
+      await wrapper.find('select').trigger('focus')
+      await flushPromises()
+
+      expect(wrapper.find('.error').exists()).toBe(false)
+      expect(names(wrapper)).toEqual(['local/llama3'])
+    })
+
+    it('stops listening to the window once it is unmounted', async () => {
+      vi.mocked(modelService.getModels).mockResolvedValue([LOCAL])
+      const wrapper = mountSelector()
+      await flushPromises()
+      wrapper.unmount()
+
+      after(11_000)
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+
+      expect(modelService.getModels).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not read without a session', async () => {
+      document.cookie = 'auth_status=; Path=/; Max-Age=0'
+      const wrapper = mountSelector()
+      await flushPromises()
+
+      after(11_000)
+      await wrapper.find('select').trigger('focus')
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+
+      expect(modelService.getModels).not.toHaveBeenCalled()
     })
   })
 })
