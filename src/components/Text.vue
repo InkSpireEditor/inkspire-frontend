@@ -1157,4 +1157,48 @@ button.active {
      broken in a way a bigger button's shadow does not. */
   transform: none;
 }
+
+/* A phone (frontend#52). The action row needs about 380px at its desktop size, and the
+   container holding it used to take that width, so everything past the screen's edge was
+   clipped: the editor off-centre, the last button out of sight. The container may now be
+   narrower than its content, and the row is smaller and wraps if it still does not fit. */
+@media (max-width: 640px) {
+  .text-page {
+    gap: var(--space-2);
+  }
+
+  .file-title {
+    font-size: 1.2rem;
+  }
+
+  .editor-row {
+    gap: 0;
+  }
+
+  .editor-container {
+    min-width: 0;
+    gap: var(--space-2);
+  }
+
+  /* Same padding as the editing surface (MarkdownEditor.vue), so Read mode does not move the
+     text. */
+  .read-pane,
+  .no-file-pane {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .actions {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+
+  button.icon-only {
+    padding: 8px 10px;
+  }
+
+  button.primary.icon-only {
+    padding: 8px 14px;
+  }
+}
 </style>

@@ -183,6 +183,12 @@ main {
     transition: transform 220ms ease, visibility 0s 220ms;
   }
 
+  /* The toggle is fixed in the top-left corner, so the page starts below it and a long title
+     cannot run under it. */
+  main {
+    padding: 3rem var(--space-3) var(--space-4);
+  }
+
   .sidebar-backdrop {
     position: fixed;
     inset: 0;

@@ -967,6 +967,15 @@ watch(
   user-select: none;
 }
 
+/* A phone (frontend#52): narrower margins, on the surface and on the placeholder laid over it,
+   which have to stay equal. The completion proposal reads the surface's padding as it is. */
+@media (max-width: 640px) {
+  .surface,
+  .placeholder {
+    padding: var(--space-4) var(--space-3);
+  }
+}
+
 /* Generated text, and generated text the writer has since corrected.
 
    `::highlight()` accepts only a narrow set of properties -- `color`, `background-color`,
