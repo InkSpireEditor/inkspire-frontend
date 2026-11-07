@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -401,6 +401,113 @@ describe('DashboardView.vue', () => {
       await flushPromises()
 
       expect(filesManagerService.reorderChapters).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('moving chapters with buttons, at phone width (frontend#53)', () => {
+    const threeChapters = {
+      id: 'a1b2c3d4e5f60718',
+      name: 'Example Story',
+      summary: '',
+      files: [
+        { id: 'c1c1c1c1c1c1c1c1', name: 'First Chapter', status: '' },
+        { id: 'c2c2c2c2c2c2c2c2', name: 'Second Chapter', status: '' },
+        { id: 'c3c3c3c3c3c3c3c3', name: 'Third Chapter', status: '' }
+      ]
+    }
+
+    /** `window.matchMedia` answering that the window is, or is not, phone width. */
+    const stubNarrow = (narrow: boolean) =>
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(() => ({ matches: narrow, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+      )
+
+    afterEach(() => {
+      // Not unstubAllGlobals: vitest.setup.ts stubs localStorage the same way.
+      vi.stubGlobal('matchMedia', undefined)
+    })
+
+    async function mountLoaded() {
+      vi.mocked(filesManagerService.getDirContent).mockResolvedValue(threeChapters)
+      const router = await routerAt('a1b2c3d4e5f60718')
+      const wrapper = mount(DashboardView, { global: { plugins: [router], stubs: { teleport: true } } })
+      await flushPromises()
+      return wrapper
+    }
+
+    it('draws no move buttons on a wide screen', async () => {
+      stubNarrow(false)
+      const wrapper = await mountLoaded()
+
+      expect(wrapper.find('.move-buttons').exists()).toBe(false)
+    })
+
+    it('moves a chapter down with its button, sending the same request a drop does', async () => {
+      stubNarrow(true)
+      vi.mocked(filesManagerService.reorderChapters).mockResolvedValue({
+        ...threeChapters,
+        files: [threeChapters.files[1]!, threeChapters.files[0]!, threeChapters.files[2]!]
+      })
+      const wrapper = await mountLoaded()
+
+      await wrapper.find('button[aria-label="Move First Chapter down"]').trigger('click')
+      await flushPromises()
+
+      expect(filesManagerService.reorderChapters).toHaveBeenCalledWith('a1b2c3d4e5f60718', [
+        'c2c2c2c2c2c2c2c2',
+        'c1c1c1c1c1c1c1c1',
+        'c3c3c3c3c3c3c3c3'
+      ])
+      expect(wrapper.findAll('.chapter a').map((a) => a.text())).toEqual([
+        'Second Chapter',
+        'First Chapter',
+        'Third Chapter'
+      ])
+    })
+
+    it('moves a chapter up with its button', async () => {
+      stubNarrow(true)
+      vi.mocked(filesManagerService.reorderChapters).mockResolvedValue(threeChapters)
+      const wrapper = await mountLoaded()
+
+      await wrapper.find('button[aria-label="Move Third Chapter up"]').trigger('click')
+      await flushPromises()
+
+      expect(filesManagerService.reorderChapters).toHaveBeenCalledWith('a1b2c3d4e5f60718', [
+        'c1c1c1c1c1c1c1c1',
+        'c3c3c3c3c3c3c3c3',
+        'c2c2c2c2c2c2c2c2'
+      ])
+    })
+
+    it('disables the first chapter\'s up button and the last one\'s down button', async () => {
+      stubNarrow(true)
+      const wrapper = await mountLoaded()
+
+      const up = wrapper.find('button[aria-label="Move First Chapter up"]')
+      const down = wrapper.find('button[aria-label="Move Third Chapter down"]')
+      expect(up.attributes('disabled')).toBeDefined()
+      expect(down.attributes('disabled')).toBeDefined()
+      expect(
+        wrapper.find('button[aria-label="Move Second Chapter up"]').attributes('disabled')
+      ).toBeUndefined()
+    })
+
+    it('shows the error and leaves the list alone when the write fails', async () => {
+      stubNarrow(true)
+      vi.mocked(filesManagerService.reorderChapters).mockRejectedValue(new Error('Network error'))
+      const wrapper = await mountLoaded()
+
+      await wrapper.find('button[aria-label="Move First Chapter down"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Network error')
+      expect(wrapper.findAll('.chapter a').map((a) => a.text())).toEqual([
+        'First Chapter',
+        'Second Chapter',
+        'Third Chapter'
+      ])
     })
   })
 

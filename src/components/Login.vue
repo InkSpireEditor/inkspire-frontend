@@ -154,7 +154,13 @@ button {
 
 button:hover:not(:disabled) {
   background-color: var(--color-primary-hover);
-  transform: translateY(-1px);
+}
+
+/* A touch screen keeps the hover state after a tap, which would leave the button lifted. */
+@media (hover: hover) {
+  button:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
 }
 
 button:active:not(:disabled) {

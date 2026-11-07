@@ -265,6 +265,17 @@ li {
     visibility: visible;
 }
 
+/* Nothing hovers on a touch screen, so the trigger is always drawn, and wide enough to hit. */
+@media (hover: none) {
+  .node-actions-trigger {
+    visibility: visible;
+    padding: 0 var(--space-3);
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+  }
+}
+
 .context-menu {
   position: absolute;
   right: 0;

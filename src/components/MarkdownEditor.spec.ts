@@ -8,7 +8,7 @@
  * A test here failing with `CSS is not defined` or `Highlight is not defined` means the
  * feature detection is missing or wrong. That is the bug, not the environment.
  */
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownEditor from './MarkdownEditor.vue'
@@ -900,6 +900,62 @@ describe('MarkdownEditor.vue', () => {
 
       expect(wrapper.find('.ghost').exists()).toBe(false)
       expect(emittedProse(wrapper).text).toBe('The door creaked. open.')
+    })
+
+    describe('the Accept button, at phone width', () => {
+      /** `window.matchMedia` answering that the window is, or is not, phone width. */
+      const stubNarrow = (narrow: boolean) =>
+        vi.stubGlobal(
+          'matchMedia',
+          vi.fn(() => ({ matches: narrow, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+        )
+
+      afterEach(() => {
+        // Not unstubAllGlobals: vitest.setup.ts stubs localStorage the same way.
+        vi.stubGlobal('matchMedia', undefined)
+      })
+
+      it('is not drawn on a wide screen', async () => {
+        stubNarrow(false)
+        const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+        wrapper.vm.showProposal(' open.')
+        await nextTick()
+
+        expect(wrapper.find('.accept-proposal').exists()).toBe(false)
+      })
+
+      it('is not drawn while there is no proposal', () => {
+        stubNarrow(true)
+        const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+
+        expect(wrapper.find('.accept-proposal').exists()).toBe(false)
+      })
+
+      it('inserts the proposal when pressed, as Tab does', async () => {
+        stubNarrow(true)
+        const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+        wrapper.vm.showProposal(' open.')
+        await nextTick()
+
+        await wrapper.find('.accept-proposal').trigger('click')
+        await nextTick()
+
+        expect(wrapper.find('.ghost').exists()).toBe(false)
+        expect(wrapper.find('.accept-proposal').exists()).toBe(false)
+        expect(emittedProse(wrapper).text).toBe('The door creaked. open.')
+      })
+
+      it('keeps the focus in the editor when pressed, since a blur would dismiss the proposal', async () => {
+        stubNarrow(true)
+        const wrapper = mount(MarkdownEditor, { props: { prose: plain('The door creaked.') } })
+        wrapper.vm.showProposal(' open.')
+        await nextTick()
+
+        const press = new MouseEvent('mousedown', { cancelable: true, bubbles: true })
+        wrapper.find('.accept-proposal').element.dispatchEvent(press)
+
+        expect(press.defaultPrevented).toBe(true)
+      })
     })
 
     it('Escape dismisses the proposal and prevents default, inserting nothing', async () => {

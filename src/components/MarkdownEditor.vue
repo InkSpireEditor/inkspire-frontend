@@ -42,6 +42,7 @@ import {
   type Prose,
   type Snapshots,
 } from '../services/provenance'
+import { useNarrow } from '../services/viewport'
 
 /**
  * The prose to show, text and provenance together.
@@ -152,6 +153,8 @@ let proposalWasShown = false
  * keeping `prose` plain protects.
  */
 const proposal = ref('')
+/** Whether the window is phone width, where a proposal is accepted with a button, not Tab. */
+const narrow = useNarrow()
 
 /**
  * Where the proposal's own span is drawn, in pixels relative to `.surface`'s
@@ -898,6 +901,19 @@ watch(
          own, with the proposal's span placed inside it at the caret's measured
          position (`positionGhost`) rather than pushed there by mirroring the
          document in flow. -->
+    <!-- No Tab key on a phone's keyboard, so there is a button for it (frontend#53). `mousedown`
+         is cancelled so that pressing it leaves the focus in the editor: a blur dismisses the
+         proposal before the click would arrive. -->
+    <button
+      v-if="proposal && narrow"
+      type="button"
+      class="accept-proposal"
+      aria-label="Accept the proposed text"
+      @mousedown.prevent
+      @click="acceptProposal"
+    >
+      Accept
+    </button>
     <div v-if="proposal" class="ghost" aria-hidden="true">
       <span
         class="ghost-proposal"
@@ -993,6 +1009,24 @@ watch(
 
 .surface::highlight(ink-fix) {
   background-color: rgba(255, 180, 84, 0.26);
+}
+
+/* Over the bottom right corner of the writing surface, so it does not hide the line being
+   written. Drawn only at phone width (the template decides). */
+.accept-proposal {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 5;
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--color-text-on-fill);
+  background: var(--color-primary);
+  border: none;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-strong);
+  cursor: pointer;
 }
 
 /* The completion proposal's overlay (frontend#9): a clipping box matching

@@ -23,6 +23,7 @@ import { useKnownTags } from '../services/sharedTags'
 import { asSpace, type Space } from '../services/spaces'
 import { countWords } from '../services/words'
 import { timeAgo } from '../services/time'
+import { useNarrow } from '../services/viewport'
 import Modal from '../components/Modal.vue'
 import GitPanel from '../components/GitPanel.vue'
 import Icon from '../components/Icon.vue'
@@ -129,6 +130,8 @@ onUnmounted(() => window.removeEventListener('stories:changed', handleStoriesCha
 
 const draggedChapterId = ref<string | null>(null)
 const reorderError = ref<string | null>(null)
+/** At phone width a chapter has buttons to move it: a touch does not start a drag everywhere. */
+const narrow = useNarrow()
 
 const onDragStart = (fileId: string) => {
   if (isStory.value) draggedChapterId.value = fileId
@@ -152,7 +155,24 @@ const onDrop = async (targetId: string) => {
 
   const [movedId] = ids.splice(from, 1)
   ids.splice(to, 0, movedId!)
+  await saveOrder(ids)
+}
 
+/** Moves a chapter one place up (-1) or down (1): the same request a drop sends. */
+const moveChapter = async (fileId: string, step: -1 | 1) => {
+  if (!isStory.value || !dir.value) return
+  const ids = dir.value.files.map((file) => file.id)
+  const from = ids.indexOf(fileId)
+  const to = from + step
+  if (from === -1 || to < 0 || to >= ids.length) return
+
+  const [movedId] = ids.splice(from, 1)
+  ids.splice(to, 0, movedId!)
+  await saveOrder(ids)
+}
+
+const saveOrder = async (ids: string[]) => {
+  if (!dir.value) return
   try {
     dir.value = await filesManagerService.reorderChapters(dir.value.id, ids)
   } catch (e) {
@@ -347,6 +367,24 @@ const confirmForceDelete = async () => {
               class="modified"
               :title="file.modified"
             >{{ timeAgo(file.modified, now) }}</span>
+          </span>
+          <span v-if="isStory && narrow" class="move-buttons">
+            <button
+              class="icon-only move-up"
+              :disabled="file.id === dir.files[0]?.id"
+              :aria-label="`Move ${file.name} up`"
+              @click="moveChapter(file.id, -1)"
+            >
+              <Icon name="triangle" />
+            </button>
+            <button
+              class="icon-only move-down"
+              :disabled="file.id === dir.files[dir.files.length - 1]?.id"
+              :aria-label="`Move ${file.name} down`"
+              @click="moveChapter(file.id, 1)"
+            >
+              <Icon name="triangle" />
+            </button>
           </span>
         </li>
         <li v-if="dir.files.length === 0" class="empty">No {{ fileLabel }} yet.</li>
@@ -566,6 +604,35 @@ h1 {
 
 .chapter a:hover {
   text-decoration: underline;
+}
+
+/* The row's own buttons, drawn only at phone width. The triangle's outline points up, so the
+   one that moves a chapter down is turned over. */
+.move-buttons {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+}
+
+.move-buttons button {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-background);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.move-buttons button:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.move-buttons .move-down :deep(.icon-svg) {
+  transform: rotate(180deg);
 }
 
 .chapter-meta {
