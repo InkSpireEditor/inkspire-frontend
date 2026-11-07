@@ -569,6 +569,8 @@ h1 {
   /* Clips the entity panel while it slides off to the right, the same role
      .app-layout plays for the left sidebar sliding off to the left. */
   overflow: hidden;
+  /* The entity panel is drawn over this area at phone width (SidePanel.vue). */
+  position: relative;
 }
 
 /* Inline, next to Search/Spacing, rather than a sidebar down the side of the

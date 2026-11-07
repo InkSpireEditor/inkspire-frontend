@@ -1007,6 +1007,8 @@ onUnmounted(() => {
   display: flex;
   overflow: hidden;
   gap: 1rem;
+  /* The settings panel is drawn over this row at phone width (SidePanel.vue). */
+  position: relative;
 }
 
 .editor-container {

@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { isLoggedIn } from './services/api'
 import Login from './components/Login.vue'
 import Tree from './components/Tree.vue'
 import Icon from './components/Icon.vue'
+import { useNarrow } from './services/viewport'
 
 const router = useRouter()
+const route = useRoute()
 const isAuthenticated = ref(false)
-const isSidebarOpen = ref(true)
+// At phone width the sidebar covers the page, so it starts closed (frontend#51).
+const narrow = useNarrow()
+const isSidebarOpen = ref(!narrow.value)
 
 /**
  * 'auth:expired' is a window event dispatched from services/api.ts (manual
@@ -22,8 +26,23 @@ const handleAuthExpired = () => {
 
 const toggleSidebar = () => {
   isSidebarOpen.value = !isSidebarOpen.value
-  localStorage.setItem('sidebarOpen', String(isSidebarOpen.value))
+  // What is stored is the desktop's choice: opening the sidebar on a phone must not make the
+  // desktop open it too, nor must closing it there.
+  if (!narrow.value) localStorage.setItem('sidebarOpen', String(isSidebarOpen.value))
 }
+
+// Over the page, the sidebar is in the way as soon as it has done its job: after a file or a page
+// has been picked from it, and when the window becomes narrow with it open.
+watch(
+  () => route.fullPath,
+  () => {
+    if (narrow.value) isSidebarOpen.value = false
+  },
+)
+watch(narrow, (now) => {
+  // Back to the desktop's choice once the window is wide again.
+  isSidebarOpen.value = now ? false : localStorage.getItem('sidebarOpen') !== 'false'
+})
 
 onMounted(() => {
   // The JWT lives in an httpOnly cookie; the readable auth_status flag tells us
@@ -33,7 +52,7 @@ onMounted(() => {
   }
   // Restore the last sidebar state so it survives reloads.
   const storedSidebar = localStorage.getItem('sidebarOpen')
-  if (storedSidebar !== null) {
+  if (storedSidebar !== null && !narrow.value) {
     isSidebarOpen.value = storedSidebar === 'true'
   }
   window.addEventListener('auth:expired', handleAuthExpired)
@@ -61,6 +80,13 @@ const handleLoginSuccess = () => {
       <Icon :name="isSidebarOpen ? 'chevron-left' : 'menu'" />
     </button>
 
+    <div
+      v-if="narrow && isSidebarOpen"
+      class="sidebar-backdrop"
+      data-testid="sidebar-backdrop"
+      @click="toggleSidebar"
+    ></div>
+
     <aside :class="{ collapsed: !isSidebarOpen }">
       <Tree />
     </aside>
@@ -77,6 +103,8 @@ const handleLoginSuccess = () => {
 .app-layout {
   display: flex;
   height: 100vh;
+  /* The height that is on screen, with the browser's own bars where they are shown. */
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
 }
@@ -132,6 +160,35 @@ main {
   padding: 2rem 2rem 2.5rem;
   overflow-y: auto;
   background-color: var(--color-background);
+}
+
+/* A phone: the sidebar is drawn over the page, not beside it, and a tap outside it closes it. */
+@media (max-width: 640px) {
+  aside {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 300px;
+    max-width: 85vw;
+    z-index: 250;
+    transition: transform 220ms ease, visibility 0s;
+  }
+
+  aside.collapsed {
+    margin-left: 0;
+    transform: translateX(-100%);
+    /* Not reachable by Tab while it is off screen, once it has finished sliding. */
+    visibility: hidden;
+    transition: transform 220ms ease, visibility 0s 220ms;
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: var(--color-backdrop);
+  }
 }
 
 .content-placeholder {

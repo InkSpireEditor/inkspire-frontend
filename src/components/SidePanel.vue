@@ -46,6 +46,28 @@ defineEmits<{ close: [] }>()
   margin-right: -340px;
 }
 
+/* A phone: the panel is drawn over what is beside it, across its whole width, because 340px
+   beside anything does not fit. It is positioned against the caller's row, which is why that row
+   is `position: relative` (Text.vue's .editor-row, LoreView.vue's .graph-area). */
+@media (max-width: 640px) {
+  .side-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    z-index: 10;
+    transition: transform 220ms ease, visibility 0s;
+  }
+
+  .side-panel.collapsed {
+    margin-right: 0;
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform 220ms ease, visibility 0s 220ms;
+  }
+}
+
 .side-panel-header {
   display: flex;
   align-items: center;
