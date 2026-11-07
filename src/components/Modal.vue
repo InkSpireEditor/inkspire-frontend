@@ -187,4 +187,23 @@ button:disabled {
   border-color: var(--color-primary);
   box-shadow: var(--focus-ring);
 }
+
+/* A phone (frontend#54). The keyboard is drawn over the page without resizing it, so a dialog
+   centred in the page has its lower half behind the keyboard. It starts at the top instead, and
+   the overlay scrolls when the dialog is taller than what is left. */
+@media (max-width: 640px) {
+  .modal-overlay {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .modal {
+    margin: 0 auto;
+  }
+
+  button {
+    min-height: 40px;
+  }
+}
 </style>

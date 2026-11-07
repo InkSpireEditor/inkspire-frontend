@@ -571,4 +571,23 @@ h1 {
   font-weight: var(--font-weight-bold);
   text-anchor: middle;
 }
+
+/* A phone (frontend#54): controls a finger can hit. */
+@media (max-width: 640px) {
+  .legend h2 {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+  }
+
+  .legend-item {
+    min-height: 36px;
+    padding: 0 var(--space-3);
+  }
+
+  .zoom button {
+    min-width: 40px;
+    height: 40px;
+  }
+}
 </style>

@@ -691,4 +691,18 @@ h4 {
   font-size: 0.9rem;
   line-height: 1.5;
 }
+
+/* A phone (frontend#54): controls a finger can hit. */
+@media (max-width: 640px) {
+  .legend h2 {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+  }
+
+  .legend-item {
+    min-height: 36px;
+    padding: 0 var(--space-3);
+  }
+}
 </style>

@@ -91,6 +91,8 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
+  /* The height that is on screen, with the browser's own bars where they are shown. */
+  min-height: 100dvh;
   width: 100%;
 }
 
@@ -182,5 +184,12 @@ button:disabled {
   margin-bottom: var(--space-4);
   font-size: 0.9rem;
   text-align: center;
+}
+
+/* A phone (frontend#54): the card does not touch the edges of the screen. */
+@media (max-width: 640px) {
+  .login-container {
+    padding: var(--space-4) var(--space-3);
+  }
 }
 </style>

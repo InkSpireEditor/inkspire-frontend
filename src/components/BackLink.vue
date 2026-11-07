@@ -29,4 +29,13 @@ defineProps<{ storyId: string }>()
   color: var(--color-text);
   text-decoration: underline;
 }
+
+/* A phone (frontend#54): a link a finger can hit. */
+@media (max-width: 640px) {
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+}
 </style>
