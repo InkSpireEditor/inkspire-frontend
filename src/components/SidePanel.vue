@@ -103,4 +103,11 @@ defineEmits<{ close: [] }>()
   overflow-y: auto;
   padding: var(--space-4);
 }
+
+/* A phone (frontend#54): a button a finger can hit. After `.close`, which it overrides. */
+@media (max-width: 640px) {
+  .close {
+    padding: var(--space-2) var(--space-3);
+  }
+}
 </style>

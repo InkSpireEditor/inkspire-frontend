@@ -213,4 +213,21 @@ const onBlur = () => {
   color: var(--color-danger);
   font-size: 0.8rem;
 }
+
+/* A phone (frontend#54): the chip's own height does not change, but what a finger can hit does. */
+@media (max-width: 640px) {
+  .chip-remove {
+    min-width: 28px;
+    min-height: 28px;
+    margin: -4px -6px -4px 0;
+  }
+
+  .add-open {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .tag-input {
+    padding: var(--space-1) var(--space-3);
+  }
+}
 </style>

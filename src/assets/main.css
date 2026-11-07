@@ -14,3 +14,14 @@ a,
         background-color: var(--color-primary-soft);
     }
 }
+
+/* A phone (frontend#54). iOS zooms the page when a field with text under 16px takes the focus, and
+   does not zoom back. Every field of the app is set here, once, whatever size its own component
+   gave it: `!important` is what makes one rule win over all of those component rules. */
+@media (max-width: 640px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+}

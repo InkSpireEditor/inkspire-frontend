@@ -893,4 +893,12 @@ onUnmounted(() => {
   opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
+
+/* A phone (frontend#54): a button a finger can hit. */
+@media (max-width: 640px) {
+    .icon-btn {
+        width: 40px;
+        height: 40px;
+    }
+}
 </style>

@@ -1207,4 +1207,11 @@ button.active {
     padding: 8px 14px;
   }
 }
+
+@media (max-width: 640px) {
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+}
 </style>

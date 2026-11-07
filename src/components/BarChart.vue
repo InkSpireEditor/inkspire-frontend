@@ -251,4 +251,13 @@ h2 {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* A phone (frontend#54): a button a finger can hit. */
+@media (max-width: 640px) {
+  .view-toggle {
+    min-height: 40px;
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+}
 </style>

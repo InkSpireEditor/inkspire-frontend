@@ -183,6 +183,13 @@ main {
     transition: transform 220ms ease, visibility 0s 220ms;
   }
 
+  .sidebar-toggle {
+    top: 4px;
+    left: 8px;
+    width: 40px;
+    height: 40px;
+  }
+
   /* The toggle is fixed in the top-left corner, so the page starts below it and a long title
      cannot run under it. */
   main {

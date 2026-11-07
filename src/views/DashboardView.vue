@@ -696,4 +696,38 @@ h1 {
   background-color: var(--color-danger);
   color: var(--color-text-on-fill);
 }
+
+/* A phone (frontend#54): a chapter's name has the row's width to itself, its tags, status and
+   time under it, and the move buttons beside both, so a name does not wrap at every word. */
+@media (max-width: 640px) {
+  .chapter {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-2);
+  }
+
+  .chapter a {
+    grid-column: 1;
+    overflow-wrap: anywhere;
+  }
+
+  .chapter-meta {
+    grid-column: 1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .move-buttons {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    margin-left: 0;
+  }
+
+  .move-buttons button {
+    padding: var(--space-3);
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
 </style>
