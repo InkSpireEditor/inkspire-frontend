@@ -1356,4 +1356,134 @@ describe('Tree.vue', () => {
             expect(wrapper.findAll('.tree-children').length).toBe(0)
         })
     })
+
+    // ------------------------------------
+    // Git marks, stage, unstage and reset
+    // ------------------------------------
+
+    describe('git marks', () => {
+        const CHANGE = {
+            path: 'stories/example/chapters/one.ink', state: 'modified' as const, staged: false,
+            unstaged: true, id: 'c1', dir: 's1', committable: true,
+        }
+        const status = (...changes: typeof CHANGE[]) => ({
+            branch: 'main', upstream: 'origin/main', ahead: 0, behind: 0,
+            fetched: false, clean: changes.length === 0, changes,
+        })
+
+        const mountWithChange = async (...changes: typeof CHANGE[]) => {
+            vi.mocked(gitService.status).mockResolvedValue(status(...changes))
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{ id: 's1', name: 'Story', summary: '', files: [{ id: 'c1', name: 'Chapter', status: '' }] }],
+                files: [],
+            })
+            const wrapper = mountTree()
+            await flushPromises()
+            // The chapter is inside a closed story.
+            await wrapper.find('.toggle-icon').trigger('click')
+            return wrapper
+        }
+
+        const rowOf = (wrapper: ReturnType<typeof mountTree>, name: string) =>
+            wrapper.findAll('.tree-node-content').find((row) => row.text().includes(name))!
+
+        const choose = async (wrapper: ReturnType<typeof mountTree>, entry: string) => {
+            const row = rowOf(wrapper, 'Chapter')
+            await row.find('.node-actions-trigger').trigger('click')
+            await row.findAll('.context-menu div').find((d) => d.text() === entry)!.trigger('click')
+            await flushPromises()
+        }
+
+        it('asks for the status on its own, and draws a dot on the changed chapter and on its story', async () => {
+            const wrapper = await mountWithChange(CHANGE)
+
+            expect(gitService.status).toHaveBeenCalled()
+            expect(rowOf(wrapper, 'Chapter').find('.git-mark').classes()).toContain('changed')
+            expect(rowOf(wrapper, 'Story').find('.git-mark').exists()).toBe(true)
+        })
+
+        it('draws no dot on a clean tree', async () => {
+            const wrapper = await mountWithChange()
+            expect(wrapper.find('.git-mark').exists()).toBe(false)
+        })
+
+        it('draws no dot in the notes tab, which is not in git', async () => {
+            const wrapper = await mountWithChange(CHANGE)
+            vi.mocked(filesManagerService.getTree).mockResolvedValue({
+                dirs: [{ id: 's1', name: 'Folder', summary: '', files: [{ id: 'c1', name: 'Note', status: '' }] }],
+                files: [],
+            })
+            await openTab(wrapper, 'Notes')
+
+            expect(wrapper.find('.git-mark').exists()).toBe(false)
+        })
+
+        it('stages a file from its menu and fills its dot', async () => {
+            vi.spyOn(gitService, 'stage').mockResolvedValue(
+                status({ ...CHANGE, staged: true, unstaged: false }),
+            )
+            const wrapper = await mountWithChange(CHANGE)
+
+            await choose(wrapper, 'Stage')
+
+            expect(gitService.stage).toHaveBeenCalledWith({ files: ['c1'] })
+            expect(rowOf(wrapper, 'Chapter').find('.git-mark').classes()).toContain('staged')
+        })
+
+        it('unstages a staged file from its menu', async () => {
+            vi.spyOn(gitService, 'unstage').mockResolvedValue(status(CHANGE))
+            const wrapper = await mountWithChange({ ...CHANGE, staged: true, unstaged: false })
+
+            await choose(wrapper, 'Unstage')
+
+            expect(gitService.unstage).toHaveBeenCalledWith({ files: ['c1'] })
+            expect(rowOf(wrapper, 'Chapter').find('.git-mark').classes()).toContain('changed')
+        })
+
+        it('resets only after a confirmation that names the file, then tells the editor and the pages', async () => {
+            vi.spyOn(gitService, 'reset').mockResolvedValue(status())
+            const events: string[] = []
+            const record = (event: Event) => events.push(`${event.type}:${JSON.stringify((event as CustomEvent).detail ?? null)}`)
+            for (const type of ['git:reset', 'tree:changed', 'stories:changed']) window.addEventListener(type, record)
+            const wrapper = await mountWithChange(CHANGE)
+
+            await choose(wrapper, 'Reset…')
+            const modal = wrapper.findAllComponents(Modal).find((m) => m.props('title') === 'Discard changes')!
+            expect(modal.props('show')).toBe(true)
+            expect(modal.text()).toContain('"Chapter"')
+            expect(gitService.reset).not.toHaveBeenCalled()
+
+            modal.vm.$emit('confirm')
+            await flushPromises()
+
+            expect(gitService.reset).toHaveBeenCalledWith({ files: ['c1'] })
+            expect(events).toContain('git:reset:{"ids":["c1"]}')
+            expect(events).toContain('tree:changed:null')
+            expect(events).toContain('stories:changed:{"storyId":"s1","space":"stories"}')
+            expect(wrapper.find('.git-mark').exists()).toBe(false)
+            for (const type of ['git:reset', 'tree:changed', 'stories:changed']) window.removeEventListener(type, record)
+        })
+
+        it('resets nothing when the confirmation is cancelled', async () => {
+            vi.spyOn(gitService, 'reset').mockResolvedValue(status())
+            const wrapper = await mountWithChange(CHANGE)
+
+            await choose(wrapper, 'Reset…')
+            wrapper.findAllComponents(Modal).find((m) => m.props('title') === 'Discard changes')!.vm.$emit('close')
+            await flushPromises()
+
+            expect(gitService.reset).not.toHaveBeenCalled()
+        })
+
+        it('shows the API refusal in the error dialog', async () => {
+            vi.spyOn(gitService, 'stage').mockRejectedValue(new Error('Stage failed: Nothing to stage.'))
+            const wrapper = await mountWithChange(CHANGE)
+
+            await choose(wrapper, 'Stage')
+
+            const error = wrapper.findAllComponents(Modal).find((m) => m.props('title') === 'Error')!
+            expect(error.props('show')).toBe(true)
+            expect(error.text()).toContain('Nothing to stage.')
+        })
+    })
 })

@@ -13,6 +13,8 @@ import { useSharedFeatures } from '../services/sharedFeatures'
 import { useSharedFiles } from '../services/sharedFiles'
 import { useSharedGit } from '../services/sharedGit'
 import { useKnownTags } from '../services/sharedTags'
+import { useGitActions } from '../services/gitActions'
+import { changesById, marksOf } from '../services/gitMarks'
 import { filterNodes, tagsOfNodes, withoutTag, withTag } from '../services/tags'
 import { useRename } from '../services/rename'
 import { allowsRootFiles, asSpace, SPACES, SPACE_LABELS, type Space } from '../services/spaces'
@@ -20,7 +22,8 @@ import { isLoggedIn, logout } from '../services/api'
 
 const { toggleTheme, isDarkMode } = useTheme()
 const { selectedFileId, setSelectedFile, clearSelectedFile } = useSharedFiles()
-const { refresh: refreshGitStatus } = useSharedGit()
+const { gitStatus, refresh: refreshGitStatus } = useSharedGit()
+const gitActions = useGitActions()
 // The same flag the dice button reads, kept fresh by Text.vue's own
 // ensureFeaturesLoaded() -- this component only ever reads it, for the
 // title-edit modal's own instruction+Generate section (frontend#30).
@@ -141,6 +144,9 @@ const showConfirm = ref(false)
 const confirmMessage = ref('')
 const nodeToDelete = ref<FileSystemNode | null>(null)
 
+// Reset Confirmation State Management
+const nodeToReset = ref<FileSystemNode | null>(null)
+
 // Error Dialog State Management
 const showError = ref(false)
 const errorMessage = ref('')
@@ -148,11 +154,23 @@ const errorMessage = ref('')
 // Root menu open/close state
 const showRootMenu = ref(false)
 
+/**
+ * What git says about the stories, by id. Only the stories tab has any: the notes are not in a
+ * repository. Read from the shared status, which this component asks for once it is mounted and
+ * which a save, a create, a rename and a delete keep fresh.
+ */
+const marks = computed(() => (activeSpace.value === 'stories' ? marksOf(gitStatus.value) : new Map()))
+const changes = computed(() =>
+    activeSpace.value === 'stories' ? changesById(gitStatus.value) : new Map(),
+)
+
 // 'provide' allows us to share state and methods with all descendant components 
 // (like TreeItem) without having to pass props through every level of the tree.
 provide('treeContext', {
   space: readonly(activeSpace), // Which root the node is in, which decides its icon
   filtering: readonly(filtering), // Whether a tag filter is on, which keeps directories open
+  marks, // The dot of each changed file and story; the notes are not in git, so none there
+  changes, // The change of each changed file, for what its menu offers
   onAction: (action: string, node: FileSystemNode | null, parentId: string | null = null) => handleNodeAction(action, node, parentId)
 })
 
@@ -266,7 +284,35 @@ const handleNodeAction = (action: string, node: FileSystemNode | null, parentId:
         nodeToDelete.value = node
         confirmMessage.value = `Are you sure you want to delete "${node.name}"?`
         showConfirm.value = true
+    } else if (action === 'stage' && node) {
+        runGit(() => gitActions.stage({ files: [node.id] }), 'Stage failed')
+    } else if (action === 'unstage' && node) {
+        runGit(() => gitActions.unstage({ files: [node.id] }), 'Unstage failed')
+    } else if (action === 'reset' && node) {
+        nodeToReset.value = node
+        showResetConfirm.value = true
     }
+}
+
+const showResetConfirm = ref(false)
+
+/** Runs one git action from a file's menu and shows its failure in the error dialog. */
+const runGit = async (action: () => Promise<unknown>, fallback: string) => {
+    if (!isLoggedIn()) return
+    try {
+        await action()
+    } catch (e) {
+        errorMessage.value = e instanceof Error ? e.message : fallback
+        showError.value = true
+    }
+}
+
+/** Discards the file's changes since the last commit, after the writer confirmed it. */
+const confirmReset = async () => {
+    const node = nodeToReset.value
+    showResetConfirm.value = false
+    if (!node) return
+    await runGit(() => gitActions.reset({ files: [node.id] }), 'Reset failed')
 }
 
 /**
@@ -525,6 +571,8 @@ const handleStoriesChanged = (event: Event) => {
 
 onMounted(() => {
     fetchTree(activeSpace.value)
+    // The dots need the status before any dashboard has asked for it.
+    refreshGitStatusQuietly()
     document.addEventListener('click', closeRootMenu)
     window.addEventListener('stories:changed', handleStoriesChanged)
     window.addEventListener('text:edit-title', handleEditTitleRequest)
@@ -666,6 +714,20 @@ onUnmounted(() => {
       @confirm="confirmDelete"
     >
       <p>{{ confirmMessage }}</p>
+    </Modal>
+
+    <Modal
+      :show="showResetConfirm"
+      title="Discard changes"
+      confirm-text="Discard"
+      :is-danger="true"
+      @close="showResetConfirm = false"
+      @confirm="confirmReset"
+    >
+      <p>
+        Discard the changes to "{{ nodeToReset?.name }}" since the last commit? The text goes
+        back to what was committed, and this cannot be undone.
+      </p>
     </Modal>
 
     <!-- Error Dialog -->

@@ -25,7 +25,7 @@ import { countWords } from '../services/words'
 import { timeAgo } from '../services/time'
 import { useNarrow } from '../services/viewport'
 import Modal from '../components/Modal.vue'
-import GitPanel from '../components/GitPanel.vue'
+import StoryGitPanel from '../components/StoryGitPanel.vue'
 import Icon from '../components/Icon.vue'
 import TagEditor from '../components/TagEditor.vue'
 
@@ -410,7 +410,7 @@ const confirmForceDelete = async () => {
         </router-link>
       </div>
 
-      <GitPanel v-if="isStory" />
+      <StoryGitPanel v-if="isStory" :story-id="String(route.params.id)" />
 
       <div class="danger-zone">
         <button class="delete-story" @click="openDeleteConfirm">Delete {{ dirLabel }}</button>

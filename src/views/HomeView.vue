@@ -17,7 +17,8 @@ import { timeAgo } from '../services/time'
 import { todayIso } from '../services/activityGrid'
 import { countWords } from '../services/words'
 import { activityService, type ActivityDay } from '../services/activity'
-import { gitService } from '../services/git'
+import { useSharedGit } from '../services/sharedGit'
+import GitPanel from '../components/GitPanel.vue'
 import BarChart from '../components/BarChart.vue'
 import ActivityGrid from '../components/ActivityGrid.vue'
 import type { RouteLocationRaw } from 'vue-router'
@@ -31,8 +32,11 @@ const storyWords = ref<Bar[]>([])
 const countingWords = ref(false)
 const activity = ref<ActivityDay[] | null>(null)
 const activityFailed = ref(false)
-/** How many changes are not committed, from the git panel's own state; null when unknown. */
-const uncommitted = ref<number | null>(null)
+const { gitStatus, refresh: refreshGitStatus } = useSharedGit()
+/** How many changes are not committed, from the shared git status; null when unknown. */
+const uncommitted = computed(
+  () => gitStatus.value?.changes.filter((change) => change.committable).length ?? null,
+)
 
 /** What is said under the grid: that only committed work counts, and what is not yet. */
 const uncommittedLine = computed(() => {
@@ -153,14 +157,7 @@ const loadActivity = async () => {
   }
 }
 
-const loadUncommitted = async () => {
-  try {
-    const status = await gitService.status()
-    uncommitted.value = status.changes.filter((change) => change.committable).length
-  } catch {
-    uncommitted.value = null
-  }
-}
+const loadUncommitted = () => refreshGitStatus().catch(() => {})
 
 const reload = () => load({ silent: true })
 
@@ -225,6 +222,8 @@ onUnmounted(() => window.removeEventListener('tree:changed', reload))
         :caption="`${numbers.format(totalWords)} words in all`"
         :bars="shownStoryWords"
       />
+
+      <GitPanel />
     </template>
   </div>
 </template>

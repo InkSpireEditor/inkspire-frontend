@@ -5,11 +5,25 @@ import { apiFetch } from './apiFetch';
 export interface GitChange {
     path: string;
     state: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'conflicted';
+    /** The index differs from the last commit. */
     staged: boolean;
+    /** The file differs from the index; an untracked file does. A file can be both. */
+    unstaged: boolean;
+    /** The file's id in the tree, or null for a path that is not a chapter or a one-shot. */
+    id: string | null;
     /** The story this path is inside, or null for a path outside every story. */
     dir: string | null;
-    /** Whether `commit()` will stage this path: a story's own manifest, or a chapter. */
+    /** Whether stage, unstage and reset act on this path: a story's manifest, a chapter or a one-shot. */
     committable: boolean;
+}
+
+/**
+ * Which changes stage, unstage and reset act on. `files` are file ids and `dir` a story id;
+ * both left out means every committable change.
+ */
+export interface GitSelection {
+    files?: string[];
+    dir?: string;
 }
 
 /** The branch, what has changed, and how far it is from its upstream. */
@@ -28,7 +42,7 @@ export interface GitStatus {
 export interface GitCommitResult extends GitStatus {
     sha: string;
     message: string;
-    /** The paths this commit actually touched — the committable subset of what changed. */
+    /** The paths this commit actually touched: what was staged. */
     committed: string[];
 }
 
@@ -45,10 +59,7 @@ export const gitService = {
         return response.json();
     },
 
-    /**
-     * Commits only what the API itself writes: a story's manifest and its chapters.
-     * A hand-edited lorebook or timeline is left exactly as dirty as it was.
-     */
+    /** Commits what is staged and nothing else. */
     async commit(message: string): Promise<GitCommitResult> {
         const response = await apiFetch(`${API_URL}/git/commit`, {
             method: 'POST',
@@ -57,6 +68,24 @@ export const gitService = {
         });
         if (!response.ok) throw new Error(await errorMessage(response, 'Commit failed'));
         return response.json();
+    },
+
+    /** Stages the selected changes. Refused when none of them has an unstaged change. */
+    async stage(selection: GitSelection = {}): Promise<GitStatus> {
+        return post('stage', selection, 'Stage failed');
+    },
+
+    /** Takes the selected changes out of the index; the files keep their edits. */
+    async unstage(selection: GitSelection = {}): Promise<GitStatus> {
+        return post('unstage', selection, 'Unstage failed');
+    },
+
+    /**
+     * Restores the selected files from the last commit, discarding the edit for good. A new
+     * file is left as it is: it has no last commit to go back to.
+     */
+    async reset(selection: GitSelection = {}): Promise<GitStatus> {
+        return post('reset', selection, 'Reset failed');
     },
 
     async push(): Promise<GitStatus> {
@@ -78,6 +107,16 @@ export const gitService = {
         return response.json();
     },
 };
+
+async function post(route: string, selection: GitSelection, fallback: string): Promise<GitStatus> {
+    const response = await apiFetch(`${API_URL}/git/${route}`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ files: selection.files ?? [], dir: selection.dir ?? null }),
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, fallback));
+    return response.json();
+}
 
 /**
  * The API's own explanation, when there is one. A refusal reads as "diverged, 2

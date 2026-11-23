@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import DashboardView from './DashboardView.vue'
-import GitPanel from '../components/GitPanel.vue'
+import StoryGitPanel from '../components/StoryGitPanel.vue'
 import TagEditor from '../components/TagEditor.vue'
 import { filesManagerService, HoldsError } from '../services/filesManager'
 import { useSharedFiles } from '../services/sharedFiles'
@@ -27,7 +27,7 @@ vi.mock('../services/filesManager', async () => {
 })
 
 // The real singleton would call the real gitService and reach a real network
-// request. GitPanel now mounts for real as part of the dashboard (F8), so this
+// request. StoryGitPanel now mounts for real as part of the dashboard (F8), so this
 // needs the whole shape it reads -- not just the refresh() this view calls itself.
 const mockRefreshGitStatus = vi.fn().mockResolvedValue(undefined)
 vi.mock('../services/sharedGit', () => ({
@@ -103,7 +103,7 @@ describe('DashboardView.vue', () => {
     )
     expect(wrapper.find('h1').text()).toBe('Example Story')
     expect(wrapper.text()).toContain('In one line.')
-    expect(wrapper.findComponent(GitPanel).exists()).toBe(true)
+    expect(wrapper.findComponent(StoryGitPanel).exists()).toBe(true)
 
     const chapters = wrapper.findAll('.chapter')
     expect(chapters).toHaveLength(2)
@@ -684,7 +684,7 @@ describe('DashboardView.vue', () => {
     it('offers none of what only a story has', async () => {
       const { wrapper } = await mountFolder()
 
-      expect(wrapper.findComponent(GitPanel).exists()).toBe(false)
+      expect(wrapper.findComponent(StoryGitPanel).exists()).toBe(false)
       expect(wrapper.findAll('.read-link')).toHaveLength(0)
       expect(wrapper.find('.chapter').attributes('draggable')).toBe('false')
     })

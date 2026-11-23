@@ -31,6 +31,44 @@ describe('gitService', () => {
         vi.clearAllMocks();
     });
 
+    describe.each([
+        ['stage', 'Stage failed'],
+        ['unstage', 'Unstage failed'],
+        ['reset', 'Reset failed'],
+    ] as const)('%s', (route, failure) => {
+        it('posts the selection by id, with credentials, and answers the status', async () => {
+            fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => CLEAN } as Response);
+
+            const result = await gitService[route]({ files: ['f1'], dir: 's1' });
+
+            expect(result).toEqual(CLEAN);
+            expect(fetchSpy).toHaveBeenCalledWith(`${API_URL}/git/${route}`, {
+                method: 'POST',
+                headers: jsonHeaders,
+                credentials: 'include',
+                body: JSON.stringify({ files: ['f1'], dir: 's1' }),
+            });
+        });
+
+        it('sends an empty selection, which means every change', async () => {
+            fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => CLEAN } as Response);
+
+            await gitService[route]();
+
+            expect(fetchSpy.mock.calls[0]![1]?.body).toBe(JSON.stringify({ files: [], dir: null }));
+        });
+
+        it('reports the API message on a refusal', async () => {
+            fetchSpy.mockResolvedValueOnce({
+                ok: false,
+                status: 409,
+                json: async () => ({ code: 409, message: 'Nothing to do.' }),
+            } as Response);
+
+            await expect(gitService[route]()).rejects.toThrow(`${failure}: Nothing to do.`);
+        });
+    });
+
     describe('status', () => {
         it('reads the branch and what has changed, with credentials', async () => {
             fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => CLEAN } as Response);

@@ -221,6 +221,50 @@ describe('Text.vue', () => {
     expect(vm.text).toBe('Initial content')
   })
 
+  describe('a reset of the open file (git:reset)', () => {
+    const resetEvent = (ids: string[]) =>
+      window.dispatchEvent(new CustomEvent('git:reset', { detail: { ids } }))
+
+    it('reads the file again, and never saves the text that was discarded', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('Edited and about to be discarded'))
+      vi.mocked(filesManagerService.getDocument).mockClear()
+      vi.mocked(filesManagerService.getDocument).mockResolvedValue({
+        body: 'Back to the committed text',
+        metadata: null,
+      } as any)
+
+      resetEvent([OPEN.id])
+      await flushPromises()
+      vi.advanceTimersByTime(5000)
+      await flushPromises()
+
+      expect(filesManagerService.getDocument).toHaveBeenCalledWith(OPEN.space, OPEN.id)
+      expect(vm.text).toBe('Back to the committed text')
+      expect(filesManagerService.putDocument).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('leaves the editor alone when the reset was of another file', async () => {
+      const wrapper = mount(Text, { global: { stubs: { teleport: true } } })
+      selectedFile.value = OPEN
+      await flushPromises()
+      const vm = wrapper.vm as any
+      vm.handleProseChange(typed('Still being written'))
+      vi.mocked(filesManagerService.getDocument).mockClear()
+
+      resetEvent(['0000000000000000'])
+      await flushPromises()
+
+      expect(filesManagerService.getDocument).not.toHaveBeenCalled()
+      expect(vm.text).toBe('Still being written')
+      wrapper.unmount()
+    })
+  })
+
   it('auto-save fires 1s after the last keystroke, not before', async () => {
     const wrapper = mount(Text, {
       global: { stubs: { teleport: true } }

@@ -110,7 +110,7 @@ const handleLoginSuccess = () => {
 }
 
 aside {
-  width: 300px;
+  width: 320px;
   height: 100%;
   border-right: 1px solid var(--color-divider);
   overflow: hidden;
@@ -121,7 +121,7 @@ aside {
 }
 
 aside.collapsed {
-  margin-left: -300px;
+  margin-left: -320px;
 }
 
 /* Pinned toggle that stays put in both states: it sits in the tree's empty

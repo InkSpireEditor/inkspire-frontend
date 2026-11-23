@@ -314,4 +314,81 @@ describe('TreeItem.vue', () => {
       expect(entries).toContain('Delete')
     })
   })
+
+  describe('git marks', () => {
+    const change = (over: Record<string, unknown>) => ({
+      path: 'stories/example/chapters/one.ink', state: 'modified', staged: false, unstaged: true,
+      id: fileNode.id, dir: 's1', committable: true, ...over,
+    })
+
+    const mountWith = (node: FileSystemNode, marks: Record<string, string>, changes: Record<string, unknown> = {}) =>
+      mount(TreeItem, {
+        props: { node, level: 0 },
+        global: {
+          provide: {
+            treeContext: {
+              space: ref('stories'),
+              marks: ref(new Map(Object.entries(marks))),
+              changes: ref(new Map(Object.entries(changes))),
+              onAction: mockOnAction,
+            },
+          },
+        },
+      })
+
+    const menuEntries = async (wrapper: ReturnType<typeof mountWith>) => {
+      await wrapper.find('.node-actions-trigger').trigger('click')
+      return wrapper.findAll('.context-menu div').map((d) => d.text())
+    }
+
+    it('draws no dot on a clean row', () => {
+      expect(mountWith(fileNode, {}).find('.git-mark').exists()).toBe(false)
+    })
+
+    it('draws a hollow dot for a changed file and a filled one for a staged file, named in words', () => {
+      const changed = mountWith(fileNode, { [fileNode.id]: 'changed' }).find('.git-mark')
+      expect(changed.classes()).toContain('changed')
+      expect(changed.attributes('title')).toBe('Changed since the last commit')
+      expect(changed.attributes('aria-label')).toBe('Changed since the last commit')
+
+      const staged = mountWith(fileNode, { [fileNode.id]: 'staged' }).find('.git-mark')
+      expect(staged.classes()).toContain('staged')
+      expect(staged.attributes('aria-label')).toBe('Staged for the next commit')
+    })
+
+    it("draws a story's dot, and offers a story no git entries", async () => {
+      const wrapper = mountWith(folderNode, { [folderNode.id]: 'changed' })
+      expect(wrapper.find('.git-mark').exists()).toBe(true)
+      expect(await menuEntries(wrapper)).toEqual(['New File', 'Edit'])
+    })
+
+    it('offers Stage and Reset for a modified file that is not staged', async () => {
+      const wrapper = mountWith(fileNode, { [fileNode.id]: 'changed' }, { [fileNode.id]: change({}) })
+      expect(await menuEntries(wrapper)).toEqual(['Edit', 'Stage', 'Reset…', 'Delete'])
+    })
+
+    it('offers Unstage and Reset for a staged file, and both Stage and Unstage for one edited after staging', async () => {
+      const staged = mountWith(fileNode, { [fileNode.id]: 'staged' }, { [fileNode.id]: change({ staged: true, unstaged: false }) })
+      expect(await menuEntries(staged)).toEqual(['Edit', 'Unstage', 'Reset…', 'Delete'])
+
+      const both = mountWith(fileNode, { [fileNode.id]: 'changed' }, { [fileNode.id]: change({ staged: true }) })
+      expect(await menuEntries(both)).toEqual(['Edit', 'Stage', 'Unstage', 'Reset…', 'Delete'])
+    })
+
+    it('offers no Reset for a new file, which has no last commit to go back to', async () => {
+      const wrapper = mountWith(fileNode, { [fileNode.id]: 'changed' }, { [fileNode.id]: change({ state: 'untracked' }) })
+      expect(await menuEntries(wrapper)).toEqual(['Edit', 'Stage', 'Delete'])
+    })
+
+    it('offers only Edit and Delete for a clean file', async () => {
+      expect(await menuEntries(mountWith(fileNode, {}))).toEqual(['Edit', 'Delete'])
+    })
+
+    it('reports the chosen entry with the node', async () => {
+      const wrapper = mountWith(fileNode, { [fileNode.id]: 'changed' }, { [fileNode.id]: change({}) })
+      await wrapper.find('.node-actions-trigger').trigger('click')
+      await wrapper.findAll('.context-menu div').find((d) => d.text() === 'Stage')!.trigger('click')
+      expect(mockOnAction).toHaveBeenCalledWith('stage', fileNode)
+    })
+  })
 })

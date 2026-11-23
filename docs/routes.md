@@ -37,6 +37,8 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
   over the last 52 weeks, from `GET /api/stories/activity` (`services/activity.ts`), brighter for
   bigger days, with a table twin behind a Table/Grid toggle. Under it, one muted line says only
   committed work is counted and how many committable changes are not (`services/git.ts`'s status);
+  under that is the git panel (`components/GitPanel.vue`): the branch, the changed chapters, one-shots
+  and story manifests with a dot for staged or not, Stage all, Reset all, Commit, Push and Pull;
   a failed activity load leaves a single "Activity could not be loaded." line and the rest of the
   page as it is. The activity is read when the page opens, and the git status again whenever the
   sidebar changes a tree. The grid's caption and table count only the days the grid draws.
@@ -47,7 +49,7 @@ files, no timeline and no lorebook, so `/notes/:id/read` matches nothing.
   name, the synopsis or context (called a synopsis in `stories`, a context in `notes`), and the
   files with a word count each and, where the server sends one, how long ago each changed. It edits
   that text, and deletes the directory. A story also has
-  drag-to-reorder, links to the three story views, the git panel, and a forced delete when the
+  drag-to-reorder, links to the three story views, a panel of its own changes (stage and reset), and a forced delete when the
   directory holds more than its chapters. A folder has none of these.
 - `EditorRoute.vue` reads `space` and `fileId` and nothing else. It sets the shared file selection
   (`sharedFiles.ts`, a `{space, id}` pair) and renders `Text.vue`, which reads only that selection.

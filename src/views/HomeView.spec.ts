@@ -6,6 +6,7 @@ import ActivityGrid from '../components/ActivityGrid.vue'
 import { filesManagerService } from '../services/filesManager'
 import type { TreeApiResponse } from '../services/filesManager'
 import { activityService, type ActivityDay } from '../services/activity'
+import { resetSharedGit } from '../services/sharedGit'
 import { gitService, type GitStatus } from '../services/git'
 
 vi.mock('../services/filesManager', async () => {
@@ -38,9 +39,9 @@ const GIT_STATUS: GitStatus = {
   fetched: false,
   clean: false,
   changes: [
-    { path: 'stories/foo/chapters/one.ink', state: 'modified', staged: false, dir: 'x', committable: true },
-    { path: 'stories/foo/story.yaml', state: 'modified', staged: false, dir: 'x', committable: true },
-    { path: 'stories/foo/timeline.yaml', state: 'modified', staged: false, dir: 'x', committable: false }
+    { path: 'stories/foo/chapters/one.ink', state: 'modified', staged: false, unstaged: true, id: null, dir: 'x', committable: true },
+    { path: 'stories/foo/story.yaml', state: 'modified', staged: false, unstaged: true, id: null, dir: 'x', committable: true },
+    { path: 'stories/foo/timeline.yaml', state: 'modified', staged: false, unstaged: true, id: null, dir: 'x', committable: false }
   ]
 }
 
@@ -89,6 +90,7 @@ describe('HomeView.vue', () => {
   })
 
   beforeEach(() => {
+    resetSharedGit()
     // Only `Date` is faked, so the relative times are the same on every day the suite runs
     // and promises still settle on the real timers.
     vi.useFakeTimers({ toFake: ['Date'] })

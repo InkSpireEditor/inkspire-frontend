@@ -1,16 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import GitPanel from './GitPanel.vue'
-import { gitService, type GitStatus } from '../services/git'
+import { gitService, type GitChange, type GitStatus } from '../services/git'
 import { resetSharedGit } from '../services/sharedGit'
 
 vi.mock('../services/git', () => ({
   gitService: {
     status: vi.fn(),
     commit: vi.fn(),
+    stage: vi.fn(),
+    unstage: vi.fn(),
+    reset: vi.fn(),
     push: vi.fn(),
     pull: vi.fn(),
   }
+}))
+
+vi.mock('../services/filesManager', () => ({
+  filesManagerService: {
+    getTree: vi.fn().mockResolvedValue({
+      dirs: [{ id: 'a1b2', name: 'Example Story', summary: '', files: [{ id: 'f1', name: 'Chapter One', status: '', tags: [] }] }],
+      files: [{ id: 'f2', name: 'A One-Shot', status: '', tags: [] }],
+    }),
+  },
 }))
 
 const CLEAN: GitStatus = {
@@ -18,16 +30,23 @@ const CLEAN: GitStatus = {
   fetched: false, clean: true, changes: [],
 }
 
-const ONE_CHANGE: GitStatus = {
+const change = (over: Partial<GitChange>): GitChange => ({
+  path: 'stories/example/chapters/one.ink', state: 'modified', staged: false, unstaged: true,
+  id: 'f1', dir: 'a1b2', committable: true, ...over,
+})
+
+const ONE_CHANGE: GitStatus = { ...CLEAN, clean: false, changes: [change({})] }
+
+const STAGED: GitStatus = {
   ...CLEAN,
   clean: false,
-  changes: [
-    { path: 'stories/example/chapters/one.ink', state: 'modified', staged: false, dir: 'a1b2', committable: true },
-  ],
+  changes: [change({ staged: true, unstaged: false })],
 }
 
 function mountPanel() {
-  return mount(GitPanel, { global: { stubs: { teleport: true } } })
+  return mount(GitPanel, {
+    global: { stubs: { teleport: true, 'router-link': { props: ['to'], template: '<a><slot /></a>' } } },
+  })
 }
 
 const clickButton = async (wrapper: ReturnType<typeof mountPanel>, label: string) => {
@@ -73,7 +92,7 @@ describe('GitPanel.vue', () => {
 
     expect(gitService.status).toHaveBeenCalled()
     expect(wrapper.text()).toContain('main')
-    expect(wrapper.text()).toContain('Nothing to commit')
+    expect(wrapper.text()).toContain('Nothing changed')
   })
 
   it('does not fetch when there is no active session', async () => {
@@ -88,27 +107,91 @@ describe('GitPanel.vue', () => {
       ...ONE_CHANGE,
       changes: [
         ...ONE_CHANGE.changes,
-        { path: 'stories/example/lorebook/data/entities.yaml', state: 'modified', staged: false, dir: 'a1b2', committable: false },
+        change({ path: 'stories/example/lorebook/data/entities.yaml', id: null, committable: false }),
       ],
     })
     const wrapper = mountPanel()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('1 to commit')
-    const commitButton = wrapper.findAll('button').find((b) => b.text() === 'Commit…')
-    expect(commitButton?.attributes('disabled')).toBeUndefined()
+    expect(wrapper.findAll('.change-list li')).toHaveLength(1)
+    expect(wrapper.text()).toContain('0 staged, 1 not staged')
   })
 
-  it('disables Commit when there is nothing committable', async () => {
+  it('lists each change with the names the tree gives, a link, and a hollow or filled dot', async () => {
+    vi.mocked(gitService.status).mockResolvedValue({
+      ...CLEAN,
+      clean: false,
+      changes: [
+        change({}),
+        change({ path: 'stories/solo.ink', id: 'f2', dir: 'f2', state: 'untracked', staged: true, unstaged: false }),
+        change({ path: 'stories/example/story.yaml', id: null }),
+      ],
+    })
     const wrapper = mountPanel()
     await flushPromises()
 
-    const commitButton = wrapper.findAll('button').find((b) => b.text() === 'Commit…')
-    expect(commitButton?.attributes('disabled')).toBeDefined()
+    const rows = wrapper.findAll('.change-list li')
+    expect(rows.map((r) => r.find('a, span:not(.git-mark):not(.state)').text())).toEqual([
+      'Example Story / Chapter One',
+      'A One-Shot',
+      'Example Story / story.yaml',
+    ])
+    expect(rows[0]!.find('.git-mark').classes()).toContain('changed')
+    expect(rows[1]!.find('.git-mark').classes()).toContain('staged')
+    expect(rows[1]!.find('.state').text()).toBe('new')
+    expect(rows[2]!.find('a').exists()).toBe(false)
+  })
+
+  it('disables Commit while nothing is staged, and enables it once something is', async () => {
+    vi.mocked(gitService.status).mockResolvedValue(ONE_CHANGE)
+    const wrapper = mountPanel()
+    await flushPromises()
+    const commit = () => wrapper.findAll('button').find((b) => b.text() === 'Commit…')
+    expect(commit()?.attributes('disabled')).toBeDefined()
+
+    vi.mocked(gitService.stage).mockResolvedValue(STAGED)
+    await clickButton(wrapper, 'Stage all')
+    await flushPromises()
+
+    expect(gitService.stage).toHaveBeenCalledWith({})
+    expect(commit()?.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('1 staged, 0 not staged')
+  })
+
+  it('discards everything only after a confirmation that counts the files', async () => {
+    vi.mocked(gitService.status).mockResolvedValue({
+      ...CLEAN,
+      clean: false,
+      changes: [change({}), change({ path: 'stories/solo.ink', id: 'f2', dir: 'f2', state: 'untracked' })],
+    })
+    vi.mocked(gitService.reset).mockResolvedValue(CLEAN)
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await clickButton(wrapper, 'Reset all…')
+    expect(gitService.reset).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Discard the changes to 1 file')
+
+    await clickButton(wrapper, 'Discard')
+    await flushPromises()
+    expect(gitService.reset).toHaveBeenCalledWith({})
+  })
+
+  it('has nothing to reset when every change is a new file', async () => {
+    vi.mocked(gitService.status).mockResolvedValue({
+      ...CLEAN,
+      clean: false,
+      changes: [change({ state: 'untracked' })],
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const reset = wrapper.findAll('button').find((b) => b.text() === 'Reset all…')
+    expect(reset?.attributes('disabled')).toBeDefined()
   })
 
   it('opens the message dialog, commits, and shows the result', async () => {
-    vi.mocked(gitService.status).mockResolvedValue(ONE_CHANGE)
+    vi.mocked(gitService.status).mockResolvedValue(STAGED)
     vi.mocked(gitService.commit).mockResolvedValue({
       ...CLEAN,
       sha: 'abc123',
@@ -125,11 +208,11 @@ describe('GitPanel.vue', () => {
     await flushPromises()
 
     expect(gitService.commit).toHaveBeenCalledWith('Draft the opening')
-    expect(wrapper.text()).toContain('Nothing to commit')
+    expect(wrapper.text()).toContain('Nothing changed')
   })
 
   it('refuses an empty commit message without calling the API', async () => {
-    vi.mocked(gitService.status).mockResolvedValue(ONE_CHANGE)
+    vi.mocked(gitService.status).mockResolvedValue(STAGED)
     const wrapper = mountPanel()
     await flushPromises()
 

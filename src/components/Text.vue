@@ -782,11 +782,29 @@ const warnBeforeUnload = (event: BeforeUnloadEvent) => {
   event.returnValue = ''
 }
 
+/**
+ * `git:reset` (`gitActions.ts`) says these files went back to the last commit. If the open one
+ * is among them, what is on screen is the text that was just discarded, and a save of it would
+ * write it back: so what is pending is dropped, `isDirty` cleared, and the file read again.
+ */
+const handleGitReset = async (event: Event) => {
+  const ids = (event as CustomEvent<{ ids: string[] }>).detail?.ids ?? []
+  const file = currentFile.value
+  if (!file || file.space !== 'stories' || !ids.includes(file.id)) return
+  cancelAutoSave()
+  cancelIdleCompletion()
+  isDirty.value = false
+  await inFlight?.catch(() => false)
+  isDirty.value = false
+  await loadFile(file)
+}
+
 onMounted(() => {
   if (selectedFile.value) {
     loadFile(selectedFile.value)
   }
   window.addEventListener('beforeunload', warnBeforeUnload)
+  window.addEventListener('git:reset', handleGitReset)
   // Best-effort: a failed fetch just leaves the dice button looking unconfigured
   // rather than crashing the mount over an optional feature.
   ensureFeaturesLoaded().catch(() => {})
@@ -794,6 +812,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('beforeunload', warnBeforeUnload)
+  window.removeEventListener('git:reset', handleGitReset)
   cancelAutoSave()
   cancelIdleCompletion()
   if (currentFile.value) {

@@ -3,6 +3,8 @@ import { ref, computed, inject, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FileSystemNode } from '../services/filesManager'
 import { useSharedFiles } from '../services/sharedFiles'
+import { resettable, stageable, unstageable, type GitMark } from '../services/gitMarks'
+import type { GitChange } from '../services/git'
 import { DIR_ICONS, type Space } from '../services/spaces'
 // Explicitly import TreeItem for recursion, though often handled by filename
 import TreeItem from './TreeItem.vue'
@@ -31,6 +33,10 @@ interface TreeContext {
   space?: Ref<Space>
   /** Whether a tag filter is on, which shows every directory that is left open. */
   filtering?: Ref<boolean>
+  /** What the sidebar's dots say, by file id and story id; empty outside the stories tab. */
+  marks?: Ref<Map<string, GitMark>>
+  /** The change of each changed file, by file id: what the file's menu offers follows from it. */
+  changes?: Ref<Map<string, GitChange>>
   onAction: (action: string, node: FileSystemNode | null, parentId?: string | null) => void
 }
 
@@ -40,6 +46,16 @@ const { onAction } = context
 const router = useRouter()
 
 const isOpen = ref(false)
+
+/** The dot after the name: hollow for `changed`, filled for `staged`; nothing for a clean row. */
+const mark = computed(() => context.marks?.value.get(props.node.id) ?? null)
+const markTitle = computed(() =>
+  mark.value === 'staged' ? 'Staged for the next commit' : 'Changed since the last commit',
+)
+const change = computed(() => context.changes?.value.get(props.node.id) ?? null)
+const canStage = computed(() => change.value !== null && stageable(change.value))
+const canUnstage = computed(() => change.value !== null && unstageable(change.value))
+const canReset = computed(() => change.value !== null && resettable(change.value))
 /**
  * What is drawn open: the writer's own choice, or any directory at all while a tag filter
  * is on, since what it keeps is the files and a directory closed over them would hide them.
@@ -152,7 +168,19 @@ const closeMenu = () => {
 
       <Icon :name="icon" class="icon" />
       <span class="node-name">{{ node.name }}</span>
-      
+      <!-- A slot of fixed width on every row, so the dots of different rows share one column,
+           just left of the actions trigger. -->
+      <span class="git-slot">
+        <span
+          v-if="mark"
+          class="git-mark"
+          :class="mark"
+          role="img"
+          :title="markTitle"
+          :aria-label="markTitle"
+        ></span>
+      </span>
+
       <div class="node-actions-trigger" title="Actions" @click.stop="showMenu = !showMenu">
         <Icon name="more" />
         <!-- Apply v-click-outside only when menu is shown -->
@@ -165,6 +193,9 @@ const closeMenu = () => {
             <!-- File Actions -->
             <template v-else>
                 <div @click.stop="handleAction('edit')">Edit</div>
+                <div v-if="canStage" @click.stop="handleAction('stage')">Stage</div>
+                <div v-if="canUnstage" @click.stop="handleAction('unstage')">Unstage</div>
+                <div v-if="canReset" @click.stop="handleAction('reset')">Reset…</div>
                 <div @click.stop="handleAction('delete')">Delete</div>
             </template>
         </div>
@@ -252,6 +283,28 @@ li {
   text-overflow: ellipsis;
 }
 
+/* A dot is a shape, so the state does not rest on its colour: hollow is changed, filled is staged. */
+.git-slot {
+  flex-shrink: 0;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.git-mark {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--color-primary);
+}
+
+.git-mark.staged {
+  background: var(--color-primary);
+}
+
 .node-actions-trigger {
   padding: 0 8px;
   cursor: pointer;
@@ -287,6 +340,7 @@ li {
   border-radius: var(--radius-md);
   z-index: 100;
   min-width: 120px;
+  white-space: nowrap;
   display: flex;
   flex-direction: column;
   padding: var(--space-1);
