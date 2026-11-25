@@ -174,8 +174,9 @@ export const llmService = {
 
     /**
      * Which optional, small-model-backed features this installation offers --
-     * today, only `title` (frontend#30): whether `INKSPIRE_LLM_SMALL_MODEL` is
-     * configured, and so whether the dice button has anything to call.
+     * `title` (frontend#30) and `commit_message` (frontend#56): whether
+     * `INKSPIRE_LLM_SMALL_MODEL` is configured, and so whether the dice buttons
+     * have anything to call.
      */
     async getFeatures(): Promise<Features> {
         const response = await apiFetch(`${API_URL}/llm/features`, {
@@ -261,6 +262,8 @@ export interface GenerationDefaults {
 /** `GET /api/llm/features`: which optional, small-model-backed features are on. */
 export interface Features {
     title: boolean
+    /** The commit dialog's proposed message (frontend#56). */
+    commit_message: boolean
 }
 
 /** The payload of one server-sent event, or null for the terminator and anything unparsable. */

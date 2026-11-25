@@ -8,9 +8,11 @@ import { useGitActions } from '../services/gitActions'
 import { resettable, stageable } from '../services/gitMarks'
 import { filesManagerService } from '../services/filesManager'
 import { isLoggedIn } from '../services/api'
+import { useSharedFeatures } from '../services/sharedFeatures'
 
 const { gitStatus, refresh, setStatus } = useSharedGit()
 const { stage, reset } = useGitActions()
+const features = useSharedFeatures()
 
 // A commit, a push and a pull each take the API's own lock, so only one of them can
 // really be running at once — this mirrors that on the button row, and covers the
@@ -19,6 +21,13 @@ const busy = ref(false)
 
 const showCommitModal = ref(false)
 const commitMessage = ref('')
+
+// A proposed message from the small model (frontend#56). It arrives a few seconds after
+// the dialog opens, by which time the writer may have typed: their text is never replaced.
+const proposing = ref(false)
+const proposalError = ref('')
+const lastProposal = ref('')
+let proposal: AbortController | null = null
 
 const showError = ref(false)
 const errorMessage = ref('')
@@ -84,9 +93,58 @@ const displayError = (message: string) => {
   showError.value = true
 }
 
-const openCommitModal = () => {
+const cancelProposal = () => {
+  proposal?.abort()
+  proposal = null
+  proposing.value = false
+}
+
+/**
+ * Asks for a proposal. The answer is written into the field only if the field still
+ * holds what it held when the request started, unless `replace`: the dice button was
+ * pressed, which asks for the field to be replaced. A failure is one muted line under
+ * the field and never blocks Commit.
+ */
+const propose = async (replace: boolean) => {
+  cancelProposal()
+  const controller = new AbortController()
+  proposal = controller
+  proposing.value = true
+  proposalError.value = ''
+  const before = commitMessage.value
+  try {
+    const message = await gitService.proposeMessage(lastProposal.value || undefined, controller.signal)
+    if (proposal !== controller) return
+    lastProposal.value = message
+    if (replace || commitMessage.value === before) commitMessage.value = message
+  } catch (e) {
+    if (proposal !== controller) return
+    if (e instanceof DOMException && e.name === 'AbortError') return
+    proposalError.value = e instanceof Error ? e.message : 'No message could be proposed'
+  } finally {
+    if (proposal === controller) {
+      proposal = null
+      proposing.value = false
+    }
+  }
+}
+
+const openCommitModal = async () => {
   commitMessage.value = ''
+  lastProposal.value = ''
+  proposalError.value = ''
   showCommitModal.value = true
+  try {
+    await features.ensureLoaded()
+  } catch {
+    return
+  }
+  if (features.commitMessage.value && showCommitModal.value) propose(false)
+}
+
+const closeCommitModal = () => {
+  cancelProposal()
+  showCommitModal.value = false
 }
 
 const submitCommit = async () => {
@@ -97,6 +155,7 @@ const submitCommit = async () => {
   }
   if (!isLoggedIn()) return
 
+  cancelProposal()
   busy.value = true
   try {
     const result = await gitService.commit(message)
@@ -173,7 +232,10 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => window.removeEventListener('tree:changed', reloadNames))
+onUnmounted(() => {
+  window.removeEventListener('tree:changed', reloadNames)
+  cancelProposal()
+})
 </script>
 
 <template>
@@ -227,17 +289,32 @@ onUnmounted(() => window.removeEventListener('tree:changed', reloadNames))
       title="Commit"
       confirm-text="Commit"
       :loading="busy"
-      @close="showCommitModal = false"
+      @close="closeCommitModal"
       @confirm="submitCommit"
     >
       <div class="form-group">
-        <label>Message:</label>
-        <textarea
-          v-model="commitMessage"
-          placeholder="What changed"
-          rows="3"
-          @keyup.enter.meta="submitCommit"
-        ></textarea>
+        <label for="commit-message">Message:</label>
+        <div class="message-row">
+          <textarea
+            id="commit-message"
+            v-model="commitMessage"
+            :placeholder="proposing ? 'Proposing a message…' : 'What changed'"
+            rows="3"
+            @keyup.enter.meta="submitCommit"
+          ></textarea>
+          <button
+            v-if="features.commitMessage.value"
+            type="button"
+            class="dice"
+            aria-label="Propose another message"
+            title="Propose another message"
+            :disabled="proposing"
+            @click="propose(true)"
+          >
+            <Icon name="dice" />
+          </button>
+        </div>
+        <p v-if="proposalError" class="proposal-error">{{ proposalError }}</p>
       </div>
     </Modal>
 
@@ -347,6 +424,23 @@ h3 {
 
 .git-mark.staged {
   background: var(--color-primary);
+}
+
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.message-row textarea {
+  flex: 1;
+  min-width: 0;
+}
+
+.proposal-error {
+  margin: var(--space-1) 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
 }
 
 button {

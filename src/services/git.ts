@@ -70,6 +70,23 @@ export const gitService = {
         return response.json();
     },
 
+    /**
+     * A one-line message for what is staged, proposed by the server's small model.
+     * `previous`, the last proposal, asks for a different one; omitted when unset.
+     * Stages and commits nothing.
+     */
+    async proposeMessage(previous?: string, signal?: AbortSignal): Promise<string> {
+        const response = await apiFetch(`${API_URL}/git/commit-message`, {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({ previous }),
+            signal,
+        });
+        if (!response.ok) throw new Error(await errorMessage(response, 'No message could be proposed'));
+        const body: { message: string } = await response.json();
+        return body.message;
+    },
+
     /** Stages the selected changes. Refused when none of them has an unstaged change. */
     async stage(selection: GitSelection = {}): Promise<GitStatus> {
         return post('stage', selection, 'Stage failed');

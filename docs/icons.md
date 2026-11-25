@@ -22,7 +22,7 @@ on a light or a dark page.
 | ![](icons/reroll.svg) | `reroll` | `U+1F5D8` | Clockwise Right And Left Semicircle Arrows | Text.vue |
 | ![](icons/sparkles.svg) | `sparkles` | `U+2728` | Sparkles | Text.vue |
 | ![](icons/gear.svg) | `gear` | `U+2699` | Gear | Text.vue |
-| ![](icons/dice.svg) | `dice` | `U+1F3B2` | Game Die | Text.vue, Tree.vue |
+| ![](icons/dice.svg) | `dice` | `U+1F3B2` | Game Die | GitPanel.vue, Text.vue, Tree.vue |
 | ![](icons/sun.svg) | `sun` | `U+2600` | Black Sun With Rays | Tree.vue |
 | ![](icons/moon.svg) | `moon` | `U+1F319` | Crescent Moon | Tree.vue |
 | ![](icons/more.svg) | `more` | `U+22EE` | Vertical Ellipsis | Tree.vue, TreeItem.vue |

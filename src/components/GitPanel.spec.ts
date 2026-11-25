@@ -3,6 +3,8 @@ import { mount, flushPromises } from '@vue/test-utils'
 import GitPanel from './GitPanel.vue'
 import { gitService, type GitChange, type GitStatus } from '../services/git'
 import { resetSharedGit } from '../services/sharedGit'
+import { llmService } from '../services/llm'
+import { resetSharedFeatures } from '../services/sharedFeatures'
 
 vi.mock('../services/git', () => ({
   gitService: {
@@ -13,7 +15,12 @@ vi.mock('../services/git', () => ({
     reset: vi.fn(),
     push: vi.fn(),
     pull: vi.fn(),
+    proposeMessage: vi.fn(),
   }
+}))
+
+vi.mock('../services/llm', () => ({
+  llmService: { getFeatures: vi.fn() },
 }))
 
 vi.mock('../services/filesManager', () => ({
@@ -73,12 +80,14 @@ describe('GitPanel.vue', () => {
     document.cookie = 'auth_status=1; Path=/'
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(gitService.status).mockResolvedValue(CLEAN)
+    vi.mocked(llmService.getFeatures).mockResolvedValue({ title: false, commit_message: false })
   })
 
   afterEach(() => {
     document.cookie = 'auth_status=; Path=/; Max-Age=0'
     vi.clearAllMocks()
     resetSharedGit()
+    resetSharedFeatures()
   })
 
   it('renders its title', () => {
@@ -254,5 +263,127 @@ describe('GitPanel.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Pull failed: diverged, 1 behind.')
+  })
+
+  describe('a proposed message (frontend#56)', () => {
+    /** A promise the test resolves or rejects when it chooses. */
+    const deferred = <T,>() => {
+      let resolve!: (value: T) => void
+      let reject!: (error: unknown) => void
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res
+        reject = rej
+      })
+      return { promise, resolve, reject }
+    }
+
+    const openDialog = async () => {
+      vi.mocked(gitService.status).mockResolvedValue(STAGED)
+      const wrapper = mountPanel()
+      await flushPromises()
+      await clickButton(wrapper, 'Commit…')
+      await flushPromises()
+      return wrapper
+    }
+
+    const dice = (wrapper: ReturnType<typeof mountPanel>) =>
+      wrapper.find('button[aria-label="Propose another message"]')
+
+    beforeEach(() => {
+      vi.mocked(llmService.getFeatures).mockResolvedValue({ title: true, commit_message: true })
+    })
+
+    it('asks once when the dialog opens and fills the field', async () => {
+      vi.mocked(gitService.proposeMessage).mockResolvedValue('Updated: chapter 2 of Example Story')
+      const wrapper = await openDialog()
+
+      expect(gitService.proposeMessage).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(gitService.proposeMessage).mock.calls[0]![0]).toBeUndefined()
+      expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe(
+        'Updated: chapter 2 of Example Story'
+      )
+    })
+
+    it('says it is proposing while the request runs', async () => {
+      vi.mocked(gitService.proposeMessage).mockReturnValue(deferred<string>().promise)
+      const wrapper = await openDialog()
+
+      expect(wrapper.find('textarea').attributes('placeholder')).toBe('Proposing a message…')
+      expect(dice(wrapper).attributes('disabled')).toBeDefined()
+    })
+
+    it('sends nothing and shows no dice when the feature is off', async () => {
+      vi.mocked(llmService.getFeatures).mockResolvedValue({ title: false, commit_message: false })
+      const wrapper = await openDialog()
+
+      expect(gitService.proposeMessage).not.toHaveBeenCalled()
+      expect(dice(wrapper).exists()).toBe(false)
+      expect(wrapper.find('textarea').attributes('placeholder')).toBe('What changed')
+    })
+
+    it('keeps what the writer typed before the answer arrived', async () => {
+      const answer = deferred<string>()
+      vi.mocked(gitService.proposeMessage).mockReturnValue(answer.promise)
+      const wrapper = await openDialog()
+
+      await wrapper.find('textarea').setValue('Fix a typo')
+      answer.resolve('Fixup: typos in chapter 2 of Example Story')
+      await flushPromises()
+
+      expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('Fix a typo')
+    })
+
+    it('asks again with the last proposal from the dice, and replaces the field', async () => {
+      vi.mocked(gitService.proposeMessage)
+        .mockResolvedValueOnce('Updated: chapter 2 of Example Story')
+        .mockResolvedValueOnce('Fixup: typos in chapter 2 of Example Story')
+      const wrapper = await openDialog()
+      await wrapper.find('textarea').setValue('Something of my own')
+
+      await dice(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(vi.mocked(gitService.proposeMessage).mock.calls[1]![0]).toBe(
+        'Updated: chapter 2 of Example Story'
+      )
+      expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe(
+        'Fixup: typos in chapter 2 of Example Story'
+      )
+    })
+
+    it('shows a failure as one line, opens no error dialog, and still commits', async () => {
+      vi.mocked(gitService.proposeMessage).mockRejectedValue(
+        new Error('No small model is configured.')
+      )
+      vi.mocked(gitService.commit).mockResolvedValue({
+        ...CLEAN, sha: 'abc123', message: 'My message', committed: [],
+      })
+      const wrapper = await openDialog()
+
+      expect(wrapper.find('.proposal-error').text()).toBe('No small model is configured.')
+      expect(wrapper.text()).not.toContain('Error')
+
+      await wrapper.find('textarea').setValue('My message')
+      await clickButton(wrapper, 'Commit')
+      await flushPromises()
+      expect(gitService.commit).toHaveBeenCalledWith('My message')
+    })
+
+    it('aborts the request when the dialog closes, and a late answer writes nothing', async () => {
+      const answer = deferred<string>()
+      vi.mocked(gitService.proposeMessage).mockReturnValue(answer.promise)
+      const wrapper = await openDialog()
+      const signal = vi.mocked(gitService.proposeMessage).mock.calls[0]![1]!
+
+      await clickButton(wrapper, 'Cancel')
+      expect(signal.aborted).toBe(true)
+
+      answer.resolve('Updated: chapter 2 of Example Story')
+      await flushPromises()
+      vi.mocked(gitService.proposeMessage).mockReturnValue(deferred<string>().promise)
+      await clickButton(wrapper, 'Commit…')
+      await flushPromises()
+      expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+    })
   })
 })

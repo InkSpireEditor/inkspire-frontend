@@ -170,6 +170,7 @@ describe('Text.vue', () => {
     titleFeature = ref(false)
     vi.spyOn(sharedFeatures, 'useSharedFeatures').mockReturnValue({
       title: titleFeature,
+      commitMessage: ref(false),
       loaded: ref(true),
       ensureLoaded: vi.fn().mockResolvedValue(undefined)
     })
